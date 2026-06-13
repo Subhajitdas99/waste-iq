@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: waste-iq-api
+    runtime: docker
+    plan: starter
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: waste-iq-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: CORS_ORIGINS
+        value: https://waste-iq-web.onrender.com
+
+  - type: web
+    name: waste-iq-web
+    runtime: docker
+    plan: starter
+    dockerContext: ./frontend
+    dockerfilePath: ./frontend/Dockerfile
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://waste-iq-api.onrender.com
+
+databases:
+  - name: waste-iq-db
+    plan: starter
