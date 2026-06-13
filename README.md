@@ -1,159 +1,299 @@
- # Waste-IQ MVP
+ # ♻️ Waste-IQ
 
-Waste-IQ is a recyclable waste pickup marketplace for Kolkata. Citizens create pickup requests, collectors accept and complete them, and admins monitor marketplace activity.
+**Waste-IQ** is an AI-ready recyclable waste pickup marketplace that connects citizens, waste collectors, and administrators through a centralized digital platform. The system streamlines recyclable waste collection, enables efficient pickup management, and provides real-time analytics for monitoring marketplace activity.
 
-## Tech Stack
+---
 
-- Backend: FastAPI, SQLAlchemy, PostgreSQL, Alembic, JWT
-- Frontend: React, Vite, Tailwind CSS, React Router, Axios
-- Media: Cloudinary unsigned uploads from the frontend
-- Deployment: Docker, Render
+## 🚀 Problem Statement
 
-## Project Structure
+Traditional recyclable waste collection is often unorganized, inefficient, and lacks transparency. Citizens struggle to find collectors, collectors have no centralized lead management system, and administrators lack visibility into operations.
+
+Waste-IQ solves these challenges by providing:
+
+* Digital waste pickup requests
+* Collector assignment and workflow management
+* Administrative analytics dashboard
+* Scalable cloud-ready architecture
+* Future AI-powered waste classification support
+
+---
+
+## ✨ Key Features
+
+### 👤 Citizen Portal
+
+* User registration and login
+* JWT-based authentication
+* Create waste pickup requests
+* Upload waste images
+* Track pickup status
+
+### 🚛 Collector Portal
+
+* View available pickup requests
+* Accept pickup assignments
+* Complete pickups with collected weight
+* Manage assigned jobs
+
+### 🛠️ Admin Portal
+
+* User management dashboard
+* Marketplace analytics
+* Request status monitoring
+* Platform activity tracking
+
+### 🔒 Security
+
+* JWT Authentication
+* Password Hashing (bcrypt)
+* Role-Based Access Control (RBAC)
+* Protected API endpoints
+
+---
+
+## 📸 Screenshots
+
+### Admin Dashboard
+
+![Admin Dashboard](docs/screenshots/admin-dashboard.png)
+
+### Collector Dashboard
+
+![Collector Dashboard](docs/screenshots/collector-dashboard.png)
+
+### Citizen Dashboard
+
+![Citizen Dashboard](docs/screenshots/citizen-dashboard.png)
+
+### Login Page
+
+![Login Page](docs/screenshots/login-page.png)
+
+### Registration Page
+
+![Registration Page](docs/screenshots/register-page.png)
+
+---
+
+## 🏗️ System Architecture
+
+![Architecture](docs/architecture.png)
+
+### Workflow
+
+Citizen → Create Pickup Request
+↓
+FastAPI Backend
+↓
+PostgreSQL Database
+↓
+Collector Accepts Request
+↓
+Collector Completes Pickup
+↓
+Admin Monitors Analytics
+
+---
+
+## 🛠️ Technology Stack
+
+### Backend
+
+* FastAPI
+* SQLAlchemy
+* PostgreSQL
+* Alembic
+* JWT Authentication
+* Passlib (bcrypt)
+
+### Frontend
+
+* React
+* Vite
+* Tailwind CSS
+* React Router
+* Axios
+
+### Cloud & Deployment
+
+* Docker
+* Docker Compose
+* Render
+* Cloudinary
+
+---
+
+## 📂 Project Structure
 
 ```text
 waste-iq/
-|-- backend/
-|   |-- app/
-|   |   |-- api/
-|   |   |-- core/
-|   |   |-- db/
-|   |   |-- models/
-|   |   |-- schemas/
-|   |   `-- services/
-|   |-- alembic/
-|   |-- Dockerfile
-|   `-- requirements.txt
-|-- frontend/
-|   |-- src/
-|   |   |-- api/
-|   |   |-- components/
-|   |   |-- contexts/
-|   |   `-- pages/
-|   |-- Dockerfile
-|   `-- package.json
-|-- docker-compose.yml
-`-- render.yaml
+│
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   ├── core/
+│   │   ├── db/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   └── services/
+│   ├── alembic/
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── contexts/
+│   │   └── pages/
+│   ├── Dockerfile
+│   └── package.json
+│
+├── docs/
+│   ├── screenshots/
+│   ├── architecture.png
+│   └── project-report.pdf
+│
+├── docker-compose.yml
+├── render.yaml
+└── README.md
 ```
 
-## Features
+---
 
-- Citizen registration, login, and authenticated profile lookup
-- Pickup request creation with waste photo upload support
-- Role-based pickup request visibility
-- Collector accept and complete flows with collected weight entry
-- Admin user directory and analytics dashboard
-- Auto-generated OpenAPI docs at `/docs`
-
-## Core API
+## 🔌 Core API Endpoints
 
 ### Authentication
 
-- `POST /auth/register`
-- `POST /auth/login`
-- `GET /auth/me`
+```http
+POST /auth/register
+POST /auth/login
+GET  /auth/me
+```
 
 ### Pickup Requests
 
-- `POST /pickup-requests`
-- `GET /pickup-requests`
-- `GET /pickup-requests/{id}`
-- `PATCH /pickup-requests/{id}`
+```http
+POST /pickup-requests
+GET  /pickup-requests
+GET  /pickup-requests/{id}
+PATCH /pickup-requests/{id}
+```
 
-### Collector
+### Collector Operations
 
-- `POST /collector/accept/{request_id}`
-- `POST /collector/complete/{request_id}`
+```http
+POST /collector/accept/{request_id}
+POST /collector/complete/{request_id}
+```
 
-### Admin
+### Admin Operations
 
-- `GET /admin/users`
-- `GET /admin/analytics`
+```http
+GET /admin/users
+GET /admin/analytics
+```
 
-## Local Development
+---
 
-### 1. Backend
+## 💻 Local Development
+
+### Backend
 
 ```bash
-cd waste-iq/backend
+cd backend
+
 python -m venv .venv
 .venv\Scripts\activate
+
 pip install -r requirements.txt
-copy .env.example .env
+
 alembic upgrade head
+
 uvicorn app.main:app --reload
 ```
 
-The API will be available at `http://localhost:8000` and Swagger docs at `http://localhost:8000/docs`.
+Backend:
 
-### 2. Frontend
+```text
+http://localhost:8000
+```
+
+Swagger Documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+### Frontend
 
 ```bash
-cd waste-iq/frontend
+cd frontend
+
 npm install
-copy .env.example .env
+
 npm run dev
 ```
 
-The frontend will run at `http://localhost:5173`.
+Frontend:
 
-### 3. PostgreSQL
+```text
+http://localhost:5173
+```
 
-Use a local PostgreSQL database and set `DATABASE_URL` in `backend/.env`, or start the full stack with Docker Compose.
+---
 
-## Docker Setup
+## 🐳 Docker Setup
 
 ```bash
-cd waste-iq
-copy backend\.env.example backend\.env
-copy frontend\.env.example frontend\.env
 docker compose up --build
 ```
 
 Services:
 
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:8000`
-- PostgreSQL: `localhost:5432`
+* Frontend → http://localhost:5173
+* Backend → http://localhost:8000
+* PostgreSQL → localhost:5432
 
-## Environment Variables
+---
 
-### Backend
+## 🌐 Deployment
 
-- `DATABASE_URL`
-- `JWT_SECRET_KEY`
-- `JWT_ALGORITHM`
-- `ACCESS_TOKEN_EXPIRE_MINUTES`
-- `CORS_ORIGINS`
-- `ADMIN_REGISTRATION_CODE`
-- `BOOTSTRAP_ADMIN_NAME`
-- `BOOTSTRAP_ADMIN_EMAIL`
-- `BOOTSTRAP_ADMIN_PHONE`
-- `BOOTSTRAP_ADMIN_PASSWORD`
+Waste-IQ is deployment-ready using:
 
-### Frontend
+* Docker
+* PostgreSQL
+* Render Blueprint Deployment
 
-- `VITE_API_BASE_URL`
-- `VITE_CLOUDINARY_CLOUD_NAME`
-- `VITE_CLOUDINARY_UPLOAD_PRESET`
+Infrastructure includes:
 
-## Cloudinary Setup
+* FastAPI Backend Service
+* React Frontend Service
+* PostgreSQL Database
 
-1. Create a Cloudinary account.
-2. Create an unsigned upload preset.
-3. Put the cloud name and preset in `frontend/.env`.
+---
 
-## Render Deployment
+## 🔮 Future Enhancements
 
-- `render.yaml` provisions:
-  - one Dockerized FastAPI web service
-  - one Dockerized React web service
-  - one PostgreSQL database
+* AI Waste Image Classification
+* Smart Collector Geo-Matching
+* Waste Value Prediction
+* Demand Forecasting
+* WhatsApp Notifications
+* Mobile Application
 
-Before deploying, set production Cloudinary values on the frontend service and optional bootstrap admin credentials on the backend service.
+---
 
-## Notes
+## 👨‍💻 Author
 
-- Public registration supports `citizen` and `collector`.
-- `admin` registration requires `ADMIN_REGISTRATION_CODE`.
-- On startup, the backend can create a bootstrap admin automatically when the `BOOTSTRAP_ADMIN_*` variables are set.
+**Subhajit Das**
+
+B.Tech (AI & ML)
+
+GitHub: https://github.com/Subhajitdas99
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License.
