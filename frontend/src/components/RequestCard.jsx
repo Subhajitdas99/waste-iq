@@ -1,4 +1,4 @@
-import { MapPin, Scale, User } from "lucide-react";
+import { MapPin, Scale, Truck, User } from "lucide-react";
 
 import StatusBadge from "./StatusBadge";
 
@@ -19,6 +19,12 @@ export default function RequestCard({ request, actions }) {
             <MapPin className="mt-0.5 h-4 w-4" />
             {request.address}
           </p>
+          {request.assigned_collector_name ? (
+            <p className="inline-flex items-center gap-2 text-sm text-ink/70">
+              <Truck className="h-4 w-4" />
+              Assigned collector: {request.assigned_collector_name}
+            </p>
+          ) : null}
           {request.assignment?.weight_kg ? (
             <p className="inline-flex items-center gap-2 text-sm text-ink/70">
               <Scale className="h-4 w-4" />

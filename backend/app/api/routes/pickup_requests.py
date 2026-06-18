@@ -3,9 +3,17 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.schemas.pickup_request import PickupRequestCreate, PickupRequestRead, PickupRequestUpdate
+from app.schemas.pickup_request import (
+    CitizenRequestSummaryRead,
+    PickupRequestCreate,
+    PickupRequestDetailRead,
+    PickupRequestRead,
+    PickupRequestUpdate,
+)
 from app.services.pickup_requests import (
+    cancel_pickup_request,
     create_pickup_request,
+    get_citizen_request_summary,
     get_pickup_request_for_user,
     list_pickup_requests_for_user,
     update_pickup_request,
@@ -33,12 +41,22 @@ def list_requests(
     return list_pickup_requests_for_user(db, current_user)
 
 
-@router.get("/{request_id}", response_model=PickupRequestRead)
+@router.get("/citizen/summary", response_model=CitizenRequestSummaryRead)
+def citizen_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CitizenRequestSummaryRead:
+    if current_user.role != "citizen":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only citizens can view dashboard metrics")
+    return get_citizen_request_summary(db, current_user)
+
+
+@router.get("/{request_id}", response_model=PickupRequestDetailRead)
 def get_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> PickupRequestRead:
+) -> PickupRequestDetailRead:
     request = get_pickup_request_for_user(db, request_id, current_user)
     if request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found")
@@ -53,6 +71,21 @@ def patch_request(
     current_user: User = Depends(get_current_user),
 ) -> PickupRequestRead:
     request = update_pickup_request(db, request_id, current_user, payload)
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found")
+    return request
+
+
+@router.post("/{request_id}/cancel", response_model=PickupRequestRead)
+def cancel_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PickupRequestRead:
+    if current_user.role != "citizen":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only citizens can cancel requests")
+
+    request = cancel_pickup_request(db, current_user, request_id)
     if request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found")
     return request

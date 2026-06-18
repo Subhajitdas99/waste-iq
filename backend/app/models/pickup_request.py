@@ -12,6 +12,8 @@ from app.models.base import Base
 class PickupStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
+    on_the_way = "on_the_way"
+    collected = "collected"
     completed = "completed"
     cancelled = "cancelled"
 
@@ -41,4 +43,10 @@ class PickupRequest(Base):
         back_populates="pickup_request",
         cascade="all, delete-orphan",
         uselist=False,
+    )
+    events = relationship(
+        "PickupRequestEvent",
+        back_populates="pickup_request",
+        cascade="all, delete-orphan",
+        order_by="PickupRequestEvent.created_at",
     )

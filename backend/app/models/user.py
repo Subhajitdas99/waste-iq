@@ -28,3 +28,4 @@ class User(Base):
 
     pickup_requests = relationship("PickupRequest", back_populates="citizen", cascade="all, delete-orphan")
     collector_assignments = relationship("CollectorAssignment", back_populates="collector")
+    pickup_request_events = relationship("PickupRequestEvent", back_populates="actor")

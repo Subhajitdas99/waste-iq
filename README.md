@@ -1,103 +1,257 @@
- # ♻️ Waste-IQ
+# ♻️ Waste-IQ
 
-**Waste-IQ** is an AI-ready recyclable waste pickup marketplace that connects citizens, waste collectors, and administrators through a centralized digital platform. The system streamlines recyclable waste collection, enables efficient pickup management, and provides real-time analytics for monitoring marketplace activity.
+## AI-Powered Circular Economy Platform for Waste, Scrap & Recyclables
 
----
+Waste-IQ is a digital marketplace that connects citizens, waste collectors, scrap dealers, recyclers, municipalities, and industries into a single ecosystem for efficient recyclable waste management.
 
-## 🚀 Problem Statement
-
-Traditional recyclable waste collection is often unorganized, inefficient, and lacks transparency. Citizens struggle to find collectors, collectors have no centralized lead management system, and administrators lack visibility into operations.
-
-Waste-IQ solves these challenges by providing:
-
-* Digital waste pickup requests
-* Collector assignment and workflow management
-* Administrative analytics dashboard
-* Scalable cloud-ready architecture
-* Future AI-powered waste classification support
+The platform enables waste pickup requests, collector dispatching, geo-location tracking, analytics, and future AI-powered waste classification to build a transparent and scalable circular economy infrastructure.
 
 ---
 
-## ✨ Key Features
+# Vision
 
-### 👤 Citizen Portal
+To become India's digital operating system for recyclable waste management by connecting every stakeholder in the recycling value chain.
 
-* User registration and login
-* JWT-based authentication
-* Create waste pickup requests
-* Upload waste images
-* Track pickup status
+---
 
-### 🚛 Collector Portal
+# Problem Statement
 
-* View available pickup requests
-* Accept pickup assignments
-* Complete pickups with collected weight
-* Manage assigned jobs
+The recycling industry remains highly fragmented.
 
-### 🛠️ Admin Portal
+### Citizens
 
-* User management dashboard
-* Marketplace analytics
-* Request status monitoring
-* Platform activity tracking
+* Don't know where to sell recyclable waste
+* Lack transparency in pickup services
+* Receive inconsistent pricing
 
-### 🔒 Security
+### Collectors
 
+* Depend on manual lead generation
+* Have inefficient route planning
+* Lack digital tools for operations
+
+### Recyclers & Scrap Dealers
+
+* Face inconsistent supply
+* Limited visibility into waste sources
+* Poor data availability
+
+### Municipalities
+
+* Lack real-time waste intelligence
+* Limited tracking of collection operations
+* No centralized recycling analytics
+
+---
+
+# Solution
+
+Waste-IQ provides a unified platform where:
+
+* Citizens request recyclable waste pickups
+* Collectors accept and complete jobs
+* Recyclers access verified waste streams
+* Municipalities monitor recycling activity
+* AI assists with waste identification and valuation
+
+---
+
+# Supported Waste Categories
+
+### Plastic
+
+* PET Bottles
+* HDPE Containers
+* Plastic Packaging
+* Household Plastic Waste
+
+### Metals
+
+* Iron Scrap
+* Steel Scrap
+* Copper
+* Aluminum
+* Brass
+* Stainless Steel
+
+### Paper
+
+* Newspapers
+* Cardboard
+* Office Paper
+* Packaging Waste
+
+### Electronic Waste
+
+* Mobile Phones
+* Computers
+* Batteries
+* Small Appliances
+
+### Glass
+
+* Bottles
+* Containers
+* Industrial Glass Waste
+
+Future versions will support industrial scrap, construction waste, and bulk commercial waste streams.
+
+---
+
+# Core Platform Features
+
+## Citizen Portal
+
+### Authentication
+
+* Secure Registration
+* Login System
 * JWT Authentication
-* Password Hashing (bcrypt)
-* Role-Based Access Control (RBAC)
-* Protected API endpoints
+
+### Pickup Requests
+
+* Create pickup requests
+* Upload waste images
+* Specify waste type
+* Enter estimated quantity
+* Share geo-location
+* Track request status
+
+### History
+
+* View previous pickups
+* Monitor request progress
+* Track recycling contribution
 
 ---
 
-## 📸 Screenshots
+## Collector Portal
 
-### Admin Dashboard
+### Request Marketplace
 
-![Admin Dashboard](docs/screenshots/admin-dashboard.png)
+* View available pickups
+* Accept nearby requests
+* Access customer location
 
-### Collector Dashboard
+### Operations
 
-![Collector Dashboard](docs/screenshots/collector-dashboard.png)
+* Complete pickups
+* Report collected weight
+* Update request status
 
-### Citizen Dashboard
+### Geo Intelligence
 
-![Citizen Dashboard](docs/screenshots/citizen-dashboard.png)
-
-### Login Page
-
-![Login Page](docs/screenshots/login-page.png)
-
-### Registration Page
-
-![Registration Page](docs/screenshots/register-page.png)
+* Route optimization
+* Nearby pickup discovery
+* Future AI dispatching
 
 ---
 
-## 🏗️ System Architecture
+## Admin Portal
 
-![Architecture](docs/architecture.png)
+### User Management
 
-### Workflow
+* Citizens
+* Collectors
+* Administrators
 
-Citizen → Create Pickup Request
+### Marketplace Monitoring
+
+* Total Users
+* Active Collectors
+* Pickup Requests
+* Collection Volumes
+
+### Analytics Dashboard
+
+* Requests by Status
+* User Distribution
+* Recycling Metrics
+* Platform Growth
+
+---
+
+# AI Roadmap
+
+Waste-IQ is designed as an AI-first recycling platform.
+
+## Phase 1
+
+Marketplace Platform
+
+* User Management
+* Pickup Requests
+* Analytics
+
+## Phase 2
+
+AI Waste Recognition
+
+* Waste Image Classification
+* Waste Category Detection
+* Material Segmentation
+
+## Phase 3
+
+Smart Operations
+
+* Collector Recommendation Engine
+* Dynamic Routing
+* Demand Forecasting
+
+## Phase 4
+
+Circular Economy Intelligence
+
+* Material Pricing Prediction
+* Carbon Impact Tracking
+* Municipality Reporting
+* Recycling Supply Chain Analytics
+
+---
+
+# Geo-Location Intelligence
+
+Waste-IQ incorporates location-aware operations.
+
+### Features
+
+* User Location Capture
+* Collector Location Tracking
+* Nearby Pickup Discovery
+* Route Optimization
+* Geographic Analytics
+
+Future releases will integrate:
+
+* Google Maps
+* OpenStreetMap
+* Real-Time Tracking
+* Geo-Fencing
+
+---
+
+# System Architecture
+
+Citizen / Business User
+↓
+React Frontend
 ↓
 FastAPI Backend
 ↓
 PostgreSQL Database
 ↓
-Collector Accepts Request
+Collector Network
 ↓
-Collector Completes Pickup
+Recycler Network
 ↓
-Admin Monitors Analytics
+Municipality Dashboard
 
 ---
 
-## 🛠️ Technology Stack
+# Technology Stack
 
-### Backend
+## Backend
 
 * FastAPI
 * SQLAlchemy
@@ -106,7 +260,7 @@ Admin Monitors Analytics
 * JWT Authentication
 * Passlib (bcrypt)
 
-### Frontend
+## Frontend
 
 * React
 * Vite
@@ -114,186 +268,132 @@ Admin Monitors Analytics
 * React Router
 * Axios
 
-### Cloud & Deployment
+## Cloud Infrastructure
 
+* Railway
+* PostgreSQL
 * Docker
-* Docker Compose
-* Render
 * Cloudinary
 
----
+## Future AI Stack
 
-## 📂 Project Structure
-
-```text
-waste-iq/
-│
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   ├── core/
-│   │   ├── db/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   └── services/
-│   ├── alembic/
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── api/
-│   │   ├── components/
-│   │   ├── contexts/
-│   │   └── pages/
-│   ├── Dockerfile
-│   └── package.json
-│
-├── docs/
-│   ├── screenshots/
-│   ├── architecture.png
-│   └── project-report.pdf
-│
-├── docker-compose.yml
-├── render.yaml
-└── README.md
-```
+* PyTorch
+* TensorFlow
+* YOLO
+* OpenCV
+* LangChain
+* Vector Databases
 
 ---
 
-## 🔌 Core API Endpoints
+# API Endpoints
 
-### Authentication
+## Authentication
 
-```http
 POST /auth/register
+
 POST /auth/login
-GET  /auth/me
-```
 
-### Pickup Requests
+GET /auth/me
 
-```http
+---
+
+## Pickup Requests
+
 POST /pickup-requests
-GET  /pickup-requests
-GET  /pickup-requests/{id}
+
+GET /pickup-requests
+
+GET /pickup-requests/{id}
+
 PATCH /pickup-requests/{id}
-```
 
-### Collector Operations
+---
 
-```http
+## Collector Operations
+
 POST /collector/accept/{request_id}
+
 POST /collector/complete/{request_id}
-```
 
-### Admin Operations
+---
 
-```http
+## Admin Operations
+
 GET /admin/users
+
 GET /admin/analytics
-```
 
 ---
 
-## 💻 Local Development
+# Deployment
 
-### Backend
+## Backend
 
-```bash
-cd backend
+Railway
 
-python -m venv .venv
-.venv\Scripts\activate
+## Database
 
-pip install -r requirements.txt
+PostgreSQL
 
-alembic upgrade head
+## Frontend
 
-uvicorn app.main:app --reload
-```
+Vercel
 
-Backend:
+## Containerization
 
-```text
-http://localhost:8000
-```
-
-Swagger Documentation:
-
-```text
-http://localhost:8000/docs
-```
-
-### Frontend
-
-```bash
-cd frontend
-
-npm install
-
-npm run dev
-```
-
-Frontend:
-
-```text
-http://localhost:5173
-```
+Docker
 
 ---
 
-## 🐳 Docker Setup
+# Market Opportunity
 
-```bash
-docker compose up --build
-```
+India generates over 62 million tonnes of waste annually, with recycling operations largely unorganized.
 
-Services:
+Waste-IQ aims to digitize this ecosystem by becoming:
 
-* Frontend → http://localhost:5173
-* Backend → http://localhost:8000
-* PostgreSQL → localhost:5432
-
----
-
-## 🌐 Deployment
-
-Waste-IQ is deployment-ready using:
-
-* Docker
-* PostgreSQL
-* Render Blueprint Deployment
-
-Infrastructure includes:
-
-* FastAPI Backend Service
-* React Frontend Service
-* PostgreSQL Database
+* A recycling marketplace
+* A collector operations platform
+* A municipality intelligence system
+* A circular economy data platform
 
 ---
 
-## 🔮 Future Enhancements
+# Future Business Model
 
-* AI Waste Image Classification
-* Smart Collector Geo-Matching
-* Waste Value Prediction
-* Demand Forecasting
-* WhatsApp Notifications
-* Mobile Application
+### Commission Model
+
+Commission on completed waste transactions
+
+### Subscription Plans
+
+Premium dashboards for recyclers and municipalities
+
+### Enterprise Analytics
+
+Waste intelligence reports for industries
+
+### Carbon Credits
+
+Future sustainability tracking and carbon accounting
 
 ---
 
-## 👨‍💻 Author
+# Founder
 
-**Subhajit Das**
+Subhajit Das
 
 B.Tech (AI & ML)
 
-GitHub: https://github.com/Subhajitdas99
+Founder, Waste-IQ
+
+GitHub:
+https://github.com/Subhajitdas99
 
 ---
 
-## 📜 License
+# License
 
-This project is licensed under the MIT License.
+MIT License
+
+Copyright © 2026 Waste-IQ

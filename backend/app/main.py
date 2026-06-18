@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models.base import Base
 from app.models.collector_assignment import CollectorAssignment
 from app.models.pickup_request import PickupRequest
+from app.models.pickup_request_event import PickupRequestEvent
 from app.models.user import User
 from app.db.session import engine
 from app.services.auth import bootstrap_admin_user

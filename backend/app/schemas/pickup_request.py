@@ -29,7 +29,7 @@ class PickupRequestUpdate(BaseModel):
     address: str | None = Field(default=None, min_length=8, max_length=500)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    status: Literal["pending", "accepted", "completed", "cancelled"] | None = None
+    status: Literal["pending", "accepted", "on_the_way", "collected", "completed", "cancelled"] | None = None
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -45,6 +45,36 @@ class PickupRequestRead(BaseModel):
     longitude: float
     status: str
     created_at: datetime
+    assigned_collector_name: str | None
+    can_cancel: bool
     assignment: CollectorAssignmentRead | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PickupRequestTimelineEventRead(BaseModel):
+    id: int
+    status: str
+    note: str | None
+    created_at: datetime
+    actor_name: str | None
+    actor_role: str | None
+
+
+class PickupRequestDetailRead(PickupRequestRead):
+    timeline: list[PickupRequestTimelineEventRead]
+
+
+class CitizenRequestSummaryRead(BaseModel):
+    total_requests: int
+    pending_requests: int
+    accepted_requests: int
+    completed_requests: int
+
+
+# NEW: Collector analytics summary
+class CollectorSummaryRead(BaseModel):
+    total_assigned: int
+    active_jobs: int
+    completed_jobs: int
+    total_weight_kg: float

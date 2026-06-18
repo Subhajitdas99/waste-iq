@@ -39,6 +39,8 @@ def get_analytics(db: Session) -> AnalyticsRead:
         requests_by_status=RequestStatusBreakdown(
             pending=request_count(PickupStatus.pending),
             accepted=request_count(PickupStatus.accepted),
+            on_the_way=request_count(PickupStatus.on_the_way),
+            collected=request_count(PickupStatus.collected),
             completed=request_count(PickupStatus.completed),
             cancelled=request_count(PickupStatus.cancelled),
         ),

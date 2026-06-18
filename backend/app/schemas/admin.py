@@ -10,6 +10,8 @@ class RoleBreakdown(BaseModel):
 class RequestStatusBreakdown(BaseModel):
     pending: int
     accepted: int
+    on_the_way: int
+    collected: int
     completed: int
     cancelled: int
 
