@@ -34,6 +34,7 @@ def get_analytics(db: Session) -> AnalyticsRead:
         users_by_role=RoleBreakdown(
             citizens=user_count(UserRole.citizen),
             collectors=user_count(UserRole.collector),
+            dealers=user_count(UserRole.dealer),
             admins=user_count(UserRole.admin),
         ),
         requests_by_status=RequestStatusBreakdown(

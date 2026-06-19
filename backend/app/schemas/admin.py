@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class RoleBreakdown(BaseModel):
     citizens: int
     collectors: int
+    dealers: int
     admins: int
 
 

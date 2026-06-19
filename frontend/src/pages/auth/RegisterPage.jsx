@@ -7,6 +7,7 @@ import { useAuth } from "../../hooks/useAuth";
 const roleOptions = [
   { value: "citizen", label: "Citizen" },
   { value: "collector", label: "Collector" },
+  { value: "dealer", label: "Dealer" },
   { value: "admin", label: "Admin" }
 ];
 

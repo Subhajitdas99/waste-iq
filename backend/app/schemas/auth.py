@@ -10,7 +10,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     phone: str = Field(min_length=8, max_length=20)
     password: str = Field(min_length=8, max_length=64)
-    role: Literal["citizen", "collector", "admin"]
+    role: Literal["citizen", "collector", "dealer", "admin"]
     admin_code: str | None = None
 
     model_config = ConfigDict(str_strip_whitespace=True)

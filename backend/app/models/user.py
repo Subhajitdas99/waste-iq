@@ -12,6 +12,7 @@ from app.models.base import Base
 class UserRole(str, enum.Enum):
     citizen = "citizen"
     collector = "collector"
+    dealer = "dealer"
     admin = "admin"
 
 
@@ -29,3 +30,4 @@ class User(Base):
     pickup_requests = relationship("PickupRequest", back_populates="citizen", cascade="all, delete-orphan")
     collector_assignments = relationship("CollectorAssignment", back_populates="collector")
     pickup_request_events = relationship("PickupRequestEvent", back_populates="actor")
+    dealer_profile = relationship("DealerProfile", back_populates="user", cascade="all, delete-orphan", uselist=False)

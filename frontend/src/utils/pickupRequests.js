@@ -23,6 +23,14 @@ export const requestStatusConfig = {
     label: "Cancelled",
     badgeClassName: "bg-rose-100 text-rose-800"
   },
+  approved: {
+    label: "Approved",
+    badgeClassName: "bg-emerald-100 text-emerald-800"
+  },
+  rejected: {
+    label: "Rejected",
+    badgeClassName: "bg-rose-100 text-rose-800"
+  },
   citizen: {
     label: "Citizen",
     badgeClassName: "bg-orange-100 text-orange-800"
@@ -30,6 +38,10 @@ export const requestStatusConfig = {
   collector: {
     label: "Collector",
     badgeClassName: "bg-lime-100 text-lime-800"
+  },
+  dealer: {
+    label: "Dealer",
+    badgeClassName: "bg-violet-100 text-violet-800"
   },
   admin: {
     label: "Admin",

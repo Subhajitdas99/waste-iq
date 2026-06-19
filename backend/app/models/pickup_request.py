@@ -50,3 +50,9 @@ class PickupRequest(Base):
         cascade="all, delete-orphan",
         order_by="PickupRequestEvent.created_at",
     )
+    inventory_lot = relationship(
+        "InventoryLot",
+        back_populates="pickup_request",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )

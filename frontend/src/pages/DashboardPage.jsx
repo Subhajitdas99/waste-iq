@@ -17,6 +17,10 @@ export default function DashboardPage() {
       title: "Lead Queue & Collections",
       subtitle: "Accept available jobs, track assignments, and close completed pickups with weight details."
     },
+    dealer: {
+      title: "Dealer Dashboard",
+      subtitle: "Complete your business profile, track verification status, and wait for admin approval before dealer marketplace work begins."
+    },
     admin: {
       title: "Marketplace Analytics",
       subtitle: "See platform activity across users, requests, and collected recyclable weight."

@@ -6,6 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 const roleTitles = {
   citizen: "Citizen Workspace",
   collector: "Collector Console",
+  dealer: "Dealer Workspace",
   admin: "Admin Command Center"
 };
 

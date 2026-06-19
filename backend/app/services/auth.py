@@ -16,8 +16,8 @@ def normalize_email(email: str) -> str:
 
 def register_user(db: Session, payload: RegisterRequest) -> User:
     role = payload.role.strip().lower()
-    if role not in {UserRole.citizen.value, UserRole.collector.value, UserRole.admin.value}:
-        raise ValueError("Role must be citizen, collector, or admin")
+    if role not in {UserRole.citizen.value, UserRole.collector.value, UserRole.dealer.value, UserRole.admin.value}:
+        raise ValueError("Role must be citizen, collector, dealer, or admin")
 
     if role == UserRole.admin.value:
         if not settings.admin_registration_code or payload.admin_code != settings.admin_registration_code:
