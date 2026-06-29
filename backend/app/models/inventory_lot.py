@@ -16,6 +16,11 @@ class InventoryLotStatus(str, enum.Enum):
     sold = "sold"
 
 
+class InventoryLotVisibility(str, enum.Enum):
+    visible = "visible"
+    hidden = "hidden"
+
+
 class InventoryLot(Base):
     __tablename__ = "inventory_lots"
     __table_args__ = (
@@ -25,6 +30,7 @@ class InventoryLot(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    lot_number: Mapped[str] = mapped_column(String(40), nullable=False, unique=True, index=True)
     pickup_request_id: Mapped[int] = mapped_column(
         ForeignKey("pickup_requests.id", ondelete="CASCADE"),
         nullable=False,
@@ -49,6 +55,15 @@ class InventoryLot(Base):
     )
     source_city: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     source_address_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quality_grade: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visibility: Mapped[InventoryLotVisibility] = mapped_column(
+        Enum(InventoryLotVisibility, native_enum=False),
+        nullable=False,
+        default=InventoryLotVisibility.visible,
+        server_default=InventoryLotVisibility.visible.value,
+        index=True,
+    )
     status: Mapped[InventoryLotStatus] = mapped_column(
         Enum(InventoryLotStatus, native_enum=False),
         nullable=False,
@@ -57,6 +72,7 @@ class InventoryLot(Base):
         index=True,
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    archive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

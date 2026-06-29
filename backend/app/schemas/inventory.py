@@ -3,6 +3,16 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class MaterialCategoryCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=80)
+    name: str = Field(min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    is_active: bool = True
+    display_order: int = Field(default=0, ge=0)
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
 class MaterialCategoryRead(BaseModel):
     id: int
     code: str
@@ -79,17 +89,35 @@ class InventoryLotCreate(BaseModel):
 
 
 class InventoryLotUpdate(BaseModel):
-    material_category_id: int | None = None
-    material_description: str | None = Field(default=None, max_length=1000)
-    status: str | None = None
+    quality_grade: str | None = Field(default=None, max_length=30)
+    admin_notes: str | None = Field(default=None, max_length=2000)
+    visibility: str | None = None
+    archive_reason: str | None = Field(default=None, max_length=1000)
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
 
 class InventoryLotArchiveRead(BaseModel):
     id: int
+    lot_number: str
     status: str
+    visibility: str
     archived_at: datetime | None
+    archive_reason: str | None
+
+
+class InventoryLotArchiveRequest(BaseModel):
+    archive_reason: str | None = Field(default=None, max_length=1000)
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class InventoryLotPageRead(BaseModel):
+    items: list["InventoryLotRead"]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 
 class InventoryLotEventRead(BaseModel):
@@ -106,6 +134,7 @@ class InventoryLotEventRead(BaseModel):
 
 class InventoryLotRead(BaseModel):
     id: int
+    lot_number: str
     pickup_request_id: int
     citizen_id: int
     citizen_name: str
@@ -120,8 +149,12 @@ class InventoryLotRead(BaseModel):
     pricing_rule_id: int | None
     source_city: str
     source_address_snapshot: str | None
+    quality_grade: str | None
+    admin_notes: str | None
+    visibility: str
     status: str
     archived_at: datetime | None
+    archive_reason: str | None
     created_by: int | None
     updated_by: int | None
     created_at: datetime

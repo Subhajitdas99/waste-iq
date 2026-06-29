@@ -1,6 +1,6 @@
 from app.models.collector_assignment import CollectorAssignment
 from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
-from app.models.inventory_lot import InventoryLot, InventoryLotStatus
+from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 from app.models.inventory_lot_event import InventoryLotEvent, InventoryLotEventType
 from app.models.material_category import MaterialCategory
 from app.models.pickup_request import PickupRequest, PickupStatus
@@ -17,6 +17,7 @@ __all__ = [
     "PricingRule",
     "InventoryLot",
     "InventoryLotStatus",
+    "InventoryLotVisibility",
     "InventoryLotEvent",
     "InventoryLotEventType",
     "PickupRequest",

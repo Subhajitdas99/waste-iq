@@ -5,12 +5,13 @@ from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.collector_assignment import CollectorAssignment
 from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
-from app.models.inventory_lot import InventoryLot, InventoryLotStatus
+from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 from app.models.inventory_lot_event import InventoryLotEvent, InventoryLotEventType
 from app.models.material_category import MaterialCategory
 from app.models.pickup_request import PickupRequest, PickupStatus
@@ -20,11 +21,14 @@ from app.schemas.inventory import (
     DealerInventoryLotPageRead,
     DealerInventoryLotRead,
     EligiblePickupRead,
+    InventoryLotArchiveRequest,
     InventoryLotArchiveRead,
     InventoryLotCreate,
     InventoryLotEventRead,
+    InventoryLotPageRead,
     InventoryLotRead,
     InventoryLotUpdate,
+    MaterialCategoryCreate,
     MaterialCategoryRead,
     PricingRuleCreate,
     PricingRuleRead,
@@ -102,6 +106,7 @@ def _serialize_pricing_rule(rule: PricingRule) -> PricingRuleRead:
 def _serialize_inventory_lot(lot: InventoryLot) -> InventoryLotRead:
     return InventoryLotRead(
         id=lot.id,
+        lot_number=lot.lot_number,
         pickup_request_id=lot.pickup_request_id,
         citizen_id=lot.citizen_id,
         citizen_name=lot.citizen.name,
@@ -116,8 +121,12 @@ def _serialize_inventory_lot(lot: InventoryLot) -> InventoryLotRead:
         pricing_rule_id=lot.pricing_rule_id,
         source_city=lot.source_city,
         source_address_snapshot=lot.source_address_snapshot,
+        quality_grade=lot.quality_grade,
+        admin_notes=lot.admin_notes,
+        visibility=lot.visibility.value,
         status=lot.status.value,
         archived_at=lot.archived_at,
+        archive_reason=lot.archive_reason,
         created_by=lot.created_by,
         updated_by=lot.updated_by,
         created_at=lot.created_at,
@@ -140,6 +149,27 @@ def _serialize_dealer_lot(lot: InventoryLot) -> DealerInventoryLotRead:
     )
 
 
+def _serialize_archive_result(lot: InventoryLot) -> InventoryLotArchiveRead:
+    return InventoryLotArchiveRead(
+        id=lot.id,
+        lot_number=lot.lot_number,
+        status=lot.status.value,
+        visibility=lot.visibility.value,
+        archived_at=lot.archived_at,
+        archive_reason=lot.archive_reason,
+    )
+
+
+def _build_lot_number_placeholder(pickup_request_id: int) -> str:
+    timestamp = _utc_now().strftime("%Y%m%d%H%M%S%f")
+    return f"PENDING-LOT-{pickup_request_id}-{timestamp}"
+
+
+def _generate_lot_number(lot_id: int) -> str:
+    year_part = _utc_now().year
+    return f"LOT-{year_part:04d}-{lot_id:06d}"
+
+
 def _serialize_inventory_event(event: InventoryLotEvent) -> InventoryLotEventRead:
     return InventoryLotEventRead(
         id=event.id,
@@ -152,6 +182,20 @@ def _serialize_inventory_event(event: InventoryLotEvent) -> InventoryLotEventRea
         metadata_json=event.metadata_json,
         created_at=event.created_at,
     )
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _parse_inventory_visibility(value: str) -> InventoryLotVisibility:
+    try:
+        return InventoryLotVisibility(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot visibility") from exc
 
 
 def _get_category_or_404(db: Session, category_id: int) -> MaterialCategory:
@@ -259,6 +303,48 @@ def _create_lot_event(
             metadata_json=metadata_json,
         )
     )
+
+
+def create_material_category(db: Session, admin: User, payload: MaterialCategoryCreate) -> MaterialCategoryRead:
+    """
+    Admin-only creation of a new material category.
+    Validates both code and name uniqueness before insert.
+    Follows the same shape as create_pricing_rule(): guard -> validate -> build -> commit -> reload -> serialize.
+    """
+    _ensure_admin(admin)
+
+    code = payload.code.strip()
+    name = payload.name.strip()
+
+    existing_code = db.execute(
+        select(MaterialCategory).where(MaterialCategory.code == code)
+    ).scalar_one_or_none()
+    if existing_code is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A material category with this code already exists",
+        )
+
+    existing_name = db.execute(
+        select(MaterialCategory).where(MaterialCategory.name == name)
+    ).scalar_one_or_none()
+    if existing_name is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A material category with this name already exists",
+        )
+
+    category = MaterialCategory(
+        code=code,
+        name=name,
+        description=payload.description,
+        is_active=payload.is_active,
+        display_order=payload.display_order,
+    )
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return _serialize_category(category)
 
 
 def list_material_categories(db: Session, *, active_only: bool = True) -> list[MaterialCategoryRead]:
@@ -460,6 +546,7 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
     total_amount = _to_decimal(Decimal(str(weight_kg)) * unit_price)
 
     lot = InventoryLot(
+        lot_number=_build_lot_number_placeholder(pickup.id),
         pickup_request_id=pickup.id,
         citizen_id=pickup.user_id,
         collector_id=pickup.assignment.collector_id,
@@ -475,52 +562,125 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
         created_by=admin.id,
         updated_by=admin.id,
     )
-    db.add(lot)
-    db.flush()
-    _create_lot_event(
-        db,
-        lot,
-        event_type=InventoryLotEventType.created,
-        actor=admin,
-        new_status=lot.status,
-        event_notes="Inventory lot created from completed pickup.",
-        metadata_json={
-            "pickup_request_id": pickup.id,
-            "pricing_rule_id": pricing_rule.id,
-            "weight_kg": weight_kg,
-        },
-    )
-    db.commit()
+    try:
+        db.add(lot)
+        db.flush()
+        lot.lot_number = _generate_lot_number(lot.id)
+        _create_lot_event(
+            db,
+            lot,
+            event_type=InventoryLotEventType.created,
+            actor=admin,
+            new_status=lot.status,
+            event_notes="Inventory lot created from completed pickup.",
+            metadata_json={
+                "pickup_request_id": pickup.id,
+                "pricing_rule_id": pricing_rule.id,
+                "weight_kg": weight_kg,
+                "lot_number": lot.lot_number,
+            },
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An inventory lot already exists for this pickup",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
     lot = _get_lot_or_404(db, lot.id)
     return _serialize_inventory_lot(lot)
-
-
 def list_inventory_lots_for_admin(
     db: Session,
     *,
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
     status_value: str | None = None,
     city: str | None = None,
     material_category_id: int | None = None,
+    visibility: str | None = None,
+    quality_grade: str | None = None,
     archived: bool | None = None,
-) -> list[InventoryLotRead]:
-    statement = _inventory_lot_query().order_by(InventoryLot.created_at.desc())
+    search: str | None = None,
+) -> InventoryLotPageRead:
+    if page < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page must be at least 1")
+    if page_size < 1 or page_size > 100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page_size must be between 1 and 100")
+
+    statement = _inventory_lot_query()
+
+    filters = []
     if status_value is not None:
         try:
-            lot_status = InventoryLotStatus(status_value)
+            filters.append(InventoryLot.status == InventoryLotStatus(status_value))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot status") from exc
-        statement = statement.where(InventoryLot.status == lot_status)
     if city is not None:
-        statement = statement.where(InventoryLot.source_city == city.strip())
+        filters.append(InventoryLot.source_city == city.strip())
     if material_category_id is not None:
-        statement = statement.where(InventoryLot.material_category_id == material_category_id)
+        filters.append(InventoryLot.material_category_id == material_category_id)
+    if visibility is not None:
+        filters.append(InventoryLot.visibility == _parse_inventory_visibility(visibility))
+    if quality_grade is not None:
+        filters.append(InventoryLot.quality_grade == quality_grade.strip())
     if archived is True:
-        statement = statement.where(InventoryLot.archived_at.is_not(None))
-    elif archived is False:
-        statement = statement.where(InventoryLot.archived_at.is_(None))
+        filters.append(InventoryLot.archived_at.is_not(None))
+    else:
+        filters.append(InventoryLot.archived_at.is_(None))
+    if search is not None and search.strip():
+        search_term = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                InventoryLot.lot_number.ilike(search_term),
+                InventoryLot.material_description.ilike(search_term),
+                InventoryLot.source_city.ilike(search_term),
+            )
+        )
 
-    lots = db.execute(statement).scalars().all()
-    return [_serialize_inventory_lot(lot) for lot in lots]
+    if filters:
+        statement = statement.where(*filters)
+
+    sortable_columns = {
+        "created_at": InventoryLot.created_at,
+        "updated_at": InventoryLot.updated_at,
+        "lot_number": InventoryLot.lot_number,
+        "weight_kg": InventoryLot.weight_kg,
+        "total_listed_amount": InventoryLot.total_listed_amount,
+    }
+    sort_column = sortable_columns.get(sort_by)
+    if sort_column is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid sort_by value")
+    if sort_order not in {"asc", "desc"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid sort_order value")
+
+    order_clause = asc(sort_column) if sort_order == "asc" else desc(sort_column)
+    count_subquery = statement.order_by(None).subquery()
+    total_items = db.scalar(select(func.count()).select_from(count_subquery)) or 0
+    total_pages = ceil(total_items / page_size) if total_items else 0
+
+    lots = (
+        db.execute(
+            statement
+            .order_by(order_clause, InventoryLot.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        .scalars()
+        .all()
+    )
+    return InventoryLotPageRead(
+        items=[_serialize_inventory_lot(lot) for lot in lots],
+        page=page,
+        page_size=page_size,
+        total=total_items,
+        total_pages=total_pages,
+    )
 
 
 def get_inventory_lot_for_admin(db: Session, lot_id: int) -> InventoryLotRead:
@@ -534,88 +694,117 @@ def update_inventory_lot(db: Session, admin: User, lot_id: int, payload: Invento
     if not update_data:
         return _serialize_inventory_lot(lot)
 
-    previous_status = lot.status
-    event_notes: list[str] = []
-    metadata: dict[str, object] = {}
+    changed_fields: dict[str, object] = {}
 
-    if "material_category_id" in update_data and update_data["material_category_id"] != lot.material_category_id:
-        if lot.archived_at is not None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archived lots cannot change material category")
-        if lot.status == InventoryLotStatus.sold:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sold lots cannot change material category")
+    if "quality_grade" in update_data:
+        normalized_quality = _normalize_optional_text(update_data["quality_grade"])
+        if normalized_quality != lot.quality_grade:
+            changed_fields["quality_grade"] = {"from": lot.quality_grade, "to": normalized_quality}
+            lot.quality_grade = normalized_quality
 
-        category = _get_category_or_404(db, update_data["material_category_id"])
-        if not category.is_active:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive material categories cannot be used for inventory")
+    if "admin_notes" in update_data:
+        normalized_notes = _normalize_optional_text(update_data["admin_notes"])
+        if normalized_notes != lot.admin_notes:
+            changed_fields["admin_notes"] = {"from": lot.admin_notes, "to": normalized_notes}
+            lot.admin_notes = normalized_notes
 
-        pricing_rule = _get_active_pricing_rule(db, category.id, lot.source_city)
-        unit_price = _to_decimal(pricing_rule.unit_price_per_kg)
-        total_amount = _to_decimal(Decimal(str(lot.weight_kg)) * unit_price)
+    if "visibility" in update_data and update_data["visibility"] is not None:
+        next_visibility = _parse_inventory_visibility(update_data["visibility"])
+        if next_visibility != lot.visibility:
+            changed_fields["visibility"] = {"from": lot.visibility.value, "to": next_visibility.value}
+            lot.visibility = next_visibility
 
-        lot.material_category_id = category.id
-        lot.pricing_rule_id = pricing_rule.id
-        lot.unit_price_per_kg_snapshot = unit_price
-        lot.total_listed_amount = total_amount
-        event_notes.append("Material category updated and pricing snapshot recalculated.")
-        metadata["material_category_id"] = category.id
-        metadata["pricing_rule_id"] = pricing_rule.id
+    if "archive_reason" in update_data:
+        normalized_reason = _normalize_optional_text(update_data["archive_reason"])
+        if normalized_reason != lot.archive_reason:
+            changed_fields["archive_reason"] = {"from": lot.archive_reason, "to": normalized_reason}
+            lot.archive_reason = normalized_reason
 
-    if "material_description" in update_data:
-        lot.material_description = update_data["material_description"]
-        event_notes.append("Material description updated.")
+    if not changed_fields:
+        return _serialize_inventory_lot(lot)
 
-    if "status" in update_data:
-        try:
-            lot.status = InventoryLotStatus(update_data["status"])
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot status") from exc
-        if lot.status != previous_status:
-            event_notes.append(f"Status changed from {previous_status.value} to {lot.status.value}.")
-
-    lot.updated_by = admin.id
-
-    event_type = InventoryLotEventType.updated
-    next_status: InventoryLotStatus | None = None
-    previous_status_for_event: InventoryLotStatus | None = None
-    if lot.status != previous_status:
-        event_type = InventoryLotEventType.status_changed
-        previous_status_for_event = previous_status
-        next_status = lot.status
-
-    _create_lot_event(
-        db,
-        lot,
-        event_type=event_type,
-        actor=admin,
-        previous_status=previous_status_for_event,
-        new_status=next_status,
-        event_notes=" ".join(event_notes) if event_notes else "Inventory lot updated.",
-        metadata_json=metadata or None,
-    )
-    db.commit()
-    lot = _get_lot_or_404(db, lot.id)
-    return _serialize_inventory_lot(lot)
-
-
-def archive_inventory_lot(db: Session, admin: User, lot_id: int) -> InventoryLotArchiveRead:
-    _ensure_admin(admin)
-    lot = _get_lot_or_404(db, lot_id)
-    if lot.archived_at is None:
-        lot.archived_at = _utc_now()
+    try:
         lot.updated_by = admin.id
         _create_lot_event(
             db,
             lot,
-            event_type=InventoryLotEventType.archived,
+            event_type=InventoryLotEventType.updated,
             actor=admin,
             previous_status=lot.status,
             new_status=lot.status,
-            event_notes="Inventory lot archived.",
+            event_notes="Admin inventory fields updated.",
+            metadata_json={"changed_fields": changed_fields},
         )
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    lot = _get_lot_or_404(db, lot.id)
+    return _serialize_inventory_lot(lot)
+
+
+def archive_inventory_lot(
+    db: Session,
+    admin: User,
+    lot_id: int,
+    payload: InventoryLotArchiveRequest,
+) -> InventoryLotArchiveRead:
+    _ensure_admin(admin)
+    lot = _get_lot_or_404(db, lot_id)
+    if lot.archived_at is None:
+        try:
+            archive_reason = _normalize_optional_text(payload.archive_reason)
+            lot.archived_at = _utc_now()
+            lot.archive_reason = archive_reason
+            lot.visibility = InventoryLotVisibility.hidden
+            lot.updated_by = admin.id
+            _create_lot_event(
+                db,
+                lot,
+                event_type=InventoryLotEventType.archived,
+                actor=admin,
+                previous_status=lot.status,
+                new_status=lot.status,
+                event_notes="Inventory lot archived.",
+                metadata_json={"archive_reason": archive_reason},
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         lot = _get_lot_or_404(db, lot.id)
 
-    return InventoryLotArchiveRead(id=lot.id, status=lot.status.value, archived_at=lot.archived_at)
+    return _serialize_archive_result(lot)
+
+
+def restore_inventory_lot(db: Session, admin: User, lot_id: int) -> InventoryLotArchiveRead:
+    _ensure_admin(admin)
+    lot = _get_lot_or_404(db, lot_id)
+    if lot.archived_at is not None:
+        try:
+            previous_archive_reason = lot.archive_reason
+            lot.archived_at = None
+            lot.archive_reason = None
+            lot.visibility = InventoryLotVisibility.visible
+            lot.updated_by = admin.id
+            _create_lot_event(
+                db,
+                lot,
+                event_type=InventoryLotEventType.restored,
+                actor=admin,
+                previous_status=lot.status,
+                new_status=lot.status,
+                event_notes="Inventory lot restored.",
+                metadata_json={"previous_archive_reason": previous_archive_reason},
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        lot = _get_lot_or_404(db, lot.id)
+
+    return _serialize_archive_result(lot)
 
 
 def list_inventory_lot_events(db: Session, lot_id: int) -> list[InventoryLotEventRead]:
