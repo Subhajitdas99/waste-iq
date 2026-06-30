@@ -16,6 +16,8 @@ class InventoryLotEventType(str, enum.Enum):
     status_changed = "status_changed"
     archived = "archived"
     restored = "restored"
+    reserved = "reserved"
+    reservation_expired = "reservation_expired"
 
 
 class InventoryLotEvent(Base):

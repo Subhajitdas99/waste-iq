@@ -5,7 +5,7 @@ from app.core.dependencies import get_db, require_roles
 from app.models.user import User
 from app.schemas.inventory import (
     DealerInventoryLotPageRead,
-    DealerInventoryLotRead,
+    DealerMarketplaceLotDetailRead,
     EligiblePickupRead,
     InventoryLotArchiveRequest,
     InventoryLotArchiveRead,
@@ -35,6 +35,7 @@ from app.services.inventory_marketplace import (
     list_inventory_lots_for_dealer,
     list_material_categories,
     list_pricing_rules,
+    reserve_inventory_lot_for_dealer,
     restore_inventory_lot,
     update_inventory_lot,
     update_pricing_rule,
@@ -247,10 +248,19 @@ def dealer_list_inventory_lots(
     )
 
 
-@dealer_router.get("/inventory-lots/{lot_id}", response_model=DealerInventoryLotRead)
+@dealer_router.get("/inventory-lots/{lot_id}", response_model=DealerMarketplaceLotDetailRead)
 def dealer_get_inventory_lot(
     lot_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("dealer")),
-) -> DealerInventoryLotRead:
+) -> DealerMarketplaceLotDetailRead:
     return get_inventory_lot_for_dealer(db, current_user, lot_id)
+
+
+@dealer_router.post("/inventory-lots/{lot_id}/reserve", response_model=DealerMarketplaceLotDetailRead)
+def dealer_reserve_inventory_lot(
+    lot_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("dealer")),
+) -> DealerMarketplaceLotDetailRead:
+    return reserve_inventory_lot_for_dealer(db, current_user, lot_id)

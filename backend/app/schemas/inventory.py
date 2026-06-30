@@ -176,6 +176,23 @@ class DealerInventoryLotRead(BaseModel):
     created_at: datetime
 
 
+class DealerMarketplaceLotDetailRead(BaseModel):
+    id: int
+    lot_number: str
+    material_category_id: int
+    material_category_name: str
+    material_description: str | None
+    weight_kg: float
+    quality_grade: str | None
+    source_city: str
+    total_listed_amount: float
+    currency_code: str | None
+    status: str
+    reserved_at: datetime | None
+    reservation_expires_at: datetime | None
+    created_at: datetime
+
+
 class DealerInventoryLotPageRead(BaseModel):
     items: list[DealerInventoryLotRead]
     page: int

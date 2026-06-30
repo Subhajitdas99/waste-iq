@@ -73,6 +73,13 @@ class InventoryLot(Base):
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     archive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reserved_by_dealer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reservation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -88,6 +95,7 @@ class InventoryLot(Base):
     collector = relationship("User", foreign_keys=[collector_id])
     material_category = relationship("MaterialCategory", back_populates="inventory_lots")
     pricing_rule = relationship("PricingRule", back_populates="inventory_lots")
+    reserved_by_dealer = relationship("User", foreign_keys=[reserved_by_dealer_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
     updated_by_user = relationship("User", foreign_keys=[updated_by])
     events = relationship(

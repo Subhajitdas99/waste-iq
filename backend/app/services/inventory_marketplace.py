@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 
 from fastapi import HTTPException, status
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.collector_assignment import CollectorAssignment
 from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
@@ -20,6 +21,7 @@ from app.models.user import User, UserRole
 from app.schemas.inventory import (
     DealerInventoryLotPageRead,
     DealerInventoryLotRead,
+    DealerMarketplaceLotDetailRead,
     EligiblePickupRead,
     InventoryLotArchiveRequest,
     InventoryLotArchiveRead,
@@ -36,6 +38,8 @@ from app.schemas.inventory import (
 )
 
 MONEY_PLACES = Decimal("0.01")
+RESERVATION_TTL_HOURS = 24
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -56,6 +60,12 @@ def _money_to_float(value: Decimal | None) -> float | None:
 
 def _normalize_city(value: str) -> str:
     return value.strip()
+
+
+def _normalize_city_for_pricing_lookup(value: str | None) -> str:
+    if not value:
+        return ""
+    return value.split("-")[0].strip().lower()
 
 
 def _extract_city_from_address(address: str) -> str:
@@ -149,6 +159,25 @@ def _serialize_dealer_lot(lot: InventoryLot) -> DealerInventoryLotRead:
     )
 
 
+def _serialize_dealer_lot_detail(lot: InventoryLot) -> DealerMarketplaceLotDetailRead:
+    return DealerMarketplaceLotDetailRead(
+        id=lot.id,
+        lot_number=lot.lot_number,
+        material_category_id=lot.material_category_id,
+        material_category_name=lot.material_category.name,
+        material_description=lot.material_description,
+        weight_kg=round(float(lot.weight_kg), 2),
+        quality_grade=lot.quality_grade,
+        source_city=lot.source_city,
+        total_listed_amount=_money_to_float(lot.total_listed_amount) or 0.0,
+        currency_code=lot.pricing_rule.currency_code if lot.pricing_rule is not None else None,
+        status=lot.status.value,
+        reserved_at=lot.reserved_at,
+        reservation_expires_at=lot.reservation_expires_at,
+        created_at=lot.created_at,
+    )
+
+
 def _serialize_archive_result(lot: InventoryLot) -> InventoryLotArchiveRead:
     return InventoryLotArchiveRead(
         id=lot.id,
@@ -235,12 +264,13 @@ def _ensure_approved_dealer(db: Session, dealer: User) -> None:
 
 def _get_active_pricing_rule(db: Session, material_category_id: int, city: str) -> PricingRule:
     now = _utc_now()
+    normalized_city = _normalize_city_for_pricing_lookup(city)
     rules = (
         db.execute(
             _pricing_rule_query()
             .where(
                 PricingRule.material_category_id == material_category_id,
-                PricingRule.city == city,
+                func.lower(func.trim(PricingRule.city)) == normalized_city,
                 PricingRule.is_active.is_(True),
                 PricingRule.effective_from <= now,
                 (PricingRule.effective_to.is_(None) | (PricingRule.effective_to >= now)),
@@ -251,6 +281,22 @@ def _get_active_pricing_rule(db: Session, material_category_id: int, city: str) 
         .all()
     )
     if not rules:
+        logger.warning(
+            (
+                "Active pricing rule lookup failed: material_category_id=%s "
+                "original_city=%r normalized_city=%r current_timestamp=%s"
+            ),
+            material_category_id,
+            city,
+            normalized_city,
+            now.isoformat(),
+            extra={
+                "material_category_id": material_category_id,
+                "original_city": city,
+                "normalized_city": normalized_city,
+                "current_timestamp": now.isoformat(),
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No active pricing rule exists for the selected material category and city",
@@ -812,6 +858,62 @@ def list_inventory_lot_events(db: Session, lot_id: int) -> list[InventoryLotEven
     return [_serialize_inventory_event(event) for event in lot.events]
 
 
+def release_expired_reservations(db: Session) -> int:
+    now = _utc_now()
+    expired_lots = (
+        db.execute(
+            select(InventoryLot).where(
+                InventoryLot.status == InventoryLotStatus.reserved,
+                InventoryLot.reservation_expires_at.is_not(None),
+                InventoryLot.reservation_expires_at < now,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not expired_lots:
+        return 0
+
+    try:
+        for lot in expired_lots:
+            previous_dealer_id = lot.reserved_by_dealer_id
+            previous_reserved_at = lot.reserved_at
+            previous_expires_at = lot.reservation_expires_at
+            lot.status = InventoryLotStatus.available
+            lot.reserved_by_dealer_id = None
+            lot.reserved_at = None
+            lot.reservation_expires_at = None
+            _create_lot_event(
+                db,
+                lot,
+                event_type=InventoryLotEventType.reservation_expired,
+                actor=None,
+                previous_status=InventoryLotStatus.reserved,
+                new_status=InventoryLotStatus.available,
+                event_notes="Dealer reservation expired automatically.",
+                metadata_json={
+                    "reserved_by_dealer_id": previous_dealer_id,
+                    "reserved_at": previous_reserved_at.isoformat() if previous_reserved_at is not None else None,
+                    "reservation_expires_at": previous_expires_at.isoformat()
+                    if previous_expires_at is not None
+                    else None,
+                },
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return len(expired_lots)
+
+
+def _dealer_lot_detail_statement():
+    return select(InventoryLot).options(
+        joinedload(InventoryLot.material_category),
+        joinedload(InventoryLot.pricing_rule),
+    )
+
+
 def list_inventory_lots_for_dealer(
     db: Session,
     *,
@@ -822,6 +924,7 @@ def list_inventory_lots_for_dealer(
     page_size: int = 20,
 ) -> DealerInventoryLotPageRead:
     _ensure_approved_dealer(db, dealer)
+    release_expired_reservations(db)
     if page < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page must be at least 1")
     if page_size < 1 or page_size > 50:
@@ -856,15 +959,71 @@ def list_inventory_lots_for_dealer(
     )
 
 
-def get_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> DealerInventoryLotRead:
+def get_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> DealerMarketplaceLotDetailRead:
     _ensure_approved_dealer(db, dealer)
+    release_expired_reservations(db)
     lot = db.execute(
-        _inventory_lot_query().where(
+        _dealer_lot_detail_statement()
+        .where(
             InventoryLot.id == lot_id,
+            InventoryLot.visibility == InventoryLotVisibility.visible,
             InventoryLot.status == InventoryLotStatus.available,
             InventoryLot.archived_at.is_(None),
         )
     ).scalar_one_or_none()
     if lot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory lot not found")
-    return _serialize_dealer_lot(lot)
+    return _serialize_dealer_lot_detail(lot)
+
+
+def reserve_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> DealerMarketplaceLotDetailRead:
+    _ensure_approved_dealer(db, dealer)
+    release_expired_reservations(db)
+    now = _utc_now()
+    expires_at = now + timedelta(hours=RESERVATION_TTL_HOURS)
+
+    try:
+        lot = db.execute(
+            _dealer_lot_detail_statement()
+            .where(InventoryLot.id == lot_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+
+        if lot is None or lot.visibility != InventoryLotVisibility.visible or lot.archived_at is not None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory lot not found")
+        if lot.status == InventoryLotStatus.reserved:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is already reserved")
+        if lot.status == InventoryLotStatus.sold:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is already sold")
+        if lot.status != InventoryLotStatus.available:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is not available")
+
+        lot.status = InventoryLotStatus.reserved
+        lot.reserved_by_dealer_id = dealer.id
+        lot.reserved_at = now
+        lot.reservation_expires_at = expires_at
+        lot.updated_by = dealer.id
+        _create_lot_event(
+            db,
+            lot,
+            event_type=InventoryLotEventType.reserved,
+            actor=dealer,
+            previous_status=InventoryLotStatus.available,
+            new_status=InventoryLotStatus.reserved,
+            event_notes="Inventory lot reserved by approved dealer.",
+            metadata_json={
+                "reserved_by_dealer_id": dealer.id,
+                "reserved_at": now.isoformat(),
+                "reservation_expires_at": expires_at.isoformat(),
+            },
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+    lot = db.execute(_dealer_lot_detail_statement().where(InventoryLot.id == lot_id)).scalar_one()
+    return _serialize_dealer_lot_detail(lot)
