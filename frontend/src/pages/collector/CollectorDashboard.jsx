@@ -1,15 +1,23 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MapPin, Navigation, Package, Scale, User, Weight } from "lucide-react";
 
-import api, { getApiError } from "../../api/client";
+import { getApiError } from "../../api/errors";
 import StatusBadge from "../../components/StatusBadge";
+import {
+  useAcceptPickup,
+  useCollectPickup,
+  useCollectorSummary,
+  useCompletePickup,
+  usePickupRequests,
+  useStartPickup
+} from "../../hooks/usePickupRequests";
 
 // ─── Action config per status ────────────────────────────────────────────
 // Maps current request status -> the next action this collector can take
 const NEXT_ACTION = {
-  pending:    { label: "Accept request",   endpoint: (id) => `/collector/accept/${id}`,  method: "post" },
-  accepted:   { label: "Start pickup",     endpoint: (id) => `/collector/start/${id}`,   method: "post" },
-  on_the_way: { label: "Mark collected",   endpoint: (id) => `/collector/collect/${id}`, method: "post" },
+  pending:    { label: "Accept request",   action: "accept" },
+  accepted:   { label: "Start pickup",     action: "start" },
+  on_the_way: { label: "Mark collected",   action: "collect" },
   // "collected" needs the weight form, handled separately
 };
 
@@ -37,7 +45,7 @@ function JobCard({ request, onAction, busy }) {
   function submitWeight() {
     const w = Number(weight);
     if (!w || w <= 0) return;
-    onAction(request.id, "/collector/complete/" + request.id, "post", { weight_kg: w });
+    onAction(request.id, "complete", { weight_kg: w });
     setShowWeightForm(false);
     setWeight("");
   }
@@ -99,7 +107,7 @@ function JobCard({ request, onAction, busy }) {
 
       {action && (
         <button
-          onClick={() => onAction(request.id, action.endpoint(request.id), action.method)}
+          onClick={() => onAction(request.id, action.action)}
           disabled={busy}
           className="w-full rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-sand transition hover:bg-leaf disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
         >
@@ -112,40 +120,45 @@ function JobCard({ request, onAction, busy }) {
 }
 
 export default function CollectorDashboard() {
-  const [requests, setRequests] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [tab, setTab] = useState("open"); // "open" | "mine"
+  const requestsQuery = usePickupRequests();
+  const summaryQuery = useCollectorSummary();
+  const acceptPickup = useAcceptPickup();
+  const startPickup = useStartPickup();
+  const collectPickup = useCollectPickup();
+  const completePickup = useCompletePickup();
+
+  const requests = requestsQuery.data || [];
+  const summary = summaryQuery.data;
+  const loading = requestsQuery.isFetching || summaryQuery.isFetching;
+  const loadError = requestsQuery.error || summaryQuery.error;
+  const actionError = acceptPickup.error || startPickup.error || collectPickup.error || completePickup.error;
+  const error = actionError
+    ? getApiError(actionError, "Action failed. Please try again.")
+    : loadError
+      ? getApiError(loadError, "Unable to load collector data.")
+      : "";
 
   async function loadAll() {
-    setLoading(true);
-    try {
-      const [reqRes, summaryRes] = await Promise.all([
-        api.get("/pickup-requests"),
-        api.get("/collector/summary"),
-      ]);
-      setRequests(reqRes.data);
-      setSummary(summaryRes.data);
-      setError("");
-    } catch (err) {
-      setError(getApiError(err, "Unable to load collector data."));
-    } finally {
-      setLoading(false);
-    }
+    await Promise.all([requestsQuery.refetch(), summaryQuery.refetch()]);
   }
 
-  useEffect(() => { loadAll(); }, []);
-
-  async function handleAction(requestId, endpoint, method, payload) {
+  async function handleAction(requestId, action, payload) {
     setBusyId(requestId);
-    setError("");
     try {
-      await api[method](endpoint, payload);
+      if (action === "accept") {
+        await acceptPickup.mutateAsync(requestId);
+      } else if (action === "start") {
+        await startPickup.mutateAsync(requestId);
+      } else if (action === "collect") {
+        await collectPickup.mutateAsync(requestId);
+      } else {
+        await completePickup.mutateAsync({ requestId, ...payload });
+      }
       await loadAll();
-    } catch (err) {
-      setError(getApiError(err, "Action failed. Please try again."));
+    } catch {
+      // Error state is read from the active pickup mutation.
     } finally {
       setBusyId(null);
     }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { getApiError } from "../../api/client";
+import { getApiError } from "../../api/errors";
 import { useAuth } from "../../hooks/useAuth";
 
 const roleOptions = [

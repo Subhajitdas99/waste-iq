@@ -1,203 +1,127 @@
-import { ArrowRight, Clock3, PackageSearch, Truck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { getApiError } from "../../api/client";
-import { getCitizenDashboardSummary, listPickupRequests } from "../../api/pickupRequests";
-import CitizenQuickCreateForm from "../../components/citizen/CitizenQuickCreateForm";
-import MetricCard from "../../components/MetricCard";
-import StatusBadge from "../../components/StatusBadge";
-import { formatDateTime } from "../../utils/pickupRequests";
+import CreatePickupForm from "../../features/citizen/CreatePickupForm";
+import PickupList from "../../features/citizen/PickupList";
+import PickupTimeline from "../../features/citizen/PickupTimeline";
+import SummaryCards from "../../features/citizen/SummaryCards";
+import { Skeleton } from "../../components/ui/skeleton";
+import { usePickupRequests } from "../../hooks/usePickupRequests";
 
-function buildSummaryFromRequests(requests) {
-  return {
-    total_requests: requests.length,
-    pending_requests: requests.filter((request) => request.status === "pending").length,
-    accepted_requests: requests.filter((request) => request.status === "accepted").length,
-    completed_requests: requests.filter((request) => request.status === "completed").length
-  };
+function TimelinePanel() {
+  const { data: requests = [], error, isError, isPending } = usePickupRequests();
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const activeRequestId = selectedRequestId || requests[0]?.id;
+
+  return (
+    <section className="glass-panel rounded-[2rem] border border-white/60 p-6 shadow-glow">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">Pickup Timeline</p>
+          <h2 className="mt-2 font-display text-3xl text-ink">Review request journey</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-7 text-ink/70">
+            Select a pickup request and open the timeline to inspect every transition from request creation to completion.
+          </p>
+        </div>
+
+        {activeRequestId ? <PickupTimeline requestId={activeRequestId} triggerLabel="Open Timeline" /> : null}
+      </div>
+
+      {isPending ? (
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-16 rounded-2xl bg-white/60" />
+          ))}
+        </div>
+      ) : null}
+
+      {isError ? (
+        <div className="mt-6 rounded-3xl border border-coral/30 bg-coral/10 p-5" role="alert">
+          <p className="font-display text-2xl text-coral">{!error?.response ? "No internet" : "Timeline unavailable"}</p>
+          <p className="mt-2 text-sm leading-6 text-ink/70">
+            {!error?.response
+              ? "No internet connection. Reconnect to choose a pickup timeline."
+              : "Unable to load your pickup requests for the timeline selector."}
+          </p>
+        </div>
+      ) : null}
+
+      {!isPending && !isError && requests.length > 0 ? (
+        <div className="mt-6 flex gap-3 overflow-x-auto pb-1">
+          {requests.map((request) => (
+            <button
+              key={request.id}
+              type="button"
+              onClick={() => setSelectedRequestId(request.id)}
+              className={`min-w-[13rem] rounded-2xl px-4 py-3 text-left text-sm transition ${
+                activeRequestId === request.id
+                  ? "bg-ink text-sand shadow-glow"
+                  : "border border-ink/10 bg-white/70 text-ink hover:border-ink/20"
+              }`}
+            >
+              <span className="block text-xs font-semibold uppercase tracking-[0.25em] opacity-70">
+                Request #{request.id}
+              </span>
+              <span className="mt-2 block truncate font-semibold">{request.waste_type}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {!isPending && !isError && requests.length === 0 ? (
+        <div className="mt-6 rounded-3xl bg-white/70 p-5">
+          <p className="font-display text-2xl text-ink">No timeline yet</p>
+          <p className="mt-2 text-sm text-ink/70">
+            Create a pickup request first, then its timeline will appear here.
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 export default function CitizenDashboard() {
-  const [summary, setSummary] = useState(null);
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  async function loadDashboard() {
-    setLoading(true);
-    const [summaryResult, requestsResult] = await Promise.allSettled([
-      getCitizenDashboardSummary(),
-      listPickupRequests()
-    ]);
-
-    const nextRequests = requestsResult.status === "fulfilled" ? requestsResult.value : [];
-    const nextSummary =
-      summaryResult.status === "fulfilled"
-        ? summaryResult.value
-        : requestsResult.status === "fulfilled"
-          ? buildSummaryFromRequests(nextRequests)
-          : null;
-
-    setRequests(nextRequests);
-    setSummary(nextSummary);
-
-    if (summaryResult.status === "fulfilled" || requestsResult.status === "fulfilled") {
-      setError("");
-    } else {
-      const summaryError = summaryResult.reason ? getApiError(summaryResult.reason, "") : "";
-      const requestsError = requestsResult.reason ? getApiError(requestsResult.reason, "") : "";
-      setError(summaryError || requestsError || "Unable to load your citizen dashboard.");
-    }
-
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  const recentRequests = requests.slice(0, 3);
-
   return (
     <div className="space-y-8">
-      {error ? <p className="rounded-2xl bg-rose-100 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+      <SummaryCards />
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="glass-panel overflow-hidden rounded-[2rem] border border-white/60 shadow-glow">
-          <div className="bg-gradient-to-br from-ink via-leaf to-moss px-6 py-7 text-sand sm:px-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sand/70">Welcome Back</p>
-            <h2 className="mt-3 max-w-2xl font-display text-4xl leading-tight">
-              Your neighborhood pickup activity is now easier to track, manage, and close.
-            </h2>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-sand/75">
-              Use this space to raise a new request, review live statuses, and check which collector has been assigned.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                to="/dashboard/requests"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-ink transition hover:bg-sand"
-              >
-                View all requests
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <button
-                type="button"
-                onClick={loadDashboard}
-                className="rounded-2xl border border-white/20 bg-white/10 px-5 py-3 font-semibold text-sand transition hover:bg-white/15"
-              >
-                Refresh dashboard
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 bg-white/25 px-6 py-6 sm:grid-cols-3 sm:px-8">
-            <div className="rounded-3xl bg-white/75 p-4">
-              <Clock3 className="h-6 w-6 text-ember" />
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.3em] text-ink/55">Live queue</p>
-              <p className="mt-2 text-sm text-ink/70">Pending requests stay editable and can still be cancelled.</p>
-            </div>
-            <div className="rounded-3xl bg-white/75 p-4">
-              <Truck className="h-6 w-6 text-leaf" />
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.3em] text-ink/55">Collector sync</p>
-              <p className="mt-2 text-sm text-ink/70">Assigned collectors appear in your request feed as soon as a job is accepted.</p>
-            </div>
-            <div className="rounded-3xl bg-white/75 p-4">
-              <PackageSearch className="h-6 w-6 text-moss" />
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.3em] text-ink/55">Timeline view</p>
-              <p className="mt-2 text-sm text-ink/70">Open any request to inspect every transition from creation to completion.</p>
-            </div>
-          </div>
-        </div>
-
-        <section className="glass-panel rounded-[2rem] border border-white/60 p-6 shadow-glow">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">Create Pickup</p>
-          <h2 className="mt-3 font-display text-3xl text-ink">Schedule a new waste pickup</h2>
-          <p className="mt-2 text-sm text-ink/70">
-            Add the waste type, address, and optional photo so collectors have enough context before accepting.
+      <section className="glass-panel overflow-hidden rounded-[2rem] border border-white/60 shadow-glow">
+        <div className="bg-gradient-to-br from-ink via-leaf to-moss px-6 py-7 text-sand sm:px-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sand/70">Welcome Back</p>
+          <h2 className="mt-3 max-w-2xl font-display text-4xl leading-tight">
+            Your neighborhood pickup activity is now easier to track, manage, and close.
+          </h2>
+          <p className="mt-4 max-w-2xl text-sm leading-7 text-sand/75">
+            Use this space to raise a new request, review live statuses, and check which collector has been assigned.
           </p>
-          <div className="mt-6">
-            <CitizenQuickCreateForm onCreated={loadDashboard} />
-          </div>
-        </section>
-      </section>
-
-      {loading && !summary ? <p className="text-sm text-ink/70">Loading dashboard metrics...</p> : null}
-
-      {summary ? (
-        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Total Requests" value={summary.total_requests} hint="All pickup requests you have created" />
-          <MetricCard label="Pending Requests" value={summary.pending_requests} hint="Still waiting for a collector to accept" />
-          <MetricCard label="Accepted Requests" value={summary.accepted_requests} hint="Accepted by a collector and preparing for pickup" />
-          <MetricCard label="Completed Requests" value={summary.completed_requests} hint="Fully closed pickups with collection confirmed" />
-        </section>
-      ) : null}
-
-      <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="glass-panel rounded-[2rem] border border-white/60 p-6 shadow-glow">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">Recent Requests</p>
-              <h2 className="mt-2 font-display text-3xl text-ink">Latest pickup activity</h2>
-            </div>
+          <div className="mt-6 flex flex-wrap gap-3">
             <Link
               to="/dashboard/requests"
-              className="rounded-2xl border border-ink/10 bg-white/70 px-4 py-3 text-sm font-semibold text-ink transition hover:border-ink/20"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-ink transition hover:bg-sand"
             >
-              Open list
+              View all requests
+              <ArrowRight className="h-4 w-4" />
             </Link>
-          </div>
-
-          <div className="mt-6 space-y-4">
-            {recentRequests.map((request) => (
-              <Link
-                key={request.id}
-                to={`/dashboard/requests/${request.id}`}
-                className="block rounded-3xl bg-white/70 p-5 transition hover:-translate-y-0.5 hover:bg-white/80"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-ink/45">Request #{request.id}</p>
-                    <p className="mt-2 font-semibold text-ink">{request.waste_type}</p>
-                  </div>
-                  <StatusBadge status={request.status} />
-                </div>
-                <p className="mt-3 text-sm text-ink/70">{request.address}</p>
-                <div className="mt-4 flex flex-wrap gap-6 text-sm text-ink/60">
-                  <span>Created: {formatDateTime(request.created_at)}</span>
-                  <span>Collector: {request.assigned_collector_name || "Not assigned yet"}</span>
-                </div>
-              </Link>
-            ))}
-
-            {!loading && recentRequests.length === 0 ? (
-              <div className="rounded-3xl bg-white/70 p-6">
-                <p className="font-display text-2xl text-ink">No requests yet</p>
-                <p className="mt-2 text-sm text-ink/70">
-                  Create your first pickup request from the form above and it will appear here immediately.
-                </p>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="glass-panel rounded-[2rem] border border-white/60 p-6 shadow-glow">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">What You Can Do</p>
-          <h2 className="mt-2 font-display text-3xl text-ink">Citizen workflow</h2>
-          <div className="mt-6 space-y-4">
-            {[
-              "Create a request with waste details, photo, and exact address.",
-              "Track each status from pending through collection and completion.",
-              "Open the details page to review the assigned collector and timeline.",
-              "Cancel only while the request is still pending."
-            ].map((item) => (
-              <div key={item} className="rounded-3xl bg-white/70 p-4 text-sm leading-7 text-ink/75">
-                {item}
-              </div>
-            ))}
           </div>
         </div>
       </section>
+
+      <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">My Requests</p>
+            <h2 className="mt-2 font-display text-3xl text-ink">Pickup request board</h2>
+          </div>
+          <PickupList />
+        </div>
+
+        <div>
+          <CreatePickupForm />
+        </div>
+      </section>
+
+      <TimelinePanel />
     </div>
   );
 }

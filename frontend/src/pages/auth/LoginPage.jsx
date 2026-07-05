@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { getApiError } from "../../api/client";
+import { getApiError } from "../../api/errors";
 import { useAuth } from "../../hooks/useAuth";
 
 export default function LoginPage() {

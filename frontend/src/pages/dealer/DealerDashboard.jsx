@@ -1,7 +1,7 @@
 import { ClipboardCheck, FileBadge2, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { getApiError } from "../../api/client";
+import { getApiError } from "../../api/errors";
 import { createDealerProfile, getDealerProfile, updateDealerProfile } from "../../api/dealers";
 import MetricCard from "../../components/MetricCard";
 import StatusBadge from "../../components/StatusBadge";

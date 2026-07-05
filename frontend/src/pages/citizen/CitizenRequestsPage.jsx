@@ -1,46 +1,41 @@
 import { LayoutGrid, RefreshCw, Rows3 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Navigate } from "react-router-dom";
 
-import { getApiError } from "../../api/client";
-import { cancelPickupRequest, listPickupRequests } from "../../api/pickupRequests";
+import { getApiError } from "../../api/errors";
 import CitizenRequestsList from "../../components/citizen/CitizenRequestsList";
+import { getErrorToast, useToast } from "../../components/ui/toast";
 import { useAuth } from "../../hooks/useAuth";
+import { useCancelPickup, usePickupRequests } from "../../hooks/usePickupRequests";
 
 export default function CitizenRequestsPage() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState([]);
+  const { toast } = useToast();
   const [viewMode, setViewMode] = useState("table");
-  const [loading, setLoading] = useState(true);
-  const [busyRequestId, setBusyRequestId] = useState(null);
-  const [error, setError] = useState("");
-
-  async function loadRequests() {
-    setLoading(true);
-    try {
-      const data = await listPickupRequests();
-      setRequests(data);
-      setError("");
-    } catch (err) {
-      setError(getApiError(err, "Unable to load your pickup requests."));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadRequests();
-  }, []);
+  const {
+    data: requests = [],
+    error: requestsError,
+    isLoading: loading,
+    refetch: loadRequests
+  } = usePickupRequests();
+  const cancelPickup = useCancelPickup();
+  const busyRequestId = cancelPickup.isPending ? cancelPickup.variables : null;
+  const error = requestsError
+    ? getApiError(requestsError, "Unable to load your pickup requests.")
+    : cancelPickup.error
+      ? getApiError(cancelPickup.error, "Unable to cancel this pickup request.")
+      : "";
 
   async function handleCancel(requestId) {
-    setBusyRequestId(requestId);
     try {
-      await cancelPickupRequest(requestId);
-      await loadRequests();
+      await cancelPickup.mutateAsync(requestId);
+      toast({
+        title: "Pickup cancelled",
+        description: "Your pickup request has been cancelled.",
+        variant: "success"
+      });
     } catch (err) {
-      setError(getApiError(err, "Unable to cancel this pickup request."));
-    } finally {
-      setBusyRequestId(null);
+      toast(getErrorToast(err, "Unable to cancel this pickup request."));
     }
   }
 
@@ -84,7 +79,7 @@ export default function CitizenRequestsPage() {
             </button>
             <button
               type="button"
-              onClick={loadRequests}
+              onClick={() => loadRequests()}
               className="inline-flex items-center gap-2 rounded-2xl border border-ink/10 bg-white/70 px-4 py-3 text-sm font-semibold text-ink transition hover:border-ink/20"
             >
               <RefreshCw className="h-4 w-4" />

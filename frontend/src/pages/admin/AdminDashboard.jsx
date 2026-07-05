@@ -1,53 +1,59 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import api, { getApiError } from "../../api/client";
-import { approveDealer, listAdminDealers, rejectDealer } from "../../api/dealers";
+import { getApiError } from "../../api/errors";
 import MetricCard from "../../components/MetricCard";
 import StatusBadge from "../../components/StatusBadge";
+import {
+  useAdminAnalytics,
+  useAdminDealers,
+  useAdminUsers,
+  useApproveDealer,
+  usePickupRequests,
+  useRejectDealer
+} from "../../hooks/usePickupRequests";
 import { formatDateTime } from "../../utils/pickupRequests";
 
 export default function AdminDashboard() {
-  const [analytics, setAnalytics] = useState(null);
-  const [dealers, setDealers] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [error, setError] = useState("");
   const [busyDealerId, setBusyDealerId] = useState(null);
+  const analyticsQuery = useAdminAnalytics();
+  const usersQuery = useAdminUsers();
+  const dealersQuery = useAdminDealers();
+  const requestsQuery = usePickupRequests();
+  const approveDealer = useApproveDealer();
+  const rejectDealer = useRejectDealer();
+
+  const analytics = analyticsQuery.data;
+  const dealers = dealersQuery.data || [];
+  const users = usersQuery.data || [];
+  const requests = requestsQuery.data || [];
+  const loadError = analyticsQuery.error || usersQuery.error || requestsQuery.error || dealersQuery.error;
+  const dealerActionError = approveDealer.error || rejectDealer.error;
+  const error = dealerActionError
+    ? getApiError(dealerActionError, "Unable to update dealer verification status.")
+    : loadError
+      ? getApiError(loadError, "Unable to load admin dashboard.")
+      : "";
 
   async function loadDashboard() {
-    try {
-      const [analyticsResponse, usersResponse, requestsResponse, dealersResponse] = await Promise.all([
-        api.get("/admin/analytics"),
-        api.get("/admin/users"),
-        api.get("/pickup-requests"),
-        listAdminDealers()
-      ]);
-
-      setAnalytics(analyticsResponse.data);
-      setUsers(usersResponse.data);
-      setRequests(requestsResponse.data);
-      setDealers(dealersResponse);
-      setError("");
-    } catch (err) {
-      setError(getApiError(err, "Unable to load admin dashboard."));
-    }
+    await Promise.all([
+      analyticsQuery.refetch(),
+      usersQuery.refetch(),
+      requestsQuery.refetch(),
+      dealersQuery.refetch()
+    ]);
   }
-
-  useEffect(() => {
-    loadDashboard();
-  }, []);
 
   async function handleDealerAction(dealerUserId, action) {
     setBusyDealerId(dealerUserId);
     try {
       if (action === "approve") {
-        await approveDealer(dealerUserId);
+        await approveDealer.mutateAsync(dealerUserId);
       } else {
-        await rejectDealer(dealerUserId);
+        await rejectDealer.mutateAsync(dealerUserId);
       }
       await loadDashboard();
-    } catch (err) {
-      setError(getApiError(err, "Unable to update dealer verification status."));
+    } catch {
+      // Error state is read from the dealer mutation.
     } finally {
       setBusyDealerId(null);
     }

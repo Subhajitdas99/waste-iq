@@ -1,48 +1,42 @@
 import { ArrowLeft, MapPinned, RefreshCw, Truck, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
-import { getApiError } from "../../api/client";
-import { cancelPickupRequest, getPickupRequestDetail } from "../../api/pickupRequests";
+import { getApiError } from "../../api/errors";
 import RequestTimeline from "../../components/citizen/RequestTimeline";
 import StatusBadge from "../../components/StatusBadge";
+import { getErrorToast, useToast } from "../../components/ui/toast";
 import { useAuth } from "../../hooks/useAuth";
+import { useCancelPickup, usePickupRequest } from "../../hooks/usePickupRequests";
 import { formatDateTime } from "../../utils/pickupRequests";
 
 export default function CitizenRequestDetailsPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const { requestId } = useParams();
-  const [request, setRequest] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function loadRequest() {
-    setLoading(true);
-    try {
-      const data = await getPickupRequestDetail(requestId);
-      setRequest(data);
-      setError("");
-    } catch (err) {
-      setError(getApiError(err, "Unable to load this pickup request."));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadRequest();
-  }, [requestId]);
+  const {
+    data: request,
+    error: requestError,
+    isLoading: loading,
+    refetch: loadRequest
+  } = usePickupRequest(requestId);
+  const cancelPickup = useCancelPickup();
+  const busy = cancelPickup.isPending;
+  const error = requestError
+    ? getApiError(requestError, "Unable to load this pickup request.")
+    : cancelPickup.error
+      ? getApiError(cancelPickup.error, "Unable to cancel this pickup request.")
+      : "";
 
   async function handleCancel() {
-    setBusy(true);
     try {
-      await cancelPickupRequest(requestId);
-      await loadRequest();
+      await cancelPickup.mutateAsync(requestId);
+      toast({
+        title: "Pickup cancelled",
+        description: "Your pickup request has been cancelled.",
+        variant: "success"
+      });
     } catch (err) {
-      setError(getApiError(err, "Unable to cancel this pickup request."));
-    } finally {
-      setBusy(false);
+      toast(getErrorToast(err, "Unable to cancel this pickup request."));
     }
   }
 
@@ -81,7 +75,7 @@ export default function CitizenRequestDetailsPage() {
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={loadRequest}
+                  onClick={() => loadRequest()}
                   className="inline-flex items-center gap-2 rounded-2xl border border-ink/10 bg-white/70 px-4 py-3 text-sm font-semibold text-ink transition hover:border-ink/20"
                 >
                   <RefreshCw className="h-4 w-4" />

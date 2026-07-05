@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getApiError } from "./errors";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
@@ -15,8 +16,5 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export function getApiError(error, fallback = "Something went wrong. Please try again.") {
-  return error?.response?.data?.detail || fallback;
-}
-
 export default api;
+export { getApiError };
