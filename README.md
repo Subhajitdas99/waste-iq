@@ -532,5 +532,5 @@ B.Tech AI & ML
 | Link | URL |
 | --- | --- |
 | GitHub | [github.com/Subhajitdas99](https://github.com/Subhajitdas99) |
-| LinkedIn | `LinkedIn profile placeholder` |
-| Email | `Email placeholder` |
+| LinkedIn | https://www.linkedin.com/in/subhajit-das-8207ab240/ |
+| Email | dassubhojit750075@gmail.com |
