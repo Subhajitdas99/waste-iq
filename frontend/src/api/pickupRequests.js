@@ -27,23 +27,3 @@ export function cancelPickupRequest(requestId) {
 export function getCitizenDashboardSummary() {
   return dataOnly(api.get("/pickup-requests/citizen/summary"));
 }
-
-export function getCollectorSummary() {
-  return dataOnly(api.get("/collector/summary"));
-}
-
-export function acceptPickupRequest(requestId) {
-  return dataOnly(api.post(`/collector/accept/${requestId}`));
-}
-
-export function startPickupRequest(requestId) {
-  return dataOnly(api.post(`/collector/start/${requestId}`));
-}
-
-export function collectPickupRequest(requestId) {
-  return dataOnly(api.post(`/collector/collect/${requestId}`));
-}
-
-export function completePickupRequest({ requestId, weight_kg }) {
-  return dataOnly(api.post(`/collector/complete/${requestId}`, { weight_kg }));
-}

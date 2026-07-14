@@ -9,6 +9,8 @@ from app.services.collector_summary import get_collector_summary
 from app.services.pickup_requests import (
     accept_pickup_request,
     complete_pickup_request,
+    list_assigned_pickup_requests_for_collector,
+    list_available_pickup_requests_for_collector,
     mark_pickup_request_collected,
     mark_pickup_request_on_the_way,
 )
@@ -22,6 +24,22 @@ def collector_summary(
     current_user: User = Depends(require_roles("collector")),
 ) -> CollectorSummaryRead:
     return get_collector_summary(db, current_user)
+
+
+@router.get("/available", response_model=list[PickupRequestRead])
+def available_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("collector")),
+) -> list[PickupRequestRead]:
+    return list_available_pickup_requests_for_collector(db)
+
+
+@router.get("/assigned", response_model=list[PickupRequestRead])
+def assigned_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("collector")),
+) -> list[PickupRequestRead]:
+    return list_assigned_pickup_requests_for_collector(db, current_user)
 
 
 @router.post("/accept/{request_id}", response_model=PickupRequestRead)

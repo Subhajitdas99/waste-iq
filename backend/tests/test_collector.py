@@ -10,6 +10,85 @@ def _create_pending_request(client, citizen_headers) -> dict:
     return client.post("/pickup-requests", json=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
 
 
+def test_collector_available_lists_unassigned_pending_requests(client, citizen_headers, collector_headers):
+    available_request = _create_pending_request(client, citizen_headers)
+    assigned_request = _create_pending_request(client, citizen_headers)
+    client.post(f"/collector/accept/{assigned_request['id']}", headers=collector_headers)
+
+    response = client.get("/collector/available", headers=collector_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["id"] == available_request["id"]
+    assert body[0]["status"] == "pending"
+    assert body[0]["assignment"] is None
+    assert body[0]["assigned_collector_name"] is None
+    assert body[0]["citizen_name"]
+    assert body[0]["address"] == VALID_PICKUP_PAYLOAD["address"]
+    assert body[0]["waste_type"] == VALID_PICKUP_PAYLOAD["waste_type"]
+    assert body[0]["latitude"] == VALID_PICKUP_PAYLOAD["latitude"]
+    assert body[0]["longitude"] == VALID_PICKUP_PAYLOAD["longitude"]
+    assert body[0]["created_at"]
+
+
+def test_collector_assigned_lists_authenticated_collector_jobs(client, citizen_headers, collector_headers, db_session):
+    from app.core.security import create_access_token, hash_password
+    from app.models.user import User, UserRole
+
+    other_collector = User(
+        name="Other Assigned Collector",
+        email="assigned-other@wasteiq.test",
+        phone="9000044444",
+        password_hash=hash_password("Test@1234"),
+        role=UserRole.collector,
+    )
+    db_session.add(other_collector)
+    db_session.commit()
+    other_collector_headers = {"Authorization": f"Bearer {create_access_token(str(other_collector.id))}"}
+
+    accepted_request = _create_pending_request(client, citizen_headers)
+    on_the_way_request = _create_pending_request(client, citizen_headers)
+    collected_request = _create_pending_request(client, citizen_headers)
+    completed_request = _create_pending_request(client, citizen_headers)
+    unassigned_pending_request = _create_pending_request(client, citizen_headers)
+    other_collector_request = _create_pending_request(client, citizen_headers)
+
+    client.post(f"/collector/accept/{accepted_request['id']}", headers=collector_headers)
+
+    client.post(f"/collector/accept/{on_the_way_request['id']}", headers=collector_headers)
+    client.post(f"/collector/start/{on_the_way_request['id']}", headers=collector_headers)
+
+    client.post(f"/collector/accept/{collected_request['id']}", headers=collector_headers)
+    client.post(f"/collector/start/{collected_request['id']}", headers=collector_headers)
+    client.post(f"/collector/collect/{collected_request['id']}", headers=collector_headers)
+
+    client.post(f"/collector/accept/{completed_request['id']}", headers=collector_headers)
+    client.post(f"/collector/start/{completed_request['id']}", headers=collector_headers)
+    client.post(f"/collector/collect/{completed_request['id']}", headers=collector_headers)
+    client.post(f"/collector/complete/{completed_request['id']}", json={"weight_kg": 12}, headers=collector_headers)
+
+    client.post(f"/collector/accept/{other_collector_request['id']}", headers=other_collector_headers)
+
+    response = client.get("/collector/assigned", headers=collector_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    returned_ids = {item["id"] for item in body}
+    assert returned_ids == {
+        accepted_request["id"],
+        on_the_way_request["id"],
+        collected_request["id"],
+        completed_request["id"],
+    }
+    assert unassigned_pending_request["id"] not in returned_ids
+    assert other_collector_request["id"] not in returned_ids
+    assert {item["status"] for item in body} == {"accepted", "on_the_way", "collected", "completed"}
+    assert all(item["assignment"] is not None for item in body)
+    assert all(item["citizen_name"] for item in body)
+    assert all(item["created_at"] for item in body)
+
+
 def test_collector_accept_success(client, citizen_headers, collector_headers):
     request = _create_pending_request(client, citizen_headers)
     response = client.post(f"/collector/accept/{request['id']}", headers=collector_headers)

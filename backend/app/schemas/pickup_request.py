@@ -38,6 +38,7 @@ class PickupRequestRead(BaseModel):
     id: int
     user_id: int
     citizen_name: str
+    citizen_phone: str | None
     waste_type: str
     photo_url: str | None
     address: str

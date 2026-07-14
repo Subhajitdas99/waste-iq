@@ -67,6 +67,7 @@ def _to_schema(request: PickupRequest) -> PickupRequestRead:
         id=request.id,
         user_id=request.user_id,
         citizen_name=request.citizen.name,
+        citizen_phone=request.citizen.phone,
         waste_type=request.waste_type,
         photo_url=request.photo_url,
         address=request.address,
@@ -139,6 +140,42 @@ def list_pickup_requests_for_user(db: Session, user: User) -> list[PickupRequest
                 )
             )
         )
+
+    requests = db.execute(statement).unique().scalars().all()
+    return [_to_schema(item) for item in requests]
+
+
+def list_available_pickup_requests_for_collector(db: Session) -> list[PickupRequestRead]:
+    statement = (
+        _base_request_query()
+        .where(
+            PickupRequest.status == PickupStatus.pending,
+            ~PickupRequest.assignment.has(),
+        )
+        .order_by(PickupRequest.created_at.desc())
+    )
+
+    requests = db.execute(statement).unique().scalars().all()
+    return [_to_schema(item) for item in requests]
+
+
+def list_assigned_pickup_requests_for_collector(db: Session, collector: User) -> list[PickupRequestRead]:
+    statement = (
+        _base_request_query()
+        .join(CollectorAssignment)
+        .where(
+            CollectorAssignment.collector_id == collector.id,
+            PickupRequest.status.in_(
+                [
+                    PickupStatus.accepted,
+                    PickupStatus.on_the_way,
+                    PickupStatus.collected,
+                    PickupStatus.completed,
+                ]
+            ),
+        )
+        .order_by(PickupRequest.created_at.desc())
+    )
 
     requests = db.execute(statement).unique().scalars().all()
     return [_to_schema(item) for item in requests]
