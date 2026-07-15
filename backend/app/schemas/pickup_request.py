@@ -15,17 +15,16 @@ class CollectorAssignmentRead(BaseModel):
 
 class PickupRequestCreate(BaseModel):
     waste_type: str = Field(min_length=2, max_length=100)
-    photo_url: str | None = None
     address: str = Field(min_length=8, max_length=500)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
+    image_url: str | None = None
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
 class PickupRequestUpdate(BaseModel):
     waste_type: str | None = Field(default=None, min_length=2, max_length=100)
-    photo_url: str | None = None
     address: str | None = Field(default=None, min_length=8, max_length=500)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
@@ -40,7 +39,9 @@ class PickupRequestRead(BaseModel):
     citizen_name: str
     citizen_phone: str | None
     waste_type: str
-    photo_url: str | None
+    category: str | None
+    confidence: float | None
+    image_url: str | None
     address: str
     latitude: float
     longitude: float

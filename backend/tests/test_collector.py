@@ -7,7 +7,7 @@ VALID_PICKUP_PAYLOAD = {
 
 
 def _create_pending_request(client, citizen_headers) -> dict:
-    return client.post("/pickup-requests", json=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    return client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
 
 
 def test_collector_available_lists_unassigned_pending_requests(client, citizen_headers, collector_headers):

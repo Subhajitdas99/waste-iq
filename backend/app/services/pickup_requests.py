@@ -69,7 +69,9 @@ def _to_schema(request: PickupRequest) -> PickupRequestRead:
         citizen_name=request.citizen.name,
         citizen_phone=request.citizen.phone,
         waste_type=request.waste_type,
-        photo_url=request.photo_url,
+        category=request.category,
+        confidence=request.confidence,
+        image_url=request.image_url,
         address=request.address,
         latitude=request.latitude,
         longitude=request.longitude,
@@ -114,8 +116,19 @@ def _enforce_request_access(request: PickupRequest, user: User) -> None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot view this pickup request")
 
 
-def create_pickup_request(db: Session, citizen: User, payload: PickupRequestCreate) -> PickupRequestRead:
-    request = PickupRequest(user_id=citizen.id, **payload.model_dump(mode="json"))
+def create_pickup_request(
+    db: Session, 
+    citizen: User, 
+    payload: PickupRequestCreate,
+    category: str | None = None,
+    confidence: float | None = None,
+) -> PickupRequestRead:
+    request = PickupRequest(
+        user_id=citizen.id, 
+        category=category,
+        confidence=confidence,
+        **payload.model_dump(mode="json")
+    )
     db.add(request)
     db.flush()
     _create_status_event(db, request, PickupStatus.pending, "Pickup request created.", actor=citizen)
