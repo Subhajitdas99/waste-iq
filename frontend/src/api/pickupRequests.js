@@ -5,7 +5,8 @@ function dataOnly(request) {
 }
 
 export function createPickupRequest(payload) {
-  return dataOnly(api.post("/pickup-requests", payload));
+  const config = payload instanceof FormData ? { headers: { "Content-Type": "multipart/form-data" } } : {};
+  return dataOnly(api.post("/pickup-requests", payload, config));
 }
 
 export function listPickupRequests() {

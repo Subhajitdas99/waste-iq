@@ -1,34 +1,83 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { getApiError } from "../../api/errors";
 import { Card } from "../../components/ui/card";
+import { Skeleton } from "../../components/ui/skeleton";
 import { getErrorToast, useToast } from "../../components/ui/toast";
 import AvailablePickupList from "../../features/collector/AvailablePickupList";
 import AssignedPickupList from "../../features/collector/AssignedPickupList";
 import CollectorTimeline from "../../features/collector/CollectorTimeline";
 import JobDetailsDialog from "../../features/collector/JobDetailsDialog";
 import SummaryCards from "../../features/collector/SummaryCards";
-import { useAvailablePickups } from "../../hooks/useAvailablePickups";
 import { useAssignedPickups } from "../../hooks/useAssignedPickups";
+import { useBrowserGeolocation } from "../../hooks/useBrowserGeolocation";
 import { useCollectorActions } from "../../hooks/useCollectorActions";
 import { useCollectorDashboard } from "../../hooks/useCollectorDashboard";
+import { useNearbyPickups } from "../../hooks/useNearbyPickups";
 import { usePickupRequest } from "../../hooks/usePickupRequests";
+
+const PickupMap = lazy(() => import("../../components/maps/PickupMap"));
+
+function getCoordinate(value) {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+}
+
+function buildOpenStreetMapDirectionsUrl(collectorLocation, pickup) {
+  const pickupLatitude = getCoordinate(pickup?.latitude);
+  const pickupLongitude = getCoordinate(pickup?.longitude);
+
+  if (!collectorLocation || pickupLatitude === null || pickupLongitude === null) {
+    return "";
+  }
+
+  const route = `${collectorLocation.latitude},${collectorLocation.longitude};${pickupLatitude},${pickupLongitude}`;
+  const searchParams = new URLSearchParams({
+    engine: "fossgis_osrm_car",
+    route
+  });
+
+  return `https://www.openstreetmap.org/directions?${searchParams.toString()}#map=14/${pickupLatitude}/${pickupLongitude}`;
+}
+
+const EMPTY_PICKUPS = [];
 
 export default function CollectorDashboard() {
   const { toast } = useToast();
   const notifiedErrors = useRef(new Set());
   const [busyId, setBusyId] = useState(null);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [selectedMapRequest, setSelectedMapRequest] = useState(null);
   const [completeWeights, setCompleteWeights] = useState({});
 
   const summaryQuery = useCollectorDashboard();
-  const availableQuery = useAvailablePickups();
   const assignedQuery = useAssignedPickups();
   const collectorActions = useCollectorActions();
+  const {
+    error: collectorLocationError,
+    isLocating: isCollectorLocating,
+    position: collectorLocation,
+    requestLocation: requestCollectorLocation
+  } = useBrowserGeolocation({
+    watch: true,
+    errorTitle: "Collector location unavailable"
+  });
+  const nearbyQuery = useNearbyPickups(collectorLocation);
 
-  const availablePickups = availableQuery.data || [];
-  const assignedJobs = assignedQuery.data || [];
-  const recentTimelineRequest = assignedJobs[0] || availablePickups[0] || null;
+  const nearbyPickups = nearbyQuery.data || EMPTY_PICKUPS;
+  const assignedJobs = assignedQuery.data || EMPTY_PICKUPS;
+  const mappedPickups = useMemo(
+    () => [
+      ...assignedJobs.map((job) => ({ ...job, map_group: "assigned" })),
+      ...nearbyPickups.map((pickup) => ({ ...pickup, map_group: "available" }))
+    ],
+    [assignedJobs, nearbyPickups]
+  );
+  const selectedMapPickup =
+    mappedPickups.find((pickup) => pickup.id === selectedMapRequest?.id) ||
+    mappedPickups[0] ||
+    null;
+  const recentTimelineRequest = assignedJobs[0] || nearbyPickups[0] || null;
   const timelineQuery = usePickupRequest(recentTimelineRequest?.id);
 
   const actionError =
@@ -64,7 +113,7 @@ export default function CollectorDashboard() {
   useEffect(() => {
     const errorEntries = [
       ["summary", summaryQuery.error],
-      ["available", availableQuery.error],
+      ["nearby", nearbyQuery.error],
       ["assigned", assignedQuery.error],
       ["timeline", timelineQuery.error]
     ];
@@ -82,7 +131,7 @@ export default function CollectorDashboard() {
       notifiedErrors.current.add(key);
       toast(getErrorToast(error, "Unable to load collector data."));
     });
-  }, [availableQuery.error, assignedQuery.error, summaryQuery.error, timelineQuery.error, toast]);
+  }, [assignedQuery.error, nearbyQuery.error, summaryQuery.error, timelineQuery.error, toast]);
 
   async function runAction(requestId, actionName, payload = {}) {
     setBusyId(requestId);
@@ -126,6 +175,7 @@ export default function CollectorDashboard() {
   }
 
   function handleOpenDetails(request) {
+    setSelectedMapRequest(request);
     setSelectedRequest(request);
   }
 
@@ -135,10 +185,52 @@ export default function CollectorDashboard() {
     }
   }
 
+  function handleNavigateToPickup(request) {
+    const pickupLatitude = getCoordinate(request?.latitude);
+    const pickupLongitude = getCoordinate(request?.longitude);
+
+    if (pickupLatitude === null || pickupLongitude === null) {
+      toast({
+        title: "Pickup location unavailable",
+        description: "This pickup does not have valid coordinates for navigation.",
+        variant: "error"
+      });
+      return;
+    }
+
+    if (!collectorLocation) {
+      requestCollectorLocation();
+      toast({
+        title: "Collector location needed",
+        description: "Allow location access, then tap Navigate again.",
+        variant: "error"
+      });
+      return;
+    }
+
+    window.open(buildOpenStreetMapDirectionsUrl(collectorLocation, request), "_blank", "noopener,noreferrer");
+  }
+
   const timelineRequest = timelineQuery.data || recentTimelineRequest;
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={<p className="text-sm text-ink/70">Loading collector map...</p>}>
+        <PickupMap
+          pickups={mappedPickups}
+          collectorLocation={collectorLocation}
+          collectorLocationError={collectorLocationError}
+          collectorLocationLoading={isCollectorLocating}
+          onRetryCollectorLocation={requestCollectorLocation}
+          showCollectorLocation
+          selectedPickupId={selectedMapPickup?.id}
+          onPickupSelect={setSelectedMapRequest}
+          title="Collector live map"
+          description={`${assignedJobs.length} assigned jobs and ${nearbyPickups.length} available nearby jobs.`}
+          useBrowserCollectorLocation={false}
+        />
+      </Suspense>
+
       <SummaryCards
         summary={summaryQuery.data}
         loading={summaryQuery.isPending}
@@ -156,19 +248,38 @@ export default function CollectorDashboard() {
       <section className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">Available Pickups</p>
-            <h2 className="mt-2 font-display text-3xl text-ink">Open request queue</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">Nearby Pickups</p>
+            <h2 className="mt-2 font-display text-3xl text-ink">Open requests near you</h2>
           </div>
-          <AvailablePickupList
-            pickups={availablePickups}
-            loading={availableQuery.isPending}
-            error={availableQuery.error}
-            busyId={busyId}
-            actionDisabled={actionPending}
-            onAccept={(requestId) => runAction(requestId, "accept")}
-            onViewDetails={handleOpenDetails}
-            emptyDescription="Check back soon for new requests in Kolkata."
-          />
+          {isCollectorLocating && !collectorLocation ? (
+            <Card className="p-5">
+              <Skeleton className="h-4 w-40 rounded-full bg-leaf/15" />
+              <Skeleton className="mt-4 h-20 rounded-2xl bg-white/60" />
+            </Card>
+          ) : (
+            <AvailablePickupList
+              pickups={nearbyPickups}
+              loading={nearbyQuery.isPending && Boolean(collectorLocation)}
+              error={nearbyQuery.error}
+              busyId={busyId}
+              actionDisabled={actionPending}
+              onAccept={(requestId) => runAction(requestId, "accept")}
+              onViewDetails={handleOpenDetails}
+              onSelectPickup={setSelectedMapRequest}
+              selectedPickupId={selectedMapPickup?.id}
+              emptyTitle={collectorLocation ? "No nearby pickups" : "Share location to find nearby pickups"}
+              emptyDescription={
+                collectorLocation
+                  ? "No open pickup requests were found within 5 km."
+                  : "Allow browser location access to load nearby pickup requests."
+              }
+              renderFooterSlot={(pickup) => (
+                <span className="inline-flex items-center rounded-2xl bg-white/80 px-4 py-2.5 text-sm font-semibold text-ink/70">
+                  {pickup.distance_km} km away
+                </span>
+              )}
+            />
+          )}
         </div>
 
         <div className="space-y-4">
@@ -188,6 +299,10 @@ export default function CollectorDashboard() {
             onComplete={(requestId, weight) => runAction(requestId, "complete", { weight })}
             onCompleteWeightChange={handleCompleteWeightChange}
             onViewDetails={handleOpenDetails}
+            onNavigate={handleNavigateToPickup}
+            onSelectPickup={setSelectedMapRequest}
+            selectedPickupId={selectedMapPickup?.id}
+            navigationLoading={isCollectorLocating}
           />
         </div>
       </section>

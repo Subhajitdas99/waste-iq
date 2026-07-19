@@ -1,7 +1,5 @@
 import { createContext, useEffect, useState } from "react";
 
-import api from "../api/client";
-
 export const AuthContext = createContext(null);
 
 const TOKEN_KEY = "wasteiq_token";
@@ -15,6 +13,11 @@ export function AuthProvider({ children }) {
   });
   const [loading, setLoading] = useState(Boolean(token));
 
+  async function getApi() {
+    const module = await import("../api/client");
+    return module.default;
+  }
+
   useEffect(() => {
     async function syncUser() {
       if (!token) {
@@ -23,6 +26,7 @@ export function AuthProvider({ children }) {
       }
 
       try {
+        const api = await getApi();
         const response = await api.get("/auth/me");
         setUser(response.data);
         localStorage.setItem(USER_KEY, JSON.stringify(response.data));
@@ -44,12 +48,14 @@ export function AuthProvider({ children }) {
   }
 
   async function login(payload) {
+    const api = await getApi();
     const response = await api.post("/auth/login", payload);
     persistSession(response.data.access_token, response.data.user);
     return response.data.user;
   }
 
   async function register(payload) {
+    const api = await getApi();
     const response = await api.post("/auth/register", payload);
     persistSession(response.data.access_token, response.data.user);
     return response.data.user;

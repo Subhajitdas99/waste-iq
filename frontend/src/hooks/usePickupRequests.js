@@ -7,7 +7,8 @@ import {
   createPickupRequest,
   getCitizenDashboardSummary,
   getPickupRequestDetail,
-  listPickupRequests
+  listPickupRequests,
+  updatePickupRequest
 } from "../api/pickupRequests";
 
 export const pickupRequestQueryKeys = {
@@ -79,6 +80,17 @@ export function useCreatePickup() {
 
   return useMutation({
     mutationFn: createPickupRequest,
+    onSuccess: () => {
+      invalidatePickupRequestQueries(queryClient);
+    }
+  });
+}
+
+export function useUpdatePickup() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, payload }) => updatePickupRequest(id, payload),
     onSuccess: () => {
       invalidatePickupRequestQueries(queryClient);
     }

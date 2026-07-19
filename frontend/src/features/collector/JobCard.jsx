@@ -74,7 +74,8 @@ export default function JobCard({
   onCompleteWeightChange,
   actionDisabled = false,
   showDetailsAction = true,
-  footerSlot = null
+  footerSlot = null,
+  cardClassName = ""
 }) {
   const action = collectorJobActions[request?.status];
   const isCollected = request?.status === "collected";
@@ -104,7 +105,7 @@ export default function JobCard({
   }
 
   return (
-    <Card className="overflow-hidden">
+    <Card className={`overflow-hidden ${cardClassName}`}>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

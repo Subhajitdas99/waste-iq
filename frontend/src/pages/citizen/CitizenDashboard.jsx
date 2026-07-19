@@ -1,5 +1,5 @@
 import { ArrowRight } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link } from "react-router-dom";
 
 import CreatePickupForm from "../../features/citizen/CreatePickupForm";
@@ -9,8 +9,9 @@ import SummaryCards from "../../features/citizen/SummaryCards";
 import { Skeleton } from "../../components/ui/skeleton";
 import { usePickupRequests } from "../../hooks/usePickupRequests";
 
-function TimelinePanel() {
-  const { data: requests = [], error, isError, isPending } = usePickupRequests();
+const PickupMap = lazy(() => import("../../components/maps/PickupMap"));
+
+function TimelinePanel({ requests = [], error = null, isError = false, isPending = false }) {
   const [selectedRequestId, setSelectedRequestId] = useState(null);
   const activeRequestId = selectedRequestId || requests[0]?.id;
 
@@ -82,6 +83,9 @@ function TimelinePanel() {
 }
 
 export default function CitizenDashboard() {
+  const pickupRequestsQuery = usePickupRequests();
+  const requests = pickupRequestsQuery.data || [];
+
   return (
     <div className="space-y-8">
       <SummaryCards />
@@ -107,13 +111,26 @@ export default function CitizenDashboard() {
         </div>
       </section>
 
+      <Suspense fallback={<p className="text-sm text-ink/70">Loading pickup map...</p>}>
+        <PickupMap
+          pickups={requests}
+          title="Your pickup map"
+          description="See your pickup requests by location and status."
+        />
+      </Suspense>
+
       <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-leaf/70">My Requests</p>
             <h2 className="mt-2 font-display text-3xl text-ink">Pickup request board</h2>
           </div>
-          <PickupList />
+          <PickupList
+            requests={requests}
+            error={pickupRequestsQuery.error}
+            isError={pickupRequestsQuery.isError}
+            isPending={pickupRequestsQuery.isPending}
+          />
         </div>
 
         <div>
@@ -121,7 +138,12 @@ export default function CitizenDashboard() {
         </div>
       </section>
 
-      <TimelinePanel />
+      <TimelinePanel
+        requests={requests}
+        error={pickupRequestsQuery.error}
+        isError={pickupRequestsQuery.isError}
+        isPending={pickupRequestsQuery.isPending}
+      />
     </div>
   );
 }

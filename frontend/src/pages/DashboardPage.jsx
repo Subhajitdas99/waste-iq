@@ -1,8 +1,11 @@
 import { Outlet, useLocation } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import AppShell from "../components/AppShell";
 import { useAuth } from "../hooks/useAuth";
 import CitizenDashboardNav from "../components/citizen/CitizenDashboardNav";
+
+const queryClient = new QueryClient();
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -53,9 +56,11 @@ export default function DashboardPage() {
   const shellConfig = isCitizen ? citizenConfig : config;
 
   return (
-    <AppShell title={shellConfig.title} subtitle={shellConfig.subtitle}>
-      {isCitizen ? <CitizenDashboardNav /> : null}
-      <Outlet />
-    </AppShell>
+    <QueryClientProvider client={queryClient}>
+      <AppShell title={shellConfig.title} subtitle={shellConfig.subtitle}>
+        {isCitizen ? <CitizenDashboardNav /> : null}
+        <Outlet />
+      </AppShell>
+    </QueryClientProvider>
   );
 }

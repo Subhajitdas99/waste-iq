@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { getApiError } from "../../api/errors";
 import MetricCard from "../../components/MetricCard";
@@ -12,6 +12,8 @@ import {
   useRejectDealer
 } from "../../hooks/usePickupRequests";
 import { formatDateTime } from "../../utils/pickupRequests";
+
+const AdminOperationsMap = lazy(() => import("../../components/maps/AdminOperationsMap"));
 
 export default function AdminDashboard() {
   const [busyDealerId, setBusyDealerId] = useState(null);
@@ -100,6 +102,10 @@ export default function AdminDashboard() {
           </div>
         </section>
       ) : null}
+
+      <Suspense fallback={<p className="text-sm text-ink/70">Loading marketplace map...</p>}>
+        <AdminOperationsMap requests={requests} users={users} />
+      </Suspense>
 
       <section className="glass-panel rounded-[2rem] border border-white/60 p-6 shadow-glow">
         <div className="mb-5 flex items-center justify-between gap-4">

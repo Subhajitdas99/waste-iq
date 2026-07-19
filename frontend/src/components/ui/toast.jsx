@@ -1,6 +1,4 @@
 import * as React from "react";
-import { X } from "lucide-react";
-import { Toast as ToastPrimitive } from "radix-ui";
 
 import { cn } from "../../lib/utils";
 
@@ -66,42 +64,48 @@ export function ToastProvider({ children }) {
 
   return (
     <ToastContext.Provider value={value}>
-      <ToastPrimitive.Provider swipeDirection="right">
-        {children}
-        <ToastPrimitive.Viewport className="fixed right-4 top-4 z-[100] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3 outline-none sm:right-6 sm:top-6" />
-        {toasts.map((item) => (
-          <ToastPrimitive.Root
-            key={item.id}
-            duration={5000}
+      {children}
+      <div className="fixed right-4 top-4 z-[100] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3 outline-none sm:right-6 sm:top-6">
+        {toasts.map((item) => {
+          const titleId = `toast-title-${item.id}`;
+          const descriptionId = `toast-description-${item.id}`;
+
+          return (
+            <div
+              key={item.id}
+              role="status"
+              aria-labelledby={titleId}
+              aria-describedby={item.description ? descriptionId : undefined}
             className={cn(
               "pointer-events-auto grid grid-cols-[1fr_auto] gap-3 rounded-3xl border bg-white/95 p-4 text-ink shadow-glow backdrop-blur",
               item.variant === "error" ? "border-coral/40" : "border-leaf/30"
             )}
-            onOpenChange={(open) => {
-              if (!open) {
-                dismissToast(item.id);
-              }
-            }}
           >
             <div>
-              <ToastPrimitive.Title
+              <p
+                id={titleId}
                 className={cn("text-sm font-semibold", item.variant === "error" ? "text-coral" : "text-leaf")}
               >
                 {item.title}
-              </ToastPrimitive.Title>
+              </p>
               {item.description ? (
-                <ToastPrimitive.Description className="mt-1 text-sm leading-6 text-ink/70">
+                <p id={descriptionId} className="mt-1 text-sm leading-6 text-ink/70">
                   {item.description}
-                </ToastPrimitive.Description>
+                </p>
               ) : null}
             </div>
-            <ToastPrimitive.Close className="rounded-full p-1 text-ink/45 transition hover:bg-ink/5 hover:text-ink">
-              <X className="h-4 w-4" />
+            <button
+              type="button"
+              onClick={() => dismissToast(item.id)}
+              className="rounded-full px-2 py-0.5 text-lg leading-none text-ink/45 transition hover:bg-ink/5 hover:text-ink"
+            >
+              ×
               <span className="sr-only">Dismiss notification</span>
-            </ToastPrimitive.Close>
-          </ToastPrimitive.Root>
-        ))}
-      </ToastPrimitive.Provider>
+            </button>
+          </div>
+          );
+        })}
+      </div>
     </ToastContext.Provider>
   );
 }

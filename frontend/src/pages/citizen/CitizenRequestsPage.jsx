@@ -1,5 +1,5 @@
 import { LayoutGrid, RefreshCw, Rows3 } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Navigate } from "react-router-dom";
 
 import { getApiError } from "../../api/errors";
@@ -7,6 +7,8 @@ import CitizenRequestsList from "../../components/citizen/CitizenRequestsList";
 import { getErrorToast, useToast } from "../../components/ui/toast";
 import { useAuth } from "../../hooks/useAuth";
 import { useCancelPickup, usePickupRequests } from "../../hooks/usePickupRequests";
+
+const PickupMap = lazy(() => import("../../components/maps/PickupMap"));
 
 export default function CitizenRequestsPage() {
   const { user } = useAuth();
@@ -90,6 +92,16 @@ export default function CitizenRequestsPage() {
       </section>
 
       {loading ? <p className="text-sm text-ink/70">Loading your requests...</p> : null}
+
+      {requests.length > 0 ? (
+        <Suspense fallback={<p className="text-sm text-ink/70">Loading request map...</p>}>
+          <PickupMap
+            pickups={requests}
+            title="Request locations"
+            description="Review your pickup addresses on OpenStreetMap."
+          />
+        </Suspense>
+      ) : null}
 
       {!loading && requests.length === 0 ? (
         <div className="glass-panel rounded-[2rem] border border-white/60 p-6 shadow-glow">

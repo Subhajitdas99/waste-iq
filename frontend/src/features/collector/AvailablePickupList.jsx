@@ -9,6 +9,9 @@ export default function AvailablePickupList({
   actionDisabled = false,
   onAccept,
   onViewDetails,
+  onSelectPickup,
+  selectedPickupId = null,
+  renderFooterSlot,
   emptyTitle = "No open leads right now",
   emptyDescription = "Check back soon for new pickup requests in your area."
 }) {
@@ -41,7 +44,12 @@ export default function AvailablePickupList({
           busy={busyId === pickup.id}
           actionDisabled={actionDisabled}
           onAccept={onAccept}
-          onViewDetails={onViewDetails}
+          onViewDetails={(request) => {
+            onSelectPickup?.(request);
+            onViewDetails?.(request);
+          }}
+          footerSlot={renderFooterSlot?.(pickup)}
+          cardClassName={selectedPickupId === pickup.id ? "ring-2 ring-ink/30" : ""}
         />
       ))}
     </section>

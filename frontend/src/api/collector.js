@@ -8,8 +8,16 @@ export function getCollectorSummary() {
   return dataOnly(api.get("/collector/summary"));
 }
 
-export function getAvailablePickups() {
-  return dataOnly(api.get("/collector/available"));
+export function getNearbyPickups({ latitude, longitude, radiusKm = 5 }) {
+  return dataOnly(
+    api.get("/collector/nearby", {
+      params: {
+        latitude,
+        longitude,
+        radius_km: radiusKm
+      }
+    })
+  );
 }
 
 export function getAssignedPickups() {

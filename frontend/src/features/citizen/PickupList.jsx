@@ -7,7 +7,7 @@ import StatusBadge from "../../components/StatusBadge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Skeleton } from "../../components/ui/skeleton";
 import { getErrorToast, useToast } from "../../components/ui/toast";
-import { useCancelPickup, usePickupRequests } from "../../hooks/usePickupRequests";
+import { useCancelPickup } from "../../hooks/usePickupRequests";
 import { formatDateTime } from "../../utils/pickupRequests";
 
 function PickupListSkeleton() {
@@ -38,8 +38,7 @@ function Field({ label, value }) {
   );
 }
 
-export default function PickupList() {
-  const { data: requests = [], error, isError, isPending } = usePickupRequests();
+export default function PickupList({ requests = [], error = null, isError = false, isPending = false }) {
   const cancelPickup = useCancelPickup();
   const { toast } = useToast();
   const [cancelError, setCancelError] = useState("");

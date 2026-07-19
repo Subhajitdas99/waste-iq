@@ -1,23 +1,27 @@
-import AdminDashboard from "./admin/AdminDashboard";
-import CitizenDashboard from "./citizen/CitizenDashboard";
-import CollectorDashboard from "./collector/CollectorDashboard";
-import DealerDashboard from "./dealer/DealerDashboard";
+import { lazy, Suspense } from "react";
+
 import { useAuth } from "../hooks/useAuth";
+
+const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
+const CitizenDashboard = lazy(() => import("./citizen/CitizenDashboard"));
+const CollectorDashboard = lazy(() => import("./collector/CollectorDashboard"));
+const DealerDashboard = lazy(() => import("./dealer/DealerDashboard"));
+
+function DashboardFallback() {
+  return <p className="text-sm text-ink/70">Loading dashboard...</p>;
+}
 
 export default function DashboardIndexPage() {
   const { user } = useAuth();
+  let dashboard = <CitizenDashboard />;
 
   if (user?.role === "collector") {
-    return <CollectorDashboard />;
+    dashboard = <CollectorDashboard />;
+  } else if (user?.role === "admin") {
+    dashboard = <AdminDashboard />;
+  } else if (user?.role === "dealer") {
+    dashboard = <DealerDashboard />;
   }
 
-  if (user?.role === "admin") {
-    return <AdminDashboard />;
-  }
-
-  if (user?.role === "dealer") {
-    return <DealerDashboard />;
-  }
-
-  return <CitizenDashboard />;
+  return <Suspense fallback={<DashboardFallback />}>{dashboard}</Suspense>;
 }
