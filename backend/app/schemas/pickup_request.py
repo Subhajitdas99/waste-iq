@@ -54,6 +54,10 @@ class PickupRequestRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NearbyPickupRequestRead(PickupRequestRead):
+    distance_km: float
+
+
 class PickupRequestTimelineEventRead(BaseModel):
     id: int
     status: str

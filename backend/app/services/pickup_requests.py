@@ -11,12 +11,14 @@ from app.models.user import User
 from app.schemas.pickup_request import (
     CitizenRequestSummaryRead,
     CollectorAssignmentRead,
+    NearbyPickupRequestRead,
     PickupRequestCreate,
     PickupRequestDetailRead,
     PickupRequestRead,
     PickupRequestTimelineEventRead,
     PickupRequestUpdate,
 )
+from app.services.location import calculate_distance_km
 
 
 def _base_request_query(include_timeline: bool = False):
@@ -81,6 +83,10 @@ def _to_schema(request: PickupRequest) -> PickupRequestRead:
         can_cancel=request.status == PickupStatus.pending,
         assignment=assignment,
     )
+
+
+def _to_nearby_schema(request: PickupRequest, distance_km: float) -> NearbyPickupRequestRead:
+    return NearbyPickupRequestRead(**_to_schema(request).model_dump(), distance_km=distance_km)
 
 
 def _to_detail_schema(request: PickupRequest) -> PickupRequestDetailRead:
@@ -170,6 +176,32 @@ def list_available_pickup_requests_for_collector(db: Session) -> list[PickupRequ
 
     requests = db.execute(statement).unique().scalars().all()
     return [_to_schema(item) for item in requests]
+
+
+def list_nearby_pickup_requests_for_collector(
+    db: Session,
+    latitude: float,
+    longitude: float,
+    radius_km: float = 5,
+) -> list[NearbyPickupRequestRead]:
+    statement = _base_request_query().where(
+        PickupRequest.status == PickupStatus.pending,
+        ~PickupRequest.assignment.has(),
+    )
+
+    requests = db.execute(statement).unique().scalars().all()
+    nearby_requests = [
+        (request, calculate_distance_km(latitude, longitude, request.latitude, request.longitude))
+        for request in requests
+    ]
+    nearby_requests = [
+        (request, distance_km)
+        for request, distance_km in nearby_requests
+        if distance_km <= radius_km
+    ]
+    nearby_requests.sort(key=lambda item: item[1])
+
+    return [_to_nearby_schema(request, distance_km) for request, distance_km in nearby_requests]
 
 
 def list_assigned_pickup_requests_for_collector(db: Session, collector: User) -> list[PickupRequestRead]:

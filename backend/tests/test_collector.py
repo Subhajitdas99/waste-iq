@@ -32,6 +32,58 @@ def test_collector_available_lists_unassigned_pending_requests(client, citizen_h
     assert body[0]["created_at"]
 
 
+def test_collector_nearby_lists_pending_pickups_by_distance(client, citizen_headers, collector_headers):
+    near_request = _create_pending_request(client, citizen_headers)
+    far_payload = {
+        **VALID_PICKUP_PAYLOAD,
+        "address": "99 Far Street, Delhi, 110001",
+        "latitude": 28.6139,
+        "longitude": 77.2090,
+    }
+    far_request = client.post("/pickup-requests", data=far_payload, headers=citizen_headers).json()
+
+    response = client.get(
+        "/collector/nearby",
+        params={"latitude": 22.5720, "longitude": 88.3630, "radius_km": 5},
+        headers=collector_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body] == [near_request["id"]]
+    assert body[0]["distance_km"] >= 0
+    assert far_request["id"] not in {item["id"] for item in body}
+
+
+def test_collector_nearby_sorts_by_distance(client, citizen_headers, collector_headers):
+    farther_payload = {
+        **VALID_PICKUP_PAYLOAD,
+        "address": "22 Park Street, Kolkata, 700016",
+        "latitude": 22.5540,
+        "longitude": 88.3510,
+    }
+    nearer_payload = {
+        **VALID_PICKUP_PAYLOAD,
+        "address": "14 Lake Road, Kolkata, 700029",
+        "latitude": 22.5727,
+        "longitude": 88.3640,
+    }
+    farther_request = client.post("/pickup-requests", data=farther_payload, headers=citizen_headers).json()
+    nearer_request = client.post("/pickup-requests", data=nearer_payload, headers=citizen_headers).json()
+
+    response = client.get(
+        "/collector/nearby",
+        params={"latitude": 22.5726, "longitude": 88.3639, "radius_km": 10},
+        headers=collector_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    returned_ids = [item["id"] for item in body]
+    assert returned_ids.index(nearer_request["id"]) < returned_ids.index(farther_request["id"])
+    assert body[0]["distance_km"] <= body[1]["distance_km"]
+
+
 def test_collector_assigned_lists_authenticated_collector_jobs(client, citizen_headers, collector_headers, db_session):
     from app.core.security import create_access_token, hash_password
     from app.models.user import User, UserRole
