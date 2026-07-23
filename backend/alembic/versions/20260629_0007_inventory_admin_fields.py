@@ -24,7 +24,9 @@ def upgrade() -> None:
             )
         )
         batch_op.add_column(sa.Column("archive_reason", sa.Text(), nullable=True))
-        batch_op.create_index(op.f("ix_inventory_lots_quality_grade"), ["quality_grade"], unique=False)
+        batch_op.create_index(
+            op.f("ix_inventory_lots_quality_grade"), ["quality_grade"], unique=False
+        )
         batch_op.create_index(op.f("ix_inventory_lots_visibility"), ["visibility"], unique=False)
 
 

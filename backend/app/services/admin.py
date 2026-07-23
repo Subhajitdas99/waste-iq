@@ -15,16 +15,26 @@ def list_users(db: Session) -> list[User]:
 def get_analytics(db: Session) -> AnalyticsRead:
     total_users = db.scalar(select(func.count(User.id))) or 0
     total_pickup_requests = db.scalar(select(func.count(PickupRequest.id))) or 0
-    total_completed_pickups = db.scalar(
-        select(func.count(PickupRequest.id)).where(PickupRequest.status == PickupStatus.completed)
-    ) or 0
-    total_collected_weight = db.scalar(select(func.coalesce(func.sum(CollectorAssignment.weight_kg), 0.0))) or 0.0
+    total_completed_pickups = (
+        db.scalar(
+            select(func.count(PickupRequest.id)).where(
+                PickupRequest.status == PickupStatus.completed
+            )
+        )
+        or 0
+    )
+    total_collected_weight = (
+        db.scalar(select(func.coalesce(func.sum(CollectorAssignment.weight_kg), 0.0))) or 0.0
+    )
 
     def user_count(role: UserRole) -> int:
         return db.scalar(select(func.count(User.id)).where(User.role == role)) or 0
 
     def request_count(status: PickupStatus) -> int:
-        return db.scalar(select(func.count(PickupRequest.id)).where(PickupRequest.status == status)) or 0
+        return (
+            db.scalar(select(func.count(PickupRequest.id)).where(PickupRequest.status == status))
+            or 0
+        )
 
     return AnalyticsRead(
         total_users=total_users,

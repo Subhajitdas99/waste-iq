@@ -88,7 +88,9 @@ def test_dealer_cannot_access_collector_routes(client, dealer_headers):
 
 @pytest.mark.parametrize(
     "method,path",
-    ADMIN_ROUTES + DEALER_ROUTES + [("GET", "/collector/summary"), ("GET", "/auth/me"), ("GET", "/pickup-requests")],
+    ADMIN_ROUTES
+    + DEALER_ROUTES
+    + [("GET", "/collector/summary"), ("GET", "/auth/me"), ("GET", "/pickup-requests")],
 )
 def test_anonymous_requests_rejected_with_401(client, method, path):
     response = client.request(method, path)

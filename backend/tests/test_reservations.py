@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
 
-def test_reservation_sets_expiry_24_hours_out(client, dealer_headers, approved_dealer_profile, inventory_lot):
-    response = client.post(f"/dealer/inventory-lots/{inventory_lot.id}/reserve", headers=dealer_headers)
+def test_reservation_sets_expiry_24_hours_out(
+    client, dealer_headers, approved_dealer_profile, inventory_lot
+):
+    response = client.post(
+        f"/dealer/inventory-lots/{inventory_lot.id}/reserve", headers=dealer_headers
+    )
     assert response.status_code == 200
     body = response.json()
 
@@ -12,7 +16,9 @@ def test_reservation_sets_expiry_24_hours_out(client, dealer_headers, approved_d
     assert timedelta(hours=23, minutes=55) < delta < timedelta(hours=24, minutes=5)
 
 
-def test_expired_reservation_auto_released_on_list(client, dealer_headers, approved_dealer_profile, inventory_lot, db_session):
+def test_expired_reservation_auto_released_on_list(
+    client, dealer_headers, approved_dealer_profile, inventory_lot, db_session
+):
     from app.models.inventory_lot import InventoryLotStatus
 
     inventory_lot.status = InventoryLotStatus.reserved
@@ -64,7 +70,9 @@ def test_expired_reservation_creates_reservation_expired_event(
     assert "reservation_expired" in event_types
 
 
-def test_non_expired_reservation_not_released(client, dealer_headers, approved_dealer_profile, inventory_lot, db_session):
+def test_non_expired_reservation_not_released(
+    client, dealer_headers, approved_dealer_profile, inventory_lot, db_session
+):
     from app.models.inventory_lot import InventoryLotStatus
 
     inventory_lot.status = InventoryLotStatus.reserved
@@ -80,7 +88,9 @@ def test_non_expired_reservation_not_released(client, dealer_headers, approved_d
     assert body["total_items"] == 0
 
 
-def test_release_expired_reservations_service_function_returns_count(db_session, inventory_lot, dealer_user):
+def test_release_expired_reservations_service_function_returns_count(
+    db_session, inventory_lot, dealer_user
+):
     from app.services.inventory_marketplace import release_expired_reservations
     from app.models.inventory_lot import InventoryLotStatus
 
@@ -100,7 +110,9 @@ def test_release_expired_reservations_service_function_returns_count(db_session,
     assert inventory_lot.reservation_expires_at is None
 
 
-def test_release_expired_reservations_with_nothing_to_release_returns_zero(db_session, inventory_lot):
+def test_release_expired_reservations_with_nothing_to_release_returns_zero(
+    db_session, inventory_lot
+):
     from app.services.inventory_marketplace import release_expired_reservations
 
     # inventory_lot fixture is status=available by default, nothing reserved.

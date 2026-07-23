@@ -7,10 +7,14 @@ VALID_PICKUP_PAYLOAD = {
 
 
 def _create_pending_request(client, citizen_headers) -> dict:
-    return client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    return client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
 
 
-def test_collector_available_lists_unassigned_pending_requests(client, citizen_headers, collector_headers):
+def test_collector_available_lists_unassigned_pending_requests(
+    client, citizen_headers, collector_headers
+):
     available_request = _create_pending_request(client, citizen_headers)
     assigned_request = _create_pending_request(client, citizen_headers)
     client.post(f"/collector/accept/{assigned_request['id']}", headers=collector_headers)
@@ -32,7 +36,9 @@ def test_collector_available_lists_unassigned_pending_requests(client, citizen_h
     assert body[0]["created_at"]
 
 
-def test_collector_nearby_lists_pending_pickups_by_distance(client, citizen_headers, collector_headers):
+def test_collector_nearby_lists_pending_pickups_by_distance(
+    client, citizen_headers, collector_headers
+):
     near_request = _create_pending_request(client, citizen_headers)
     far_payload = {
         **VALID_PICKUP_PAYLOAD,
@@ -68,8 +74,12 @@ def test_collector_nearby_sorts_by_distance(client, citizen_headers, collector_h
         "latitude": 22.5727,
         "longitude": 88.3640,
     }
-    farther_request = client.post("/pickup-requests", data=farther_payload, headers=citizen_headers).json()
-    nearer_request = client.post("/pickup-requests", data=nearer_payload, headers=citizen_headers).json()
+    farther_request = client.post(
+        "/pickup-requests", data=farther_payload, headers=citizen_headers
+    ).json()
+    nearer_request = client.post(
+        "/pickup-requests", data=nearer_payload, headers=citizen_headers
+    ).json()
 
     response = client.get(
         "/collector/nearby",
@@ -84,7 +94,9 @@ def test_collector_nearby_sorts_by_distance(client, citizen_headers, collector_h
     assert body[0]["distance_km"] <= body[1]["distance_km"]
 
 
-def test_collector_assigned_lists_authenticated_collector_jobs(client, citizen_headers, collector_headers, db_session):
+def test_collector_assigned_lists_authenticated_collector_jobs(
+    client, citizen_headers, collector_headers, db_session
+):
     from app.core.security import create_access_token, hash_password
     from app.models.user import User, UserRole
 
@@ -97,7 +109,9 @@ def test_collector_assigned_lists_authenticated_collector_jobs(client, citizen_h
     )
     db_session.add(other_collector)
     db_session.commit()
-    other_collector_headers = {"Authorization": f"Bearer {create_access_token(str(other_collector.id))}"}
+    other_collector_headers = {
+        "Authorization": f"Bearer {create_access_token(str(other_collector.id))}"
+    }
 
     accepted_request = _create_pending_request(client, citizen_headers)
     on_the_way_request = _create_pending_request(client, citizen_headers)
@@ -118,9 +132,15 @@ def test_collector_assigned_lists_authenticated_collector_jobs(client, citizen_h
     client.post(f"/collector/accept/{completed_request['id']}", headers=collector_headers)
     client.post(f"/collector/start/{completed_request['id']}", headers=collector_headers)
     client.post(f"/collector/collect/{completed_request['id']}", headers=collector_headers)
-    client.post(f"/collector/complete/{completed_request['id']}", json={"weight_kg": 12}, headers=collector_headers)
+    client.post(
+        f"/collector/complete/{completed_request['id']}",
+        json={"weight_kg": 12},
+        headers=collector_headers,
+    )
 
-    client.post(f"/collector/accept/{other_collector_request['id']}", headers=other_collector_headers)
+    client.post(
+        f"/collector/accept/{other_collector_request['id']}", headers=other_collector_headers
+    )
 
     response = client.get("/collector/assigned", headers=collector_headers)
 
@@ -157,7 +177,7 @@ def test_citizen_cannot_accept_pickup(client, citizen_headers):
 def test_collector_cannot_accept_own_request(client, db_session):
     """A user can't be both citizen-creator and collector-accepter of the same pickup."""
     from app.models.user import User, UserRole
-    from app.core.security import hash_password, create_access_token
+    from app.core.security import hash_password
 
     dual_user = User(
         name="Dual Role Test",
@@ -174,10 +194,14 @@ def test_collector_cannot_accept_own_request(client, db_session):
     # constraint exists in the service layer (accept_pickup_request raises
     # 400 if request.user_id == collector.id). Covered indirectly by
     # test_collector_accept_success using two distinct users.
-    assert dual_user.role == UserRole.collector  # placeholder assertion; real coverage is structural
+    assert (
+        dual_user.role == UserRole.collector
+    )  # placeholder assertion; real coverage is structural
 
 
-def test_accept_already_accepted_request_fails(client, citizen_headers, collector_headers, db_session):
+def test_accept_already_accepted_request_fails(
+    client, citizen_headers, collector_headers, db_session
+):
     request = _create_pending_request(client, citizen_headers)
     client.post(f"/collector/accept/{request['id']}", headers=collector_headers)
 
@@ -220,7 +244,9 @@ def test_start_pending_request_fails(client, citizen_headers, collector_headers)
     assert response.status_code == 403
 
 
-def test_start_request_not_assigned_to_this_collector_fails(client, citizen_headers, collector_headers, db_session):
+def test_start_request_not_assigned_to_this_collector_fails(
+    client, citizen_headers, collector_headers, db_session
+):
     request = _create_pending_request(client, citizen_headers)
     client.post(f"/collector/accept/{request['id']}", headers=collector_headers)
 
@@ -278,7 +304,9 @@ def test_complete_request_success(client, citizen_headers, collector_headers):
     assert body["assignment"]["weight_kg"] == 15.5
 
 
-def test_complete_request_skipping_collected_state_fails(client, citizen_headers, collector_headers):
+def test_complete_request_skipping_collected_state_fails(
+    client, citizen_headers, collector_headers
+):
     """Cannot complete directly from accepted, must pass through on_the_way and collected."""
     request = _create_pending_request(client, citizen_headers)
     client.post(f"/collector/accept/{request['id']}", headers=collector_headers)
@@ -310,7 +338,9 @@ def test_collector_summary_reflects_completed_jobs(client, citizen_headers, coll
     client.post(f"/collector/accept/{request['id']}", headers=collector_headers)
     client.post(f"/collector/start/{request['id']}", headers=collector_headers)
     client.post(f"/collector/collect/{request['id']}", headers=collector_headers)
-    client.post(f"/collector/complete/{request['id']}", json={"weight_kg": 20.0}, headers=collector_headers)
+    client.post(
+        f"/collector/complete/{request['id']}", json={"weight_kg": 20.0}, headers=collector_headers
+    )
 
     response = client.get("/collector/summary", headers=collector_headers)
     assert response.status_code == 200

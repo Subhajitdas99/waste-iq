@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db, require_roles
 from app.models.user import User
 from app.schemas.collector import CollectorCompleteRequest
-from app.schemas.pickup_request import CollectorSummaryRead, NearbyPickupRequestRead, PickupRequestRead
+from app.schemas.pickup_request import (
+    CollectorSummaryRead,
+    NearbyPickupRequestRead,
+    PickupRequestRead,
+)
 from app.services.collector_summary import get_collector_summary
 from app.services.pickup_requests import (
     accept_pickup_request,

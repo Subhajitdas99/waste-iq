@@ -28,7 +28,9 @@ class PickupRequestUpdate(BaseModel):
     address: str | None = Field(default=None, min_length=8, max_length=500)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    status: Literal["pending", "accepted", "on_the_way", "collected", "completed", "cancelled"] | None = None
+    status: (
+        Literal["pending", "accepted", "on_the_way", "collected", "completed", "cancelled"] | None
+    ) = None
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

@@ -12,9 +12,15 @@ class CollectorAssignment(Base):
     __tablename__ = "collector_assignments"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    request_id: Mapped[int] = mapped_column(ForeignKey("pickup_requests.id", ondelete="CASCADE"), unique=True)
-    collector_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    request_id: Mapped[int] = mapped_column(
+        ForeignKey("pickup_requests.id", ondelete="CASCADE"), unique=True
+    )
+    collector_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    accepted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
 

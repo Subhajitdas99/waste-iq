@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 
 from app.services.auth import bootstrap_admin_user
 from app.api.router import api_router
+from app.services.upload import ImageUploadConfigurationError, ImageUploadUnavailableError
 
 
 @asynccontextmanager
@@ -43,6 +45,20 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+
+
+@app.exception_handler(ImageUploadConfigurationError)
+async def image_upload_configuration_error_handler(
+    _: Request, exc: ImageUploadConfigurationError
+) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": exc.detail})
+
+
+@app.exception_handler(ImageUploadUnavailableError)
+async def image_upload_unavailable_error_handler(
+    _: Request, exc: ImageUploadUnavailableError
+) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": exc.detail})
 
 
 @app.get("/health", tags=["health"])

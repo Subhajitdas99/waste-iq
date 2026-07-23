@@ -31,7 +31,9 @@ def test_create_pickup_request_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_list_pickup_requests_returns_own_requests_only(client, citizen_headers, citizen_user, db_session):
+def test_list_pickup_requests_returns_own_requests_only(
+    client, citizen_headers, citizen_user, db_session
+):
     client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers)
 
     response = client.get("/pickup-requests", headers=citizen_headers)
@@ -42,7 +44,9 @@ def test_list_pickup_requests_returns_own_requests_only(client, citizen_headers,
 
 
 def test_get_pickup_request_detail_includes_timeline(client, citizen_headers):
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     response = client.get(f"/pickup-requests/{created['id']}", headers=citizen_headers)
     assert response.status_code == 200
     body = response.json()
@@ -73,14 +77,18 @@ def test_citizen_cannot_view_other_citizens_request(client, citizen_headers, db_
     from app.core.security import create_access_token
 
     other_headers = {"Authorization": f"Bearer {create_access_token(str(other_citizen.id))}"}
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=other_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=other_headers
+    ).json()
 
     response = client.get(f"/pickup-requests/{created['id']}", headers=citizen_headers)
     assert response.status_code == 403
 
 
 def test_update_pending_pickup_request_success(client, citizen_headers):
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     response = client.patch(
         f"/pickup-requests/{created['id']}",
         json={"waste_type": "Cardboard"},
@@ -91,8 +99,13 @@ def test_update_pending_pickup_request_success(client, citizen_headers):
 
 
 def test_update_pickup_request_cannot_set_status_directly(client, citizen_headers):
-    """Citizens patching status should not bypass the cancel endpoint's business rules silently succeeding to an arbitrary status."""
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    """
+    Citizens patching status should not bypass the cancel endpoint's business rules
+    silently succeeding to an arbitrary status.
+    """
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     response = client.patch(
         f"/pickup-requests/{created['id']}",
         json={"status": "completed"},
@@ -105,7 +118,9 @@ def test_update_pickup_request_cannot_set_status_directly(client, citizen_header
 
 
 def test_cancel_pending_pickup_request_success(client, citizen_headers):
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     response = client.post(f"/pickup-requests/{created['id']}/cancel", headers=citizen_headers)
     assert response.status_code == 200
     assert response.json()["status"] == "cancelled"
@@ -113,7 +128,9 @@ def test_cancel_pending_pickup_request_success(client, citizen_headers):
 
 
 def test_cancel_already_accepted_pickup_fails(client, citizen_headers, collector_headers):
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     client.post(f"/collector/accept/{created['id']}", headers=collector_headers)
 
     response = client.post(f"/pickup-requests/{created['id']}/cancel", headers=citizen_headers)
@@ -135,21 +152,27 @@ def test_cancel_other_citizens_pickup_fails(client, citizen_headers, db_session)
     db_session.commit()
 
     other_headers = {"Authorization": f"Bearer {create_access_token(str(other_citizen.id))}"}
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=other_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=other_headers
+    ).json()
 
     response = client.post(f"/pickup-requests/{created['id']}/cancel", headers=citizen_headers)
     assert response.status_code == 403
 
 
 def test_collector_cannot_cancel_pickup_request(client, citizen_headers, collector_headers):
-    created = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    created = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     response = client.post(f"/pickup-requests/{created['id']}/cancel", headers=collector_headers)
     assert response.status_code == 403
 
 
 def test_citizen_summary_counts(client, citizen_headers):
     client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers)
-    second = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers).json()
+    second = client.post(
+        "/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers
+    ).json()
     client.post(f"/pickup-requests/{second['id']}/cancel", headers=citizen_headers)
 
     response = client.get("/pickup-requests/citizen/summary", headers=citizen_headers)

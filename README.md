@@ -1,4 +1,4 @@
-﻿# Waste-IQ
+# Waste-IQ
 
 AI-ready circular economy platform for recyclable waste pickup, collector operations, dealer onboarding, and municipal analytics.
 
@@ -255,13 +255,22 @@ Create a backend `.env` file:
 
 ```env
 DATABASE_URL=postgresql+psycopg://wasteiq:wasteiq@localhost:5432/wasteiq
+ENVIRONMENT=development
 SECRET_KEY=change-me
 JWT_SECRET_KEY=change-me
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 ADMIN_REGISTRATION_CODE=change-me
-CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name
 CORS_ORIGINS=http://localhost:5173
+
+# Optional: Cloudinary Configuration for Image Uploads
+# If these are not provided, local development will skip uploads and save image_url as NULL.
+# In production, valid credentials are required for image uploads to succeed.
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
 ```
+
+Local development can leave the Cloudinary variables empty. In that mode, `POST /pickup-requests` still succeeds and stores `image_url` as `NULL`. In production (`ENVIRONMENT=production`), image uploads require valid Cloudinary credentials and failed uploads return a controlled `502` or `503` response instead of an unhandled `500`.
 
 Create a frontend `.env` file:
 
@@ -391,7 +400,7 @@ cd backend
 python -m pytest
 ```
 
-Backend test coverage currently includes authentication, citizens, collectors, dealers, permissions, health, inventory, pricing, and reservations.
+Backend test coverage currently includes authentication, citizens, collectors, dealers, permissions, health, inventory, pricing, reservations, and pickup image upload scenarios.
 
 **133 Passing Tests**
 

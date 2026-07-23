@@ -24,10 +24,18 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     phone: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole, native_enum=False), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, native_enum=False), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
-    pickup_requests = relationship("PickupRequest", back_populates="citizen", cascade="all, delete-orphan")
+    pickup_requests = relationship(
+        "PickupRequest", back_populates="citizen", cascade="all, delete-orphan"
+    )
     collector_assignments = relationship("CollectorAssignment", back_populates="collector")
     pickup_request_events = relationship("PickupRequestEvent", back_populates="actor")
-    dealer_profile = relationship("DealerProfile", back_populates="user", cascade="all, delete-orphan", uselist=False)
+    dealer_profile = relationship(
+        "DealerProfile", back_populates="user", cascade="all, delete-orphan", uselist=False
+    )

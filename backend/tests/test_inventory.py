@@ -1,4 +1,6 @@
-def test_admin_create_inventory_lot_success(client, admin_headers, completed_pickup_with_assignment, material_category, active_pricing_rule):
+def test_admin_create_inventory_lot_success(
+    client, admin_headers, completed_pickup_with_assignment, material_category, active_pricing_rule
+):
     response = client.post(
         "/admin/inventory-lots",
         json={
@@ -18,7 +20,10 @@ def test_admin_create_inventory_lot_success(client, admin_headers, completed_pic
 def test_create_inventory_lot_pricing_snapshot_correctness(
     client, admin_headers, completed_pickup_with_assignment, material_category, active_pricing_rule
 ):
-    """unit_price_per_kg_snapshot must match the active rule; total_listed_amount = weight * unit_price."""
+    """
+    unit_price_per_kg_snapshot must match the active rule;
+    total_listed_amount = weight * unit_price.
+    """
     response = client.post(
         "/admin/inventory-lots",
         json={
@@ -47,7 +52,9 @@ def test_create_inventory_lot_duplicate_pickup_fails(
     assert second.status_code == 400
 
 
-def test_create_inventory_lot_for_pending_pickup_fails(client, admin_headers, citizen_user, material_category, active_pricing_rule, db_session):
+def test_create_inventory_lot_for_pending_pickup_fails(
+    client, admin_headers, citizen_user, material_category, active_pricing_rule, db_session
+):
     from app.models.pickup_request import PickupRequest, PickupStatus
 
     pending_pickup = PickupRequest(
@@ -84,10 +91,15 @@ def test_create_inventory_lot_without_active_pricing_rule_fails(
     assert response.status_code == 400
 
 
-def test_dealer_cannot_create_inventory_lot(client, dealer_headers, completed_pickup_with_assignment, material_category):
+def test_dealer_cannot_create_inventory_lot(
+    client, dealer_headers, completed_pickup_with_assignment, material_category
+):
     response = client.post(
         "/admin/inventory-lots",
-        json={"pickup_request_id": completed_pickup_with_assignment.id, "material_category_id": material_category.id},
+        json={
+            "pickup_request_id": completed_pickup_with_assignment.id,
+            "material_category_id": material_category.id,
+        },
         headers=dealer_headers,
     )
     assert response.status_code == 403
@@ -123,8 +135,12 @@ def test_archive_inventory_lot_success(client, admin_headers, inventory_lot):
 
 
 def test_archive_already_archived_lot_is_idempotent(client, admin_headers, inventory_lot):
-    first = client.post(f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=admin_headers)
-    second = client.post(f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=admin_headers)
+    first = client.post(
+        f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=admin_headers
+    )
+    second = client.post(
+        f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=admin_headers
+    )
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["archived_at"] == second.json()["archived_at"]
@@ -132,7 +148,9 @@ def test_archive_already_archived_lot_is_idempotent(client, admin_headers, inven
 
 def test_restore_archived_lot_success(client, admin_headers, inventory_lot):
     client.post(f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=admin_headers)
-    response = client.post(f"/admin/inventory-lots/{inventory_lot.id}/restore", headers=admin_headers)
+    response = client.post(
+        f"/admin/inventory-lots/{inventory_lot.id}/restore", headers=admin_headers
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["archived_at"] is None
@@ -140,7 +158,9 @@ def test_restore_archived_lot_success(client, admin_headers, inventory_lot):
 
 
 def test_dealer_cannot_archive_inventory_lot(client, dealer_headers, inventory_lot):
-    response = client.post(f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=dealer_headers)
+    response = client.post(
+        f"/admin/inventory-lots/{inventory_lot.id}/archive", json={}, headers=dealer_headers
+    )
     assert response.status_code == 403
 
 
@@ -159,7 +179,10 @@ def test_inventory_lot_events_via_full_creation_flow_includes_created(
 ):
     created = client.post(
         "/admin/inventory-lots",
-        json={"pickup_request_id": completed_pickup_with_assignment.id, "material_category_id": material_category.id},
+        json={
+            "pickup_request_id": completed_pickup_with_assignment.id,
+            "material_category_id": material_category.id,
+        },
         headers=admin_headers,
     ).json()
 

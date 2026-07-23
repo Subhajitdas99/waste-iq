@@ -8,6 +8,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, RegisterRequest
+from app.schemas.user import UserRead
 
 
 def normalize_email(email: str) -> str:
@@ -16,11 +17,19 @@ def normalize_email(email: str) -> str:
 
 def register_user(db: Session, payload: RegisterRequest) -> User:
     role = payload.role.strip().lower()
-    if role not in {UserRole.citizen.value, UserRole.collector.value, UserRole.dealer.value, UserRole.admin.value}:
+    if role not in {
+        UserRole.citizen.value,
+        UserRole.collector.value,
+        UserRole.dealer.value,
+        UserRole.admin.value,
+    }:
         raise ValueError("Role must be citizen, collector, dealer, or admin")
 
     if role == UserRole.admin.value:
-        if not settings.admin_registration_code or payload.admin_code != settings.admin_registration_code:
+        if (
+            not settings.admin_registration_code
+            or payload.admin_code != settings.admin_registration_code
+        ):
             raise ValueError("Invalid admin registration code")
 
     user = User(
@@ -51,7 +60,9 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
 
 def issue_token_for_user(user: User) -> AuthResponse:
-    return AuthResponse(access_token=create_access_token(str(user.id)), user=user)
+    return AuthResponse(
+        access_token=create_access_token(str(user.id)), user=UserRead.model_validate(user)
+    )
 
 
 def bootstrap_admin_user() -> None:
@@ -65,19 +76,28 @@ def bootstrap_admin_user() -> None:
     ):
         return
 
+    admin_name = settings.bootstrap_admin_name
+    admin_email = settings.bootstrap_admin_email
+    admin_phone = settings.bootstrap_admin_phone
+    admin_password = settings.bootstrap_admin_password
+    assert admin_name is not None
+    assert admin_email is not None
+    assert admin_phone is not None
+    assert admin_password is not None
+
     db = SessionLocal()
     try:
         existing = db.execute(
-            select(User).where(User.email == normalize_email(settings.bootstrap_admin_email))
+            select(User).where(User.email == normalize_email(admin_email))
         ).scalar_one_or_none()
         if existing is not None:
             return
 
         admin = User(
-            name=settings.bootstrap_admin_name.strip(),
-            email=normalize_email(settings.bootstrap_admin_email),
-            phone=settings.bootstrap_admin_phone.strip(),
-            password_hash=hash_password(settings.bootstrap_admin_password),
+            name=admin_name.strip(),
+            email=normalize_email(admin_email),
+            phone=admin_phone.strip(),
+            password_hash=hash_password(admin_password),
             role=UserRole.admin,
         )
         db.add(admin)

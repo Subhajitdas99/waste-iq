@@ -4,7 +4,17 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, Float, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -25,8 +35,12 @@ class InventoryLot(Base):
     __tablename__ = "inventory_lots"
     __table_args__ = (
         CheckConstraint("weight_kg > 0", name="ck_inventory_lots_weight_positive"),
-        CheckConstraint("unit_price_per_kg_snapshot >= 0", name="ck_inventory_lots_unit_price_non_negative"),
-        CheckConstraint("total_listed_amount >= 0", name="ck_inventory_lots_total_amount_non_negative"),
+        CheckConstraint(
+            "unit_price_per_kg_snapshot >= 0", name="ck_inventory_lots_unit_price_non_negative"
+        ),
+        CheckConstraint(
+            "total_listed_amount >= 0", name="ck_inventory_lots_total_amount_non_negative"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -37,8 +51,12 @@ class InventoryLot(Base):
         unique=True,
         index=True,
     )
-    citizen_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
-    collector_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    citizen_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    collector_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     material_category_id: Mapped[int] = mapped_column(
         ForeignKey("material_categories.id", ondelete="RESTRICT"),
         nullable=False,
@@ -71,7 +89,9 @@ class InventoryLot(Base):
         server_default=InventoryLotStatus.available.value,
         index=True,
     )
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     archive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reserved_by_dealer_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -79,10 +99,18 @@ class InventoryLot(Base):
         index=True,
     )
     reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    reservation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    reservation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

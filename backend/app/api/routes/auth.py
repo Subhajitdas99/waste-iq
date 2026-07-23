@@ -23,10 +23,12 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     user = authenticate_user(db, payload.email, payload.password)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
     return issue_token_for_user(user)
 
 
 @router.get("/me", response_model=UserRead)
 def me(current_user: User = Depends(get_current_user)) -> UserRead:
-    return current_user
+    return UserRead.model_validate(current_user)

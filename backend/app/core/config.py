@@ -1,11 +1,20 @@
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BASE_DIR / ".env"
 
 
 class Settings(BaseSettings):
     app_name: str = "Waste-IQ API"
+    environment: Literal["development", "test", "staging", "production"] = Field(
+        default="development",
+        validation_alias=AliasChoices("ENVIRONMENT", "APP_ENV"),
+    )
     database_url: str = Field(
         default="postgresql+psycopg://wasteiq:wasteiq@db:5432/wasteiq",
         alias="DATABASE_URL",
@@ -33,7 +42,7 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str | None = Field(default=None, alias="CLOUDINARY_API_SECRET")
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         # FIX: populate_by_name allows both alias and field name to work
@@ -43,6 +52,20 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+    @property
+    def cloudinary_configured(self) -> bool:
+        return all(
+            [self.cloudinary_cloud_name, self.cloudinary_api_key, self.cloudinary_api_secret]
+        )
+
+    @property
+    def cloudinary_required(self) -> bool:
+        return self.is_production
 
 
 @lru_cache

@@ -50,6 +50,7 @@ dealer_router = APIRouter()
 
 # ─── Admin: Material categories ──────────────────────────────────────────────
 
+
 @admin_router.post(
     "/material-categories",
     response_model=MaterialCategoryRead,
@@ -74,6 +75,7 @@ def admin_list_material_categories(
 
 # ─── Admin: Pricing rules ─────────────────────────────────────────────────────
 
+
 @admin_router.get("/pricing-rules", response_model=list[PricingRuleRead])
 def admin_list_pricing_rules(
     material_category_id: int | None = Query(default=None),
@@ -90,7 +92,9 @@ def admin_list_pricing_rules(
     )
 
 
-@admin_router.post("/pricing-rules", response_model=PricingRuleRead, status_code=status.HTTP_201_CREATED)
+@admin_router.post(
+    "/pricing-rules", response_model=PricingRuleRead, status_code=status.HTTP_201_CREATED
+)
 def admin_create_pricing_rule(
     payload: PricingRuleCreate,
     db: Session = Depends(get_db),
@@ -129,6 +133,7 @@ def admin_deactivate_pricing_rule(
 
 # ─── Admin: Eligible pickups ──────────────────────────────────────────────────
 
+
 @admin_router.get("/eligible-pickups", response_model=list[EligiblePickupRead])
 def admin_list_eligible_pickups(
     db: Session = Depends(get_db),
@@ -138,6 +143,7 @@ def admin_list_eligible_pickups(
 
 
 # ─── Admin: Inventory lots ────────────────────────────────────────────────────
+
 
 @admin_router.get("/inventory-lots", response_model=InventoryLotPageRead)
 def admin_list_inventory_lots(
@@ -180,7 +186,9 @@ def admin_get_inventory_lot(
     return get_inventory_lot_for_admin(db, lot_id)
 
 
-@admin_router.post("/inventory-lots", response_model=InventoryLotRead, status_code=status.HTTP_201_CREATED)
+@admin_router.post(
+    "/inventory-lots", response_model=InventoryLotRead, status_code=status.HTTP_201_CREATED
+)
 def admin_create_inventory_lot(
     payload: InventoryLotCreate,
     db: Session = Depends(get_db),
@@ -229,6 +237,7 @@ def admin_list_inventory_lot_events(
 
 # ─── Dealer: Inventory browsing ───────────────────────────────────────────────
 
+
 @dealer_router.get("/inventory-lots", response_model=DealerInventoryLotPageRead)
 def dealer_list_inventory_lots(
     material_category_id: int | None = Query(default=None),
@@ -257,7 +266,9 @@ def dealer_get_inventory_lot(
     return get_inventory_lot_for_dealer(db, current_user, lot_id)
 
 
-@dealer_router.post("/inventory-lots/{lot_id}/reserve", response_model=DealerMarketplaceLotDetailRead)
+@dealer_router.post(
+    "/inventory-lots/{lot_id}/reserve", response_model=DealerMarketplaceLotDetailRead
+)
 def dealer_reserve_inventory_lot(
     lot_id: int,
     db: Session = Depends(get_db),

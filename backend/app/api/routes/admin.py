@@ -6,7 +6,11 @@ from app.schemas.dealer import AdminDealerSummaryRead, DealerVerificationActionR
 from app.schemas.admin import AnalyticsRead
 from app.schemas.user import UserRead
 from app.services.admin import get_analytics, list_users
-from app.services.dealer_profiles import approve_dealer_profile, list_dealers_for_admin, reject_dealer_profile
+from app.services.dealer_profiles import (
+    approve_dealer_profile,
+    list_dealers_for_admin,
+    reject_dealer_profile,
+)
 
 router = APIRouter()
 
@@ -16,7 +20,7 @@ def admin_list_users(
     db: Session = Depends(get_db),
     _: object = Depends(require_roles("admin")),
 ) -> list[UserRead]:
-    return list_users(db)
+    return [UserRead.model_validate(user) for user in list_users(db)]
 
 
 @router.get("/analytics", response_model=AnalyticsRead)

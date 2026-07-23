@@ -83,7 +83,9 @@ def _inventory_lot_query(include_events: bool = False):
         selectinload(InventoryLot.pricing_rule),
     )
     if include_events:
-        statement = statement.options(selectinload(InventoryLot.events).selectinload(InventoryLotEvent.actor))
+        statement = statement.options(
+            selectinload(InventoryLot.events).selectinload(InventoryLotEvent.actor)
+        )
     return statement
 
 
@@ -224,25 +226,33 @@ def _parse_inventory_visibility(value: str) -> InventoryLotVisibility:
     try:
         return InventoryLotVisibility(value)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot visibility") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot visibility"
+        ) from exc
 
 
 def _get_category_or_404(db: Session, category_id: int) -> MaterialCategory:
     category = db.get(MaterialCategory, category_id)
     if category is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material category not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Material category not found"
+        )
     return category
 
 
 def _get_lot_or_404(db: Session, lot_id: int, include_events: bool = False) -> InventoryLot:
-    lot = db.execute(_inventory_lot_query(include_events=include_events).where(InventoryLot.id == lot_id)).scalar_one_or_none()
+    lot = db.execute(
+        _inventory_lot_query(include_events=include_events).where(InventoryLot.id == lot_id)
+    ).scalar_one_or_none()
     if lot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory lot not found")
     return lot
 
 
 def _get_pricing_rule_or_404(db: Session, pricing_rule_id: int) -> PricingRule:
-    rule = db.execute(_pricing_rule_query().where(PricingRule.id == pricing_rule_id)).scalar_one_or_none()
+    rule = db.execute(
+        _pricing_rule_query().where(PricingRule.id == pricing_rule_id)
+    ).scalar_one_or_none()
     if rule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pricing rule not found")
     return rule
@@ -250,16 +260,25 @@ def _get_pricing_rule_or_404(db: Session, pricing_rule_id: int) -> PricingRule:
 
 def _ensure_admin(user: User) -> None:
     if user.role != UserRole.admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can manage inventory")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can manage inventory"
+        )
 
 
 def _ensure_approved_dealer(db: Session, dealer: User) -> None:
     if dealer.role != UserRole.dealer:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only dealers can browse inventory")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only dealers can browse inventory"
+        )
 
-    profile = db.execute(select(DealerProfile).where(DealerProfile.user_id == dealer.id)).scalar_one_or_none()
+    profile = db.execute(
+        select(DealerProfile).where(DealerProfile.user_id == dealer.id)
+    ).scalar_one_or_none()
     if profile is None or profile.verification_status != DealerVerificationStatus.approved:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dealer approval is required to browse inventory")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer approval is required to browse inventory",
+        )
 
 
 def _get_active_pricing_rule(db: Session, material_category_id: int, city: str) -> PricingRule:
@@ -351,11 +370,14 @@ def _create_lot_event(
     )
 
 
-def create_material_category(db: Session, admin: User, payload: MaterialCategoryCreate) -> MaterialCategoryRead:
+def create_material_category(
+    db: Session, admin: User, payload: MaterialCategoryCreate
+) -> MaterialCategoryRead:
     """
     Admin-only creation of a new material category.
     Validates both code and name uniqueness before insert.
-    Follows the same shape as create_pricing_rule(): guard -> validate -> build -> commit -> reload -> serialize.
+    Follows the same shape as create_pricing_rule():
+    guard -> validate -> build -> commit -> reload -> serialize.
     """
     _ensure_admin(admin)
 
@@ -393,11 +415,15 @@ def create_material_category(db: Session, admin: User, payload: MaterialCategory
     return _serialize_category(category)
 
 
-def list_material_categories(db: Session, *, active_only: bool = True) -> list[MaterialCategoryRead]:
+def list_material_categories(
+    db: Session, *, active_only: bool = True
+) -> list[MaterialCategoryRead]:
     statement = select(MaterialCategory)
     if active_only:
         statement = statement.where(MaterialCategory.is_active.is_(True))
-    statement = statement.order_by(MaterialCategory.display_order.asc(), MaterialCategory.name.asc())
+    statement = statement.order_by(
+        MaterialCategory.display_order.asc(), MaterialCategory.name.asc()
+    )
     categories = db.execute(statement).scalars().all()
     return [_serialize_category(category) for category in categories]
 
@@ -424,13 +450,21 @@ def create_pricing_rule(db: Session, admin: User, payload: PricingRuleCreate) ->
     _ensure_admin(admin)
     category = _get_category_or_404(db, payload.material_category_id)
     if not category.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive material categories cannot be priced")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive material categories cannot be priced",
+        )
     if payload.effective_to is not None and payload.effective_to < payload.effective_from:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="effective_to cannot be earlier than effective_from")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="effective_to cannot be earlier than effective_from",
+        )
 
     city = _normalize_city(payload.city)
     if payload.is_active:
-        _ensure_no_active_pricing_conflict(db, material_category_id=payload.material_category_id, city=city)
+        _ensure_no_active_pricing_conflict(
+            db, material_category_id=payload.material_category_id, city=city
+        )
 
     rule = PricingRule(
         material_category_id=payload.material_category_id,
@@ -449,7 +483,9 @@ def create_pricing_rule(db: Session, admin: User, payload: PricingRuleCreate) ->
     return _serialize_pricing_rule(rule)
 
 
-def update_pricing_rule(db: Session, admin: User, pricing_rule_id: int, payload: PricingRuleUpdate) -> PricingRuleRead:
+def update_pricing_rule(
+    db: Session, admin: User, pricing_rule_id: int, payload: PricingRuleUpdate
+) -> PricingRuleRead:
     _ensure_admin(admin)
     rule = _get_pricing_rule_or_404(db, pricing_rule_id)
     update_data = payload.model_dump(exclude_unset=True, mode="json")
@@ -460,7 +496,10 @@ def update_pricing_rule(db: Session, admin: User, pricing_rule_id: int, payload:
     if "effective_to" in update_data and update_data["effective_to"] is not None:
         effective_from = update_data.get("effective_from", rule.effective_from)
         if update_data["effective_to"] < effective_from:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="effective_to cannot be earlier than effective_from")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="effective_to cannot be earlier than effective_from",
+            )
     if next_is_active:
         _ensure_no_active_pricing_conflict(
             db,
@@ -550,26 +589,38 @@ def list_eligible_pickups_for_inventory(db: Session) -> list[EligiblePickupRead]
 
 
 def _get_eligible_pickup_or_400(db: Session, pickup_request_id: int) -> PickupRequest:
-    pickup = (
-        db.execute(
-            select(PickupRequest)
-            .options(
-                selectinload(PickupRequest.assignment),
-                selectinload(PickupRequest.citizen),
-                selectinload(PickupRequest.inventory_lot),
-            )
-            .where(PickupRequest.id == pickup_request_id)
+    pickup = db.execute(
+        select(PickupRequest)
+        .options(
+            selectinload(PickupRequest.assignment),
+            selectinload(PickupRequest.citizen),
+            selectinload(PickupRequest.inventory_lot),
         )
-        .scalar_one_or_none()
-    )
+        .where(PickupRequest.id == pickup_request_id)
+    ).scalar_one_or_none()
     if pickup is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
     if pickup.status != PickupStatus.completed:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pickup request is not eligible for inventory")
-    if pickup.assignment is None or pickup.assignment.weight_kg is None or pickup.assignment.weight_kg <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pickup request does not have a valid completed weight")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pickup request is not eligible for inventory",
+        )
+    if (
+        pickup.assignment is None
+        or pickup.assignment.weight_kg is None
+        or pickup.assignment.weight_kg <= 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pickup request does not have a valid completed weight",
+        )
     if pickup.inventory_lot is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An inventory lot already exists for this pickup")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An inventory lot already exists for this pickup",
+        )
     return pickup
 
 
@@ -578,12 +629,17 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
     pickup = _get_eligible_pickup_or_400(db, payload.pickup_request_id)
     category = _get_category_or_404(db, payload.material_category_id)
     if not category.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive material categories cannot be used for inventory")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive material categories cannot be used for inventory",
+        )
 
     try:
         lot_status = InventoryLotStatus(payload.status)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot status") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot status"
+        ) from exc
 
     source_city = _extract_city_from_address(pickup.address)
     pricing_rule = _get_active_pricing_rule(db, payload.material_category_id, source_city)
@@ -639,6 +695,8 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
 
     lot = _get_lot_or_404(db, lot.id)
     return _serialize_inventory_lot(lot)
+
+
 def list_inventory_lots_for_admin(
     db: Session,
     *,
@@ -655,9 +713,13 @@ def list_inventory_lots_for_admin(
     search: str | None = None,
 ) -> InventoryLotPageRead:
     if page < 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page must be at least 1")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="page must be at least 1"
+        )
     if page_size < 1 or page_size > 100:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page_size must be between 1 and 100")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="page_size must be between 1 and 100"
+        )
 
     statement = _inventory_lot_query()
 
@@ -666,7 +728,9 @@ def list_inventory_lots_for_admin(
         try:
             filters.append(InventoryLot.status == InventoryLotStatus(status_value))
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot status") from exc
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inventory lot status"
+            ) from exc
     if city is not None:
         filters.append(InventoryLot.source_city == city.strip())
     if material_category_id is not None:
@@ -703,7 +767,9 @@ def list_inventory_lots_for_admin(
     if sort_column is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid sort_by value")
     if sort_order not in {"asc", "desc"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid sort_order value")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid sort_order value"
+        )
 
     order_clause = asc(sort_column) if sort_order == "asc" else desc(sort_column)
     count_subquery = statement.order_by(None).subquery()
@@ -712,8 +778,7 @@ def list_inventory_lots_for_admin(
 
     lots = (
         db.execute(
-            statement
-            .order_by(order_clause, InventoryLot.id.desc())
+            statement.order_by(order_clause, InventoryLot.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -733,7 +798,9 @@ def get_inventory_lot_for_admin(db: Session, lot_id: int) -> InventoryLotRead:
     return _serialize_inventory_lot(_get_lot_or_404(db, lot_id))
 
 
-def update_inventory_lot(db: Session, admin: User, lot_id: int, payload: InventoryLotUpdate) -> InventoryLotRead:
+def update_inventory_lot(
+    db: Session, admin: User, lot_id: int, payload: InventoryLotUpdate
+) -> InventoryLotRead:
     _ensure_admin(admin)
     lot = _get_lot_or_404(db, lot_id)
     update_data = payload.model_dump(exclude_unset=True, mode="json")
@@ -757,7 +824,10 @@ def update_inventory_lot(db: Session, admin: User, lot_id: int, payload: Invento
     if "visibility" in update_data and update_data["visibility"] is not None:
         next_visibility = _parse_inventory_visibility(update_data["visibility"])
         if next_visibility != lot.visibility:
-            changed_fields["visibility"] = {"from": lot.visibility.value, "to": next_visibility.value}
+            changed_fields["visibility"] = {
+                "from": lot.visibility.value,
+                "to": next_visibility.value,
+            }
             lot.visibility = next_visibility
 
     if "archive_reason" in update_data:
@@ -893,10 +963,14 @@ def release_expired_reservations(db: Session) -> int:
                 event_notes="Dealer reservation expired automatically.",
                 metadata_json={
                     "reserved_by_dealer_id": previous_dealer_id,
-                    "reserved_at": previous_reserved_at.isoformat() if previous_reserved_at is not None else None,
-                    "reservation_expires_at": previous_expires_at.isoformat()
-                    if previous_expires_at is not None
-                    else None,
+                    "reserved_at": (
+                        previous_reserved_at.isoformat()
+                        if previous_reserved_at is not None
+                        else None
+                    ),
+                    "reservation_expires_at": (
+                        previous_expires_at.isoformat() if previous_expires_at is not None else None
+                    ),
                 },
             )
         db.commit()
@@ -926,9 +1000,13 @@ def list_inventory_lots_for_dealer(
     _ensure_approved_dealer(db, dealer)
     release_expired_reservations(db)
     if page < 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page must be at least 1")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="page must be at least 1"
+        )
     if page_size < 1 or page_size > 50:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="page_size must be between 1 and 50")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="page_size must be between 1 and 50"
+        )
 
     filters = [
         InventoryLot.status == InventoryLotStatus.available,
@@ -959,12 +1037,13 @@ def list_inventory_lots_for_dealer(
     )
 
 
-def get_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> DealerMarketplaceLotDetailRead:
+def get_inventory_lot_for_dealer(
+    db: Session, dealer: User, lot_id: int
+) -> DealerMarketplaceLotDetailRead:
     _ensure_approved_dealer(db, dealer)
     release_expired_reservations(db)
     lot = db.execute(
-        _dealer_lot_detail_statement()
-        .where(
+        _dealer_lot_detail_statement().where(
             InventoryLot.id == lot_id,
             InventoryLot.visibility == InventoryLotVisibility.visible,
             InventoryLot.status == InventoryLotStatus.available,
@@ -976,7 +1055,9 @@ def get_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> Deal
     return _serialize_dealer_lot_detail(lot)
 
 
-def reserve_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> DealerMarketplaceLotDetailRead:
+def reserve_inventory_lot_for_dealer(
+    db: Session, dealer: User, lot_id: int
+) -> DealerMarketplaceLotDetailRead:
     _ensure_approved_dealer(db, dealer)
     release_expired_reservations(db)
     now = _utc_now()
@@ -984,19 +1065,29 @@ def reserve_inventory_lot_for_dealer(db: Session, dealer: User, lot_id: int) -> 
 
     try:
         lot = db.execute(
-            _dealer_lot_detail_statement()
-            .where(InventoryLot.id == lot_id)
-            .with_for_update()
+            _dealer_lot_detail_statement().where(InventoryLot.id == lot_id).with_for_update()
         ).scalar_one_or_none()
 
-        if lot is None or lot.visibility != InventoryLotVisibility.visible or lot.archived_at is not None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory lot not found")
+        if (
+            lot is None
+            or lot.visibility != InventoryLotVisibility.visible
+            or lot.archived_at is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Inventory lot not found"
+            )
         if lot.status == InventoryLotStatus.reserved:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is already reserved")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is already reserved"
+            )
         if lot.status == InventoryLotStatus.sold:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is already sold")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is already sold"
+            )
         if lot.status != InventoryLotStatus.available:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is not available")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Inventory lot is not available"
+            )
 
         lot.status = InventoryLotStatus.reserved
         lot.reserved_by_dealer_id = dealer.id

@@ -9,9 +9,6 @@ def test_register_citizen_success(client):
             "role": "citizen",
         },
     )
-    print("STATUS:", response.status_code)
-    print("BODY:", response.text)
-
     assert response.status_code == 201
     body = response.json()
     assert "access_token" in body
@@ -104,7 +101,9 @@ def test_login_success(client):
             "role": "citizen",
         },
     )
-    response = client.post("/auth/login", json={"email": "login@example.com", "password": "Test@1234"})
+    response = client.post(
+        "/auth/login", json={"email": "login@example.com", "password": "Test@1234"}
+    )
     assert response.status_code == 200
     assert "access_token" in response.json()
 
@@ -120,12 +119,16 @@ def test_login_wrong_password_fails(client):
             "role": "citizen",
         },
     )
-    response = client.post("/auth/login", json={"email": "login2@example.com", "password": "WrongPassword"})
+    response = client.post(
+        "/auth/login", json={"email": "login2@example.com", "password": "WrongPassword"}
+    )
     assert response.status_code == 401
 
 
 def test_login_nonexistent_email_fails(client):
-    response = client.post("/auth/login", json={"email": "nobody@example.com", "password": "Test@1234"})
+    response = client.post(
+        "/auth/login", json={"email": "nobody@example.com", "password": "Test@1234"}
+    )
     assert response.status_code == 401
 
 

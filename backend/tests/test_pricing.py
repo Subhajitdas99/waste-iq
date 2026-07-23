@@ -23,7 +23,9 @@ def test_admin_create_pricing_rule_success(client, admin_headers, material_categ
 def test_create_pricing_rule_for_inactive_category_fails(client, admin_headers, db_session):
     from app.models.material_category import MaterialCategory
 
-    inactive_category = MaterialCategory(code="INACTIVE_CAT", name="Inactive Material", is_active=False, display_order=99)
+    inactive_category = MaterialCategory(
+        code="INACTIVE_CAT", name="Inactive Material", is_active=False, display_order=99
+    )
     db_session.add(inactive_category)
     db_session.commit()
 
@@ -56,7 +58,9 @@ def test_create_pricing_rule_invalid_date_range_fails(client, admin_headers, mat
     assert response.status_code == 400
 
 
-def test_create_active_pricing_rule_conflicts_with_existing_active_rule(client, admin_headers, material_category, active_pricing_rule):
+def test_create_active_pricing_rule_conflicts_with_existing_active_rule(
+    client, admin_headers, material_category, active_pricing_rule
+):
     response = client.post(
         "/admin/pricing-rules",
         json={
@@ -71,7 +75,9 @@ def test_create_active_pricing_rule_conflicts_with_existing_active_rule(client, 
     assert response.status_code == 400
 
 
-def test_create_inactive_pricing_rule_does_not_conflict(client, admin_headers, material_category, active_pricing_rule):
+def test_create_inactive_pricing_rule_does_not_conflict(
+    client, admin_headers, material_category, active_pricing_rule
+):
     """Inactive rules can coexist with an active one for the same category+city."""
     response = client.post(
         "/admin/pricing-rules",
@@ -98,14 +104,18 @@ def test_update_pricing_rule_price(client, admin_headers, active_pricing_rule):
 
 
 def test_deactivate_pricing_rule(client, admin_headers, active_pricing_rule):
-    response = client.post(f"/admin/pricing-rules/{active_pricing_rule.id}/deactivate", headers=admin_headers)
+    response = client.post(
+        f"/admin/pricing-rules/{active_pricing_rule.id}/deactivate", headers=admin_headers
+    )
     assert response.status_code == 200
     assert response.json()["is_active"] is False
 
 
 def test_reactivate_pricing_rule_success(client, admin_headers, active_pricing_rule):
     client.post(f"/admin/pricing-rules/{active_pricing_rule.id}/deactivate", headers=admin_headers)
-    response = client.post(f"/admin/pricing-rules/{active_pricing_rule.id}/activate", headers=admin_headers)
+    response = client.post(
+        f"/admin/pricing-rules/{active_pricing_rule.id}/activate", headers=admin_headers
+    )
     assert response.status_code == 200
     assert response.json()["is_active"] is True
 
@@ -125,14 +135,19 @@ def test_activate_pricing_rule_conflicting_with_another_active_rule_fails(
         headers=admin_headers,
     ).json()
 
-    response = client.post(f"/admin/pricing-rules/{deactivated['id']}/activate", headers=admin_headers)
+    response = client.post(
+        f"/admin/pricing-rules/{deactivated['id']}/activate", headers=admin_headers
+    )
     assert response.status_code == 400
 
 
 def test_pricing_rule_future_effective_from_not_yet_active_for_lot_creation(
     client, admin_headers, completed_pickup_with_assignment, material_category, db_session
 ):
-    """A rule with effective_from in the future should NOT be resolvable as 'active' for lot pricing."""
+    """
+    A rule with effective_from in the future should NOT be
+    resolvable as 'active' for lot pricing.
+    """
     from app.models.pricing_rule import PricingRule
 
     future_rule = PricingRule(
@@ -149,7 +164,10 @@ def test_pricing_rule_future_effective_from_not_yet_active_for_lot_creation(
 
     response = client.post(
         "/admin/inventory-lots",
-        json={"pickup_request_id": completed_pickup_with_assignment.id, "material_category_id": material_category.id},
+        json={
+            "pickup_request_id": completed_pickup_with_assignment.id,
+            "material_category_id": material_category.id,
+        },
         headers=admin_headers,
     )
     # No currently-active rule exists (the only one is in the future), so lot creation must fail.
@@ -175,7 +193,10 @@ def test_pricing_rule_expired_effective_to_not_active_for_lot_creation(
 
     response = client.post(
         "/admin/inventory-lots",
-        json={"pickup_request_id": completed_pickup_with_assignment.id, "material_category_id": material_category.id},
+        json={
+            "pickup_request_id": completed_pickup_with_assignment.id,
+            "material_category_id": material_category.id,
+        },
         headers=admin_headers,
     )
     assert response.status_code == 400

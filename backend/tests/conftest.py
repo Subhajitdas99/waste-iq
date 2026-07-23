@@ -1,38 +1,7 @@
-"""
-Shared fixtures for the Waste-IQ test suite.
-
-Isolation strategy:
-- One in-memory SQLite database is created PER TEST FUNCTION (not shared
-  across the session), using StaticPool so the single in-memory connection
-  is reused across the request inside that one test instead of vanishing
-  between connections (SQLite in-memory DBs are connection-scoped by
-  default, which would otherwise destroy data between dependency calls).
-- All tables are created fresh at the start of every test and dropped at
-  the end. This guarantees zero cross-test leakage without needing
-  begin/rollback savepoint tricks, which are more fragile to get right
-  across FastAPI's dependency-injected sessions.
-- The app's get_db dependency is overridden to yield a session bound to
-  this per-test engine, then app.dependency_overrides is cleared after.
-- No external services, no production DATABASE_URL is ever touched.
-
-CI / environment note:
-`app.core.config.Settings` reads from a hardcoded `.env` file path and
-constructs at import time (`settings = get_settings()` in
-app/core/config.py). To keep this suite runnable in CI with zero real
-secrets, every required env var is set here via os.environ BEFORE any
-`app.*` module is imported -- this must happen at module level (not
-inside a fixture), since pytest collects and imports all test files,
-which transitively import app.main, before any fixture has a chance
-to run.
-"""
-
-import sys
-from pathlib import Path
-
-BACKEND_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BACKEND_ROOT))
-
 import os
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_unused.db")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-for-production")
@@ -40,10 +9,11 @@ os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
 os.environ.setdefault("ADMIN_REGISTRATION_CODE", "test-admin-code")
-# Bootstrap admin vars intentionally left unset so bootstrap_admin_user()
-# is a no-op during tests (it returns early if any of the four are missing).
 
-from datetime import datetime, timedelta, timezone
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BACKEND_ROOT))
+
+# flake8: noqa: E402
 
 import pytest
 from fastapi.testclient import TestClient
@@ -57,18 +27,15 @@ from app.main import app as fastapi_app
 from app.models.base import Base
 from app.models.user import User, UserRole
 
-# Import every model module so Base.metadata is fully populated before
-# create_all() runs. SQLAlchemy only registers a model with the metadata
-# once its module has been imported somewhere in the process.
-from app.models import user  # noqa: F401
-from app.models import pickup_request  # noqa: F401
-from app.models import pickup_request_event  # noqa: F401
-from app.models import collector_assignment  # noqa: F401
-from app.models import dealer_profile  # noqa: F401
-from app.models import material_category  # noqa: F401
-from app.models import pricing_rule  # noqa: F401
-from app.models import inventory_lot  # noqa: F401
-from app.models import inventory_lot_event  # noqa: F401  # noqa: F401
+from app.models import collector_assignment as collector_assignment_model  # noqa: F401
+from app.models import dealer_profile as dealer_profile_model  # noqa: F401
+from app.models import inventory_lot as inventory_lot_model  # noqa: F401
+from app.models import inventory_lot_event as inventory_lot_event_model  # noqa: F401
+from app.models import material_category as material_category_model  # noqa: F401
+from app.models import pickup_request as pickup_request_model  # noqa: F401
+from app.models import pickup_request_event as pickup_request_event_model  # noqa: F401
+from app.models import pricing_rule as pricing_rule_model  # noqa: F401
+from app.models import user as user_model  # noqa: F401
 
 
 @pytest.fixture()
@@ -112,18 +79,15 @@ def client(db_session):
         with TestClient(fastapi_app) as test_client:
             yield test_client
     finally:
-        fastapi_app.dependency_overrides.clear()        
-
-    
-
-
-    
+        fastapi_app.dependency_overrides.clear()
 
 
 # ─── User factories ───────────────────────────────────────────────────────────
 
 
-def _create_user(db_session, *, role: UserRole, email: str, name: str = "Test User", phone: str = "9000000001") -> User:
+def _create_user(
+    db_session, *, role: UserRole, email: str, name: str = "Test User", phone: str = "9000000001"
+) -> User:
     user = User(
         name=name,
         email=email,
@@ -144,17 +108,23 @@ def _auth_headers(user: User) -> dict[str, str]:
 
 @pytest.fixture()
 def citizen_user(db_session) -> User:
-    return _create_user(db_session, role=UserRole.citizen, email="citizen@test.com", phone="9000000001")
+    return _create_user(
+        db_session, role=UserRole.citizen, email="citizen@test.com", phone="9000000001"
+    )
 
 
 @pytest.fixture()
 def collector_user(db_session) -> User:
-    return _create_user(db_session, role=UserRole.collector, email="collector@test.com", phone="9000000002")
+    return _create_user(
+        db_session, role=UserRole.collector, email="collector@test.com", phone="9000000002"
+    )
 
 
 @pytest.fixture()
 def dealer_user(db_session) -> User:
-    return _create_user(db_session, role=UserRole.dealer, email="dealer@test.com", phone="9000000003")
+    return _create_user(
+        db_session, role=UserRole.dealer, email="dealer@test.com", phone="9000000003"
+    )
 
 
 @pytest.fixture()
@@ -164,7 +134,9 @@ def admin_user(db_session) -> User:
 
 @pytest.fixture()
 def second_dealer_user(db_session) -> User:
-    return _create_user(db_session, role=UserRole.dealer, email="dealer2@test.com", phone="9000000005")
+    return _create_user(
+        db_session, role=UserRole.dealer, email="dealer2@test.com", phone="9000000005"
+    )
 
 
 @pytest.fixture()
@@ -318,7 +290,9 @@ def completed_pickup_with_assignment(db_session, citizen_user, collector_user):
 
 
 @pytest.fixture()
-def inventory_lot(db_session, completed_pickup_with_assignment, material_category, active_pricing_rule, admin_user):
+def inventory_lot(
+    db_session, completed_pickup_with_assignment, material_category, active_pricing_rule, admin_user
+):
     """A persisted, available, visible InventoryLot ready to be browsed/reserved."""
     from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 

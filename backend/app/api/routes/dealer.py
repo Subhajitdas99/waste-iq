@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db, require_roles
 from app.models.user import User
 from app.schemas.dealer import DealerProfileCreate, DealerProfileRead, DealerProfileUpdate
-from app.services.dealer_profiles import create_dealer_profile, get_dealer_profile, update_dealer_profile
+from app.services.dealer_profiles import (
+    create_dealer_profile,
+    get_dealer_profile,
+    update_dealer_profile,
+)
 
 router = APIRouter()
 
@@ -25,7 +29,9 @@ def get_profile(
 ) -> DealerProfileRead:
     profile = get_dealer_profile(db, current_user)
     if profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
+        )
     return profile
 
 
@@ -37,5 +43,7 @@ def patch_profile(
 ) -> DealerProfileRead:
     profile = update_dealer_profile(db, current_user, payload)
     if profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
+        )
     return profile

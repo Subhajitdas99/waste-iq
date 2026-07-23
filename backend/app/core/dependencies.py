@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.security import decode_access_token
 from app.db.session import SessionLocal
 from app.models.user import User
@@ -48,7 +49,45 @@ def get_current_user(
 def require_roles(*roles: str):
     def dependency(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+            )
         return user
 
     return dependency
+
+
+def get_ai_classifier():
+    from app.services.ai_classifier import get_classifier
+
+    return get_classifier()
+
+
+def get_image_uploader(settings: Settings = Depends(get_settings)):
+    from app.services.upload import CloudinaryUploadConfig, CloudinaryUploader
+
+    return CloudinaryUploader(
+        config=CloudinaryUploadConfig(
+            cloud_name=settings.cloudinary_cloud_name,
+            api_key=settings.cloudinary_api_key,
+            api_secret=settings.cloudinary_api_secret,
+            required=settings.cloudinary_required,
+        )
+    )
+
+
+def get_pickup_request_image_service(
+    uploader=Depends(get_image_uploader),
+    classifier=Depends(get_ai_classifier),
+):
+    from app.services.pickup_request_images import PickupRequestImageService
+
+    return PickupRequestImageService(uploader=uploader, classifier=classifier)
+
+
+def get_pickup_request_creation_service(
+    image_service=Depends(get_pickup_request_image_service),
+):
+    from app.services.pickup_request_creation import PickupRequestCreationService
+
+    return PickupRequestCreationService(image_service=image_service)

@@ -21,11 +21,7 @@ inventory_lots = sa.table(
 
 
 def _build_backfill_lot_number(created_at: datetime | None, lot_id: int) -> str:
-    year = (
-        created_at.year
-        if created_at is not None
-        else datetime.now(timezone.utc).year
-    )
+    year = created_at.year if created_at is not None else datetime.now(timezone.utc).year
     return f"LOT-{year:04d}-{lot_id:06d}"
 
 
@@ -56,15 +52,9 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
 
-    columns = {
-        column["name"]
-        for column in inspector.get_columns("inventory_lots")
-    }
+    columns = {column["name"] for column in inspector.get_columns("inventory_lots")}
 
-    indexes = {
-        index["name"]
-        for index in inspector.get_indexes("inventory_lots")
-    }
+    indexes = {index["name"] for index in inspector.get_indexes("inventory_lots")}
 
     # ------------------------------------------------------------------
     # Add column only if missing
@@ -116,20 +106,14 @@ def downgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
 
-    indexes = {
-        index["name"]
-        for index in inspector.get_indexes("inventory_lots")
-    }
+    indexes = {index["name"] for index in inspector.get_indexes("inventory_lots")}
 
     index_name = op.f("ix_inventory_lots_lot_number")
 
     if index_name in indexes:
         op.drop_index(index_name, table_name="inventory_lots")
 
-    columns = {
-        column["name"]
-        for column in inspector.get_columns("inventory_lots")
-    }
+    columns = {column["name"] for column in inspector.get_columns("inventory_lots")}
 
     if "lot_number" in columns:
         with op.batch_alter_table("inventory_lots") as batch_op:
