@@ -1,51 +1,30 @@
-import js from "@eslint/js";
-import globals from "globals";
-import react from "eslint-plugin-react";
-import reactHooks from "eslint-plugin-react-hooks";
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
 
-export default [
+export default tseslint.config(
+  { ignores: ['dist'] },
   {
-    ignores: ["dist", "node_modules"],
-  },
-  js.configs.recommended,
-  {
-    files: ["**/*.{js,jsx}"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    files: ['**/*.{ts,tsx}'],
     languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-      globals: {
-        ...globals.browser,
-        ...globals.es2021,
-        ...globals.node,
-      },
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
+      ecmaVersion: 2020,
+      globals: globals.browser,
     },
     plugins: {
-      react,
-      "react-hooks": reactHooks,
-    },
-    settings: {
-      react: {
-        version: "detect",
-      },
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
     },
     rules: {
-      ...react.configs.recommended.rules,
-      ...react.configs["jsx-runtime"].rules,
-      "react/prop-types": "off",
-      "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "error",
-      "no-unused-vars": [
-        "error",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-        },
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
       ],
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'warn',
     },
-  },
-];
+  }
+)
