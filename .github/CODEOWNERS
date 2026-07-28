@@ -1,0 +1,130 @@
+# CODEOWNERS
+#
+# This file defines code ownership for the Waste-IQ repository.
+# GitHub will automatically request reviews from the listed owners
+# when a pull request modifies the files or directories they own.
+#
+# Ownership rules follow a "last match wins" precedence — more specific
+# patterns at the bottom of this file override broader patterns above.
+#
+# Syntax:
+#   <pattern>    @<owner-or-team> [additional owners...]
+#
+# Teams:
+#   @waste-iq/core-maintainers  — Overall project leads and architects
+#   @waste-iq/backend-team      — FastAPI / Python contributors
+#   @waste-iq/frontend-team     — React / TypeScript contributors
+#   @waste-iq/ui-team           — Design system and component library
+#   @waste-iq/db-team           — Database schema and migration experts
+#   @waste-iq/devops-team       — CI/CD, Docker, infrastructure
+#   @waste-iq/docs-team         — Technical writers and documentation
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Global Fallback
+# All files not matched by a more specific pattern require core-maintainer review.
+# ─────────────────────────────────────────────────────────────────────────────
+*                                   @waste-iq/core-maintainers
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Root Configuration Files
+# License, changelog, and project-wide config files.
+# ─────────────────────────────────────────────────────────────────────────────
+/README.md                          @waste-iq/core-maintainers @waste-iq/docs-team
+/CONTRIBUTING.md                    @waste-iq/core-maintainers @waste-iq/docs-team
+/CODE_OF_CONDUCT.md                 @waste-iq/core-maintainers
+/CHANGELOG.md                       @waste-iq/core-maintainers
+/LICENSE                            @waste-iq/core-maintainers
+/docker-compose.yml                 @waste-iq/devops-team @waste-iq/core-maintainers
+/pyproject.toml                     @waste-iq/backend-team @waste-iq/core-maintainers
+/setup.cfg                          @waste-iq/backend-team
+/render.yaml                        @waste-iq/devops-team @waste-iq/core-maintainers
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GitHub Configuration & Workflows
+# Any change to CI/CD or issue templates requires devops + core review.
+# ─────────────────────────────────────────────────────────────────────────────
+/.github/                           @waste-iq/devops-team @waste-iq/core-maintainers
+/.github/workflows/backend-ci.yml   @waste-iq/devops-team @waste-iq/backend-team
+/.github/workflows/frontend-ci.yml  @waste-iq/devops-team @waste-iq/frontend-team
+/.github/ISSUE_TEMPLATE/            @waste-iq/core-maintainers @waste-iq/docs-team
+/.github/PULL_REQUEST_TEMPLATE.md   @waste-iq/core-maintainers
+/.github/CODEOWNERS                 @waste-iq/core-maintainers
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Documentation
+# ─────────────────────────────────────────────────────────────────────────────
+/docs/                              @waste-iq/docs-team @waste-iq/core-maintainers
+/docs/SYSTEM_ARCHITECTURE.md        @waste-iq/core-maintainers @waste-iq/backend-team
+/docs/DATABASE_SCHEMA.md            @waste-iq/db-team @waste-iq/backend-team
+/docs/API_SPECIFICATION.md          @waste-iq/backend-team @waste-iq/docs-team
+/docs/UI_UX_GUIDELINES.md           @waste-iq/ui-team @waste-iq/frontend-team
+/docs/DEPLOYMENT_GUIDE.md           @waste-iq/devops-team @waste-iq/core-maintainers
+/docs/SPRINT_ROADMAP.md             @waste-iq/core-maintainers
+/docs/BUSINESS_REQUIREMENTS.md      @waste-iq/core-maintainers
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — General
+# ─────────────────────────────────────────────────────────────────────────────
+/backend/                           @waste-iq/backend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — Application Source
+# ─────────────────────────────────────────────────────────────────────────────
+/backend/app/                       @waste-iq/backend-team
+/backend/app/main.py                @waste-iq/backend-team @waste-iq/core-maintainers
+/backend/app/api/                   @waste-iq/backend-team
+/backend/app/core/                  @waste-iq/backend-team @waste-iq/core-maintainers
+/backend/app/services/              @waste-iq/backend-team
+/backend/app/repositories/          @waste-iq/backend-team @waste-iq/db-team
+/backend/app/schemas/               @waste-iq/backend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — Database Models (require db-team review for any schema changes)
+# ─────────────────────────────────────────────────────────────────────────────
+/backend/app/models/                @waste-iq/backend-team @waste-iq/db-team
+/backend/app/db/                    @waste-iq/db-team @waste-iq/backend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — Database Migrations (high-risk; always require db-team sign-off)
+# ─────────────────────────────────────────────────────────────────────────────
+/backend/alembic/                   @waste-iq/db-team @waste-iq/core-maintainers
+/backend/alembic.ini                @waste-iq/db-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — Tests
+# ─────────────────────────────────────────────────────────────────────────────
+/backend/tests/                     @waste-iq/backend-team
+/backend/pytest.ini                 @waste-iq/backend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — Dependencies & Container
+# ─────────────────────────────────────────────────────────────────────────────
+/backend/requirements.txt           @waste-iq/backend-team @waste-iq/core-maintainers
+/backend/requirements-dev.txt       @waste-iq/backend-team
+/backend/Dockerfile                 @waste-iq/devops-team @waste-iq/backend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Frontend — General
+# ─────────────────────────────────────────────────────────────────────────────
+/frontend/                          @waste-iq/frontend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Frontend — Source Code
+# ─────────────────────────────────────────────────────────────────────────────
+/frontend/src/                      @waste-iq/frontend-team
+/frontend/src/api/                  @waste-iq/frontend-team @waste-iq/backend-team
+/frontend/src/components/           @waste-iq/frontend-team @waste-iq/ui-team
+/frontend/src/pages/                @waste-iq/frontend-team
+/frontend/src/routes/               @waste-iq/frontend-team
+/frontend/src/context/              @waste-iq/frontend-team
+/frontend/src/types/                @waste-iq/frontend-team
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Frontend — Build & Config
+# ─────────────────────────────────────────────────────────────────────────────
+/frontend/package.json              @waste-iq/frontend-team @waste-iq/core-maintainers
+/frontend/vite.config.ts            @waste-iq/frontend-team @waste-iq/devops-team
+/frontend/tailwind.config.js        @waste-iq/frontend-team @waste-iq/ui-team
+/frontend/tsconfig*.json            @waste-iq/frontend-team
+/frontend/eslint.config.js          @waste-iq/frontend-team
+/frontend/components.json           @waste-iq/ui-team @waste-iq/frontend-team
