@@ -1,11 +1,17 @@
-# Add these to backend/requirements.txt (or a separate
-# requirements-test.txt installed only in CI) if not already present.
-#
-# httpx is required by FastAPI's TestClient as of recent FastAPI/Starlette
-# versions but was not visible in your requirements.txt from earlier in
-# this conversation -- confirm it's there, since httpx==0.28.1 WAS listed,
-# so this is likely already satisfied. pytest itself was never listed.
+# Install runtime dependencies
+-r requirements.txt
 
+# Linting
+ruff==0.12.8
+black==25.1.0
+
+# Static typing
+mypy==1.16.1
+
+# Testing
 pytest==8.3.4
-pytest-cov
-httpx
+pytest-cov==6.1.1
+httpx==0.28.1
+
+# Optional type stubs
+types-python-jose

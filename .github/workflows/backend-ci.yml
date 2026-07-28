@@ -8,6 +8,7 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+
   pull_request:
     branches:
       - main
@@ -60,31 +61,36 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt', 'backend/requirements-dev.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements-dev.txt
+
+      - name: Verify installed tools
+        run: |
+          python --version
+          pip --version
+          ruff --version
+          black --version
+          mypy --version
+          pytest --version
 
       - name: Run Ruff linter
         run: |
-          ruff check app/ tests/
+          ruff check app tests
 
       - name: Check Black formatting
         run: |
-          black --check app/ tests/
+          black --check app tests
 
       - name: Run MyPy type checker
         run: |
-          mypy app/
+          mypy app
 
       - name: Run database migrations
         run: |
@@ -92,7 +98,7 @@ jobs:
 
       - name: Run Pytest with coverage
         run: |
-          pytest tests/ \
+          pytest tests \
             -v \
             --tb=short \
             --cov=app \
@@ -104,7 +110,7 @@ jobs:
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          file: backend/coverage.xml
+          files: backend/coverage.xml
           flags: backend
           name: backend-coverage
           fail_ci_if_error: false
