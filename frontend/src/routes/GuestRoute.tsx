@@ -15,6 +15,9 @@ export function GuestRoute({ children }: GuestRouteProps) {
   }
 
   if (token && user) {
+    if (user.role === "collector") {
+      return <Navigate to="/collector/profile" replace />;
+    }
     return <Navigate to="/dashboard" replace />;
   }
 

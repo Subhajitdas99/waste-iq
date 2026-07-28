@@ -67,6 +67,17 @@ const SettingsPage = lazy(() =>
   }))
 );
 
+const CollectorDashboardLayout = lazy(() =>
+  import("../layouts/CollectorDashboardLayout").then((m) => ({
+    default: m.CollectorDashboardLayout,
+  }))
+);
+const CollectorProfilePage = lazy(() =>
+  import("../pages/collector/CollectorProfilePage").then((m) => ({
+    default: m.CollectorProfilePage,
+  }))
+);
+
 function lazyPage(Component: ComponentType) {
   return (
     <Suspense fallback={<LoadingScreen />}>
@@ -121,6 +132,20 @@ export const router = createBrowserRouter([
       { path: "history", element: lazyPage(PickupHistoryPage) },
       { path: "profile", element: lazyPage(ProfilePage) },
       { path: "settings", element: lazyPage(SettingsPage) },
+    ],
+  },
+  {
+    path: "/collector",
+    element: (
+      <ProtectedRoute allowedRoles={["collector"]}>
+        <Suspense fallback={<LoadingScreen />}>
+          <CollectorDashboardLayout />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="profile" replace /> },
+      { path: "profile", element: lazyPage(CollectorProfilePage) },
     ],
   },
 ]);

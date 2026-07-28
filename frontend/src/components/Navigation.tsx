@@ -98,7 +98,7 @@ export function Navigation() {
           </button>
 
           {token && user ? (
-            <Link to="/dashboard">
+            <Link to={user.role === "collector" ? "/collector/profile" : "/dashboard"}>
               <Button className="font-medium">Dashboard</Button>
             </Link>
           ) : (
@@ -154,7 +154,10 @@ export function Navigation() {
 
             <div className="flex flex-col gap-2">
               {token && user ? (
-                <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                <Link
+                  to={user.role === "collector" ? "/collector/profile" : "/dashboard"}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
                   <Button className="w-full justify-center">Dashboard</Button>
                 </Link>
               ) : (

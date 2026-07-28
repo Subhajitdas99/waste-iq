@@ -46,7 +46,6 @@ export function LoginPage() {
     registered?: boolean;
   } | null;
 
-  const from = locationState?.from?.pathname ?? "/dashboard";
   const justRegistered = locationState?.registered === true;
 
   const {
@@ -71,7 +70,14 @@ export function LoginPage() {
       });
 
       login(response.data.access_token, response.data.user, data.rememberMe);
-      navigate(from, { replace: true });
+      const defaultRedirect =
+        response.data.user.role === "collector" ? "/collector/profile" : "/dashboard";
+      const targetPath =
+        locationState?.from?.pathname && locationState.from.pathname !== "/dashboard"
+          ? locationState.from.pathname
+          : defaultRedirect;
+
+      navigate(targetPath, { replace: true });
     } catch (error) {
       setApiError(getApiErrorMessage(error, "Invalid email or password"));
     }
