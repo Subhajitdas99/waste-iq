@@ -81,7 +81,7 @@ function buildConfig(mode: string): UserConfig & {
       },
     },
     test: {
-      environment: "jsdom",
+      environment: "./src/test/environments/jsdom-compat.ts",
       setupFiles: ["./src/test/setup.ts"],
       include: ["src/**/*.test.{ts,tsx}"],
       hookTimeout: 30_000,

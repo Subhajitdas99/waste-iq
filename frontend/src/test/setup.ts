@@ -32,18 +32,23 @@ if (typeof window !== "undefined" && !window.IntersectionObserver) {
 }
 
 if (typeof window !== "undefined" && !window.matchMedia) {
+  // Plain functions instead of vi.fn(): vi.restoreAllMocks() wipes the
+  // implementation of every mock in vitest's pool (including plain vi.fn()
+  // created in setup), which would make matchMedia return undefined for all
+  // later tests and crash framer-motion's reduced-motion initializer.
+  const noop = () => {};
   Object.defineProperty(window, "matchMedia", {
     writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
+    value: (query: string) => ({
       matches: false,
       media: query,
       onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
+      addListener: noop,
+      removeListener: noop,
+      addEventListener: noop,
+      removeEventListener: noop,
+      dispatchEvent: noop,
+    }),
   });
 }
 
