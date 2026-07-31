@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from sqlalchemy.orm import Session
 
@@ -27,6 +29,9 @@ def create_request(
     address: str = Form(..., min_length=8, max_length=500),
     latitude: float = Form(..., ge=-90, le=90),
     longitude: float = Form(..., ge=-180, le=180),
+    estimated_weight_kg: float | None = Form(default=None, ge=0, le=10000),
+    preferred_time: datetime | None = Form(default=None),
+    notes: str | None = Form(default=None, max_length=2000),
     image: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -44,6 +49,9 @@ def create_request(
         address=address,
         latitude=latitude,
         longitude=longitude,
+        estimated_weight_kg=estimated_weight_kg,
+        preferred_time=preferred_time,
+        notes=notes,
         image=image,
     )
 

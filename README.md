@@ -331,7 +331,7 @@ cp .env.example .env
 Edit `frontend/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 ```
 
 ```bash
@@ -365,7 +365,7 @@ The frontend will be available at **http://localhost:5173**.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `VITE_API_BASE_URL` | ✅ | `http://localhost:8000` | Backend API base URL |
+| `VITE_API_URL` | ✅ | `http://localhost:8000` | Backend API base URL |
 
 ---
 

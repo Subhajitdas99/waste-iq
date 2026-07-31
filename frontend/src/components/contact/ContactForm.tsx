@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -18,6 +18,15 @@ type ContactFormValues = z.infer<typeof contactSchema>;
 
 export function ContactForm() {
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const successTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current !== null) {
+        window.clearTimeout(successTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const {
     register,
@@ -28,12 +37,13 @@ export function ContactForm() {
     resolver: zodResolver(contactSchema),
   });
 
-  const onSubmit = async (data: ContactFormValues) => {
+  const onSubmit = async () => {
     await new Promise((resolve) => setTimeout(resolve, 800));
-    console.info("Contact form submission (frontend-only):", data);
     setIsSubmitted(true);
     reset();
-    setTimeout(() => setIsSubmitted(false), 5000);
+    successTimeoutRef.current = window.setTimeout(() => {
+      setIsSubmitted(false);
+    }, 5000);
   };
 
   return (

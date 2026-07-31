@@ -14,14 +14,18 @@ import { EmptyState } from "@/components/EmptyState";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { PickupCard } from "@/components/dashboard/PickupCard";
-import { NotificationCard } from "@/components/dashboard/NotificationCard";
+import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
+import { RecyclingImpactCard } from "@/components/dashboard/RecyclingImpactCard";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import {
   useCitizenPickupSummary,
   useCitizenPickups,
 } from "@/hooks/useCitizenPickups";
+import { useCitizenNotifications } from "@/hooks/useCitizenNotifications";
 import { buildPickupActivityText, formatDateTime } from "@/lib/pickup";
+import { computeRecyclingImpact } from "@/lib/recycling";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 const quickActions = [
   {
@@ -50,9 +54,17 @@ export function DashboardOverviewPage() {
   const { user } = useAuth();
   const summaryQuery = useCitizenPickupSummary();
   const pickupsQuery = useCitizenPickups();
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllRead,
+  } = useCitizenNotifications(pickupsQuery.data);
 
   const requests = pickupsQuery.data ?? [];
   const summary = summaryQuery.data;
+  const dashboardError = pickupsQuery.error ?? summaryQuery.error;
+  const isRefreshing = pickupsQuery.isFetching || summaryQuery.isFetching;
   const pendingRequests = requests.filter((request) => request.status === "pending");
   const activeRequests = requests.filter((request) =>
     ["accepted", "on_the_way", "collected"].includes(request.status),
@@ -60,6 +72,7 @@ export function DashboardOverviewPage() {
   const completedRequests = requests.filter((request) => request.status === "completed");
   const upcomingPickup = activeRequests[0] ?? pendingRequests[0] ?? null;
   const recentRequests = requests.slice(0, 4);
+  const recyclingImpact = computeRecyclingImpact(requests);
 
   return (
     <>
@@ -149,6 +162,39 @@ export function DashboardOverviewPage() {
           value={summary ? String(summary.completed_requests) : "-"}
           helper="Collections successfully finished and logged."
           icon={<CheckCircle2 className="h-5 w-5" />}
+        />
+      </section>
+
+      {dashboardError ? (
+        <section
+          role="alert"
+          className="mt-6 flex flex-col gap-4 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>
+            {getApiErrorMessage(
+              dashboardError,
+              "Unable to load your pickup dashboard. Please try again.",
+            )}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-auto"
+            disabled={isRefreshing}
+            onClick={() => {
+              void Promise.all([pickupsQuery.refetch(), summaryQuery.refetch()]);
+            }}
+          >
+            {isRefreshing ? "Retrying..." : "Try again"}
+          </Button>
+        </section>
+      ) : null}
+
+      <section className="mt-8">
+        <RecyclingImpactCard
+          metrics={recyclingImpact}
+          isLoading={pickupsQuery.isPending && !pickupsQuery.data}
         />
       </section>
 
@@ -298,17 +344,16 @@ export function DashboardOverviewPage() {
           </DashboardCard>
 
           <DashboardCard
-            title="Announcements"
-            description="Reusable notification UI is ready, but backend notification endpoints do not exist yet."
+            title="Notifications"
+            description="Status updates detected from your pickup requests."
           >
-            <NotificationCard
-              title="Notifications placeholder"
-              message="The current FastAPI backend does not expose citizen notification endpoints yet, so this panel remains UI-only for now."
-              timestamp="Awaiting backend support"
+            <NotificationsPanel
+              notifications={notifications}
+              unreadCount={unreadCount}
+              isLoading={pickupsQuery.isPending && !pickupsQuery.data}
+              onMarkAsRead={markAsRead}
+              onMarkAllRead={markAllRead}
             />
-            <div className="mt-4 rounded-2xl border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-              When notification APIs are added, unread badges, mark-as-read actions, and recent alerts can plug into this section without changing the dashboard layout.
-            </div>
           </DashboardCard>
         </div>
       </section>

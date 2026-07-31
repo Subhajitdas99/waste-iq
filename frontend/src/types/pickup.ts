@@ -27,6 +27,9 @@ export interface PickupRequest {
   address: string;
   latitude: number;
   longitude: number;
+  estimated_weight_kg: number | null;
+  preferred_time: string | null;
+  notes: string | null;
   status: PickupStatus;
   created_at: string;
   assigned_collector_name: string | null;
@@ -66,6 +69,9 @@ export interface CreatePickupRequestPayload {
   address: string;
   latitude: number;
   longitude: number;
+  estimated_weight_kg?: number | null;
+  preferred_time?: string | null;
+  notes?: string | null;
   image?: File | null;
 }
 
