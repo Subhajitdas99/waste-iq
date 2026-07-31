@@ -10,7 +10,7 @@ import type {
   MonthlyStat,
 } from "@/types/analytics";
 import type { DealerInventoryLot, DealerInventoryLotPage } from "@/types/inventory";
-import type { CitizenRequestSummary, PickupRequest } from "@/types/pickup";
+import type { CitizenRequestSummary, PickupRequest, PickupRequestDetail, PickupStatus, PickupTimelineEvent } from "@/types/pickup";
 import type { CollectorSummary } from "@/types/collector";
 
 export interface TestTokenOptions {
@@ -99,6 +99,53 @@ export function createCitizenSummary(overrides: Partial<CitizenRequestSummary> =
     completed_requests: 2,
     ...overrides,
   };
+}
+
+const TIMELINE_ORDERS: PickupStatus[] = [
+  "pending",
+  "accepted",
+  "on_the_way",
+  "collected",
+  "completed",
+];
+
+export function createPickupTimeline(status: PickupStatus): PickupTimelineEvent[] {
+  const events: PickupTimelineEvent[] = [];
+  const order = TIMELINE_ORDERS.indexOf(status);
+
+  if (order < 0) {
+    return [
+      {
+        id: 1,
+        status: "pending",
+        note: "Pickup request created.",
+        created_at: "2026-01-10T08:00:00Z",
+        actor_name: "Test Citizen",
+        actor_role: "citizen",
+      },
+    ];
+  }
+
+  for (let index = 0; index <= order; index += 1) {
+    const eventStatus = TIMELINE_ORDERS[index];
+    const hour = String(8 + index).padStart(2, "0");
+    events.push({
+      id: index + 1,
+      status: eventStatus,
+      note: `Pickup moved to ${eventStatus}.`,
+      created_at: `2026-01-10T${hour}:00:00Z`,
+      actor_name: index === 0 ? "Test Citizen" : "Test Collector",
+      actor_role: index === 0 ? "citizen" : "collector",
+    });
+  }
+
+  return events;
+}
+
+export function createPickupRequestDetail(
+  request: PickupRequest,
+): PickupRequestDetail {
+  return { ...request, timeline: createPickupTimeline(request.status) };
 }
 
 export function createCollectorSummary(overrides: Partial<CollectorSummary> = {}): CollectorSummary {

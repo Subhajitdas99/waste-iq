@@ -41,6 +41,11 @@ const CollectorOverviewPage = lazy(() =>
     default: m.CollectorOverviewPage,
   }))
 );
+const CollectorPickupDetailsPage = lazy(() =>
+  import("../pages/dashboard/CollectorPickupDetailsPage").then((m) => ({
+    default: m.CollectorPickupDetailsPage,
+  }))
+);
 const DealerOverviewPage = lazy(() =>
   import("../pages/dashboard/DealerOverviewPage").then((m) => ({
     default: m.DealerOverviewPage,
@@ -158,6 +163,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="overview" replace /> },
       { path: "overview", element: lazyPage(CollectorOverviewPage) },
+      { path: "pickups/:id", element: lazyPage(CollectorPickupDetailsPage) },
       { path: "profile", element: lazyPage(RoleProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],

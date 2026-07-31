@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type { UserProfile } from "@/types/auth";
+import type { PickupRequest, PickupStatus } from "@/types/pickup";
 import {
   authResponseFor,
   createAdminAnalytics,
@@ -16,6 +17,7 @@ import {
   createMaterialBreakdown,
   createMonthlyAnalytics,
   createPickupRequest,
+  createPickupRequestDetail,
   createUser,
   usersByRole,
 } from "./factories";
@@ -64,6 +66,68 @@ function requireAuthorization(request: Request): UserProfile | null {
   const subject = decodeTokenSubject(header.slice("Bearer ".length));
 
   return subject !== null ? (USER_BY_ID[subject] ?? null) : null;
+}
+
+const COLLECTOR_ID = usersByRole.collector.id;
+
+function buildPickupStore(): PickupRequest[] {
+  return [
+    createPickupRequest({
+      id: 3,
+      waste_type: "Cardboard",
+      image_url: "https://example.com/img.jpg",
+    }),
+    createPickupRequest({ id: 4, waste_type: "Glass bottles" }),
+    createPickupRequest({
+      id: 5,
+      waste_type: "Paper",
+      status: "accepted",
+      can_cancel: false,
+      assigned_collector_name: "Test Collector",
+      assignment: {
+        id: 5,
+        collector_id: COLLECTOR_ID,
+        collector_name: "Test Collector",
+        accepted_at: "2026-01-10T09:00:00Z",
+        completed_at: null,
+        weight_kg: null,
+      },
+    }),
+  ];
+}
+
+export let pickupStore: PickupRequest[] = buildPickupStore();
+
+export function resetPickupStore(): void {
+  pickupStore = buildPickupStore();
+}
+
+function requireCollector(request: Request): boolean {
+  return requireAuthorization(request)?.role === "collector";
+}
+
+function pickupById(requestId: number): PickupRequest | undefined {
+  return pickupStore.find((request) => request.id === requestId);
+}
+
+function applyTransition(
+  request: Request,
+  requestId: number,
+  status: PickupStatus,
+  patch: Partial<PickupRequest> = {},
+): HttpResponse<any> {
+  if (!requireCollector(request)) {
+    return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+  }
+
+  const pickup = pickupById(requestId);
+
+  if (!pickup) {
+    return HttpResponse.json({ detail: "Pickup request not found" }, { status: 404 });
+  }
+
+  Object.assign(pickup, { status, ...patch });
+  return HttpResponse.json(pickup);
 }
 
 export const handlers = [
@@ -166,15 +230,124 @@ export const handlers = [
     return HttpResponse.json(createCollectorSummary());
   }),
 
-  http.get("*/collector/available", () => {
-    return HttpResponse.json([
-      createPickupRequest({
-        id: 3,
-        waste_type: "Cardboard",
-        image_url: "https://example.com/img.jpg",
-      }),
-      createPickupRequest({ id: 4, waste_type: "Glass bottles" }),
-    ]);
+  http.get("*/collector/pickups/available", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    return HttpResponse.json(
+      pickupStore.filter((pickup) => pickup.status === "pending"),
+    );
+  }),
+
+  http.get("*/collector/pickups/assigned", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    return HttpResponse.json(
+      pickupStore.filter(
+        (pickup) =>
+          pickup.status !== "pending" && pickup.status !== "cancelled",
+      ),
+    );
+  }),
+
+  http.get("*/collector/pickups/:id", ({ params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup) {
+      return HttpResponse.json({ detail: "Pickup request not found" }, { status: 404 });
+    }
+
+    return HttpResponse.json(createPickupRequestDetail(pickup));
+  }),
+
+  http.post("*/collector/pickups/:id/accept", ({ request, params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup || pickup.status !== "pending") {
+      return HttpResponse.json({ detail: "Pickup request is no longer available" }, { status: 400 });
+    }
+
+    return applyTransition(request, pickup.id, "accepted", {
+      can_cancel: false,
+      assigned_collector_name: "Test Collector",
+      assignment: {
+        id: pickup.id,
+        collector_id: COLLECTOR_ID,
+        collector_name: "Test Collector",
+        accepted_at: "2026-01-10T09:00:00Z",
+        completed_at: null,
+        weight_kg: null,
+      },
+    });
+  }),
+
+  http.post("*/collector/pickups/:id/start", ({ request, params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup || pickup.status !== "accepted") {
+      return HttpResponse.json({ detail: "Only accepted requests can be started" }, { status: 400 });
+    }
+
+    return applyTransition(request, pickup.id, "on_the_way");
+  }),
+
+  http.post("*/collector/pickups/:id/collect", ({ request, params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup || pickup.status !== "on_the_way") {
+      return HttpResponse.json({ detail: "Only in-progress requests can be collected" }, { status: 400 });
+    }
+
+    return applyTransition(request, pickup.id, "collected");
+  }),
+
+  http.post("*/collector/pickups/:id/complete", async ({ request, params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup || pickup.status !== "collected") {
+      return HttpResponse.json({ detail: "Only collected requests can be completed" }, { status: 400 });
+    }
+
+    const body = (await request.json()) as { weight_kg?: number };
+    const weightKg = body.weight_kg ?? 0;
+
+    if (weightKg <= 0) {
+      return HttpResponse.json(
+        { detail: [{ msg: "Value error, weight_kg must be greater than 0" }] },
+        { status: 422 },
+      );
+    }
+
+    return applyTransition(request, pickup.id, "completed", {
+      can_cancel: false,
+      assignment: pickup.assignment
+        ? {
+            ...pickup.assignment,
+            completed_at: "2026-01-10T10:00:00Z",
+            weight_kg: weightKg,
+          }
+        : pickup.assignment,
+    });
+  }),
+
+  http.post("*/collector/pickups/:id/cancel", ({ request, params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup || pickup.status !== "accepted") {
+      return HttpResponse.json(
+        { detail: "Only accepted requests can be cancelled" },
+        { status: 400 },
+      );
+    }
+
+    return applyTransition(request, pickup.id, "pending", {
+      can_cancel: true,
+      assigned_collector_name: null,
+      assignment: null,
+    });
   }),
 
   http.get("*/dealer/inventory-lots", () => {

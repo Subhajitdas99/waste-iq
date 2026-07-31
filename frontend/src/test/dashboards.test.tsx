@@ -40,7 +40,7 @@ describe("collector dashboard", () => {
 
   it("shows the empty state when no requests are available", async () => {
     server.use(
-      http.get("*/collector/available", () => HttpResponse.json([])),
+      http.get("*/collector/pickups/available", () => HttpResponse.json([])),
     );
     storeValidSession("collector");
     await renderApp("/collector/overview");

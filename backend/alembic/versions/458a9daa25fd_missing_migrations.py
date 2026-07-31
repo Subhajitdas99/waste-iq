@@ -58,7 +58,7 @@ def upgrade() -> None:
                 native_enum=False,
             ),
             existing_nullable=False,
-            existing_server_default=sa.text("'pending'"),
+            existing_server_default="'pending'",
         )
 
 
@@ -79,7 +79,7 @@ def downgrade() -> None:
             ),
             type_=sa.VARCHAR(length=9),
             existing_nullable=False,
-            existing_server_default=sa.text("'pending'"),
+            existing_server_default="'pending'",
         )
         batch_op.drop_column("confidence")
         batch_op.drop_column("category")

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "./server";
+import { storeValidSession } from "./test-utils";
 import {
   getCollectorSummary,
   listAvailableCollectorRequests,
@@ -23,6 +24,7 @@ describe("collector API", () => {
   });
 
   it("lists available collector requests", async () => {
+    storeValidSession("collector");
     const requests = await listAvailableCollectorRequests();
     expect(requests.map((request) => request.waste_type)).toEqual([
       "Cardboard",

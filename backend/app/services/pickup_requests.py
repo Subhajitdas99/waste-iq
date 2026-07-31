@@ -127,6 +127,24 @@ def _ensure_assigned_collector(pickup_request: PickupRequest, collector: User) -
         )
 
 
+def _get_request_for_assigned_collector(
+    db: Session, request_id: int, collector: User
+) -> PickupRequest:
+    """Load a pickup and enforce that the collector is its assigned collector."""
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
+    _ensure_assigned_collector(pickup_request, collector)
+    return pickup_request
+
+
+def _require_status(pickup_request: PickupRequest, expected: PickupStatus, detail: str) -> None:
+    if pickup_request.status != expected:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
 def create_pickup_request(
     db: Session,
     citizen: User,
@@ -245,6 +263,54 @@ def get_pickup_request_for_user(
     return _to_detail_schema(pickup_request)
 
 
+def get_pickup_request_for_collector(
+    db: Session, collector: User, request_id: int
+) -> PickupRequestDetailRead:
+    """Full pickup detail with timeline, visible to collectors who can work the request.
+
+    Collectors may view any pending (unassigned) request from the available queue,
+    but assigned requests are only visible to the assigned collector.
+    """
+    pickup_request = _repository.get_by_id(db, request_id, include_timeline=True)
+    if pickup_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
+
+    _enforce_request_access(pickup_request, collector)
+    return _to_detail_schema(pickup_request)
+
+
+def cancel_pickup_request_assignment(
+    db: Session, collector: User, request_id: int
+) -> PickupRequestRead:
+    """Collector releases an accepted request back to the available queue.
+
+    Only allowed before the trip starts (status == accepted). The assignment is
+    deleted, the pickup returns to `pending`, and the release is recorded on the
+    timeline with the collector as actor.
+    """
+    pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+    _require_status(
+        pickup_request,
+        PickupStatus.accepted,
+        "Only accepted requests can be cancelled",
+    )
+
+    db.delete(pickup_request.assignment)
+    pickup_request.status = PickupStatus.pending
+    pickup_request.assignment = None
+    _repository.add_status_event(
+        db,
+        pickup_request,
+        PickupStatus.pending,
+        "Collector cancelled the assignment. Request is available again.",
+        actor=collector,
+    )
+    db.commit()
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+
+
 def get_citizen_request_summary(db: Session, citizen: User) -> CitizenRequestSummaryRead:
     return CitizenRequestSummaryRead(
         total_requests=count_pickups_for_user(db, citizen.id),
@@ -339,16 +405,8 @@ def accept_pickup_request(db: Session, collector: User, request_id: int) -> Pick
 def mark_pickup_request_on_the_way(
     db: Session, collector: User, request_id: int
 ) -> PickupRequestRead:
-    pickup_request = _repository.get_by_id(db, request_id)
-    if pickup_request is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
-        )
-    _ensure_assigned_collector(pickup_request, collector)
-    if pickup_request.status != PickupStatus.accepted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Only accepted requests can be started"
-        )
+    pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+    _require_status(pickup_request, PickupStatus.accepted, "Only accepted requests can be started")
 
     pickup_request.status = PickupStatus.on_the_way
     _repository.add_status_event(
@@ -365,17 +423,12 @@ def mark_pickup_request_on_the_way(
 def mark_pickup_request_collected(
     db: Session, collector: User, request_id: int
 ) -> PickupRequestRead:
-    pickup_request = _repository.get_by_id(db, request_id)
-    if pickup_request is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
-        )
-    _ensure_assigned_collector(pickup_request, collector)
-    if pickup_request.status != PickupStatus.on_the_way:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only in-progress requests can be collected",
-        )
+    pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+    _require_status(
+        pickup_request,
+        PickupStatus.on_the_way,
+        "Only in-progress requests can be collected",
+    )
 
     pickup_request.status = PickupStatus.collected
     _repository.add_status_event(
@@ -392,17 +445,12 @@ def mark_pickup_request_collected(
 def complete_pickup_request(
     db: Session, collector: User, request_id: int, weight_kg: float
 ) -> PickupRequestRead:
-    pickup_request = _repository.get_by_id(db, request_id)
-    if pickup_request is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
-        )
-    _ensure_assigned_collector(pickup_request, collector)
-    if pickup_request.status != PickupStatus.collected:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only collected requests can be completed",
-        )
+    pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+    _require_status(
+        pickup_request,
+        PickupStatus.collected,
+        "Only collected requests can be completed",
+    )
 
     pickup_request.status = PickupStatus.completed
     pickup_request.assignment.completed_at = datetime.now(timezone.utc)
