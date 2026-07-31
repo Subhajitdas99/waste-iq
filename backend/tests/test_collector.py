@@ -327,3 +327,185 @@ def test_collector_summary_reflects_completed_jobs(
 def test_citizen_cannot_view_collector_summary(client, citizen_headers):
     response = client.get("/collector/summary", headers=citizen_headers)
     assert response.status_code == 403
+
+
+# ─── Canonical /collector/pickups/* lifecycle ───────────────────────────────
+
+
+def test_pickups_available_lists_unassigned_pending_requests(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    available_request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    assigned_request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{assigned_request['id']}/accept", headers=collector_headers)
+
+    response = client.get("/collector/pickups/available", headers=collector_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body] == [available_request["id"]]
+    assert body[0]["assignment"] is None
+
+
+def test_pickups_assigned_lists_requests_accepted_by_collector(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    assigned_request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{assigned_request['id']}/accept", headers=collector_headers)
+
+    response = client.get("/collector/pickups/assigned", headers=collector_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body] == [assigned_request["id"]]
+    assert body[0]["status"] == "accepted"
+    assert body[0]["assignment"]["collector_id"] is not None
+
+
+def test_pickup_detail_includes_timeline_for_assigned_collector(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
+
+    response = client.get(f"/collector/pickups/{request['id']}", headers=collector_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == request["id"]
+    assert body["status"] == "accepted"
+    statuses = [event["status"] for event in body["timeline"]]
+    assert statuses == ["pending", "accepted"]
+    accepted_event = body["timeline"][1]
+    assert accepted_event["actor_role"] == "collector"
+    assert accepted_event["actor_name"]
+
+
+def test_pickup_detail_allows_viewing_available_pending_request(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+
+    response = client.get(f"/collector/pickups/{request['id']}", headers=collector_headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+
+
+def test_pickup_detail_hidden_from_other_collectors(
+    client, citizen_headers, collector_headers, make_user, auth_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
+
+    other_headers = auth_headers(
+        make_user(role=UserRole.collector, email="other2@wasteiq.test", phone="9000077777")
+    )
+
+    response = client.get(f"/collector/pickups/{request['id']}", headers=other_headers)
+    assert response.status_code == 403
+
+
+def test_pickup_detail_nonexistent_returns_404(client, collector_headers):
+    response = client.get("/collector/pickups/999999", headers=collector_headers)
+    assert response.status_code == 404
+
+
+def test_pickup_cancel_releases_request_back_to_available(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
+
+    response = client.post(f"/collector/pickups/{request['id']}/cancel", headers=collector_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["assignment"] is None
+    assert body["can_cancel"] is True
+
+    available = client.get("/collector/pickups/available", headers=collector_headers).json()
+    assert [item["id"] for item in available] == [request["id"]]
+
+    detail = client.get(f"/collector/pickups/{request['id']}", headers=collector_headers).json()
+    assert detail["timeline"][-1]["status"] == "pending"
+    assert "available again" in detail["timeline"][-1]["note"]
+    assert detail["timeline"][-1]["actor_role"] == "collector"
+
+
+def test_pickup_cancel_only_allowed_before_trip_starts(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
+    client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
+
+    response = client.post(f"/collector/pickups/{request['id']}/cancel", headers=collector_headers)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Only accepted requests can be cancelled"
+
+
+def test_pickup_cancel_unassigned_request_fails(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+
+    response = client.post(f"/collector/pickups/{request['id']}/cancel", headers=collector_headers)
+
+    assert response.status_code == 403
+
+
+def test_pickup_cancel_nonexistent_returns_404(client, collector_headers):
+    response = client.post("/collector/pickups/999999/cancel", headers=collector_headers)
+    assert response.status_code == 404
+
+
+def test_pickup_cancel_by_other_collector_fails(
+    client, citizen_headers, collector_headers, make_user, auth_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+    client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
+
+    other_headers = auth_headers(
+        make_user(role=UserRole.collector, email="other3@wasteiq.test", phone="9000088888")
+    )
+
+    response = client.post(f"/collector/pickups/{request['id']}/cancel", headers=other_headers)
+    assert response.status_code == 403
+
+
+def test_pickup_full_lifecycle_via_canonical_routes(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
+
+    accepted = client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
+    assert accepted.json()["status"] == "accepted"
+
+    started = client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
+    assert started.json()["status"] == "on_the_way"
+
+    collected = client.post(
+        f"/collector/pickups/{request['id']}/collect", headers=collector_headers
+    )
+    assert collected.json()["status"] == "collected"
+
+    completed = client.post(
+        f"/collector/pickups/{request['id']}/complete",
+        json={"weight_kg": 12.0},
+        headers=collector_headers,
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["assignment"]["weight_kg"] == 12.0
+
+    detail = client.get(f"/collector/pickups/{request['id']}", headers=collector_headers).json()
+    assert [event["status"] for event in detail["timeline"]] == [
+        "pending",
+        "accepted",
+        "on_the_way",
+        "collected",
+        "completed",
+    ]

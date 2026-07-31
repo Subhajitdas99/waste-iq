@@ -184,8 +184,11 @@ def auth_headers() -> object:
     return _auth_headers
 
 
+from typing import Any
+
+
 @pytest.fixture()
-def valid_pickup_payload() -> dict[str, str]:
+def valid_pickup_payload() -> dict[str, Any]:
     """Valid payload accepted by POST /pickup-requests."""
     return {
         "waste_type": "Plastic bottles",

@@ -1,4 +1,6 @@
-VALID_DEALER_PROFILE_PAYLOAD = {
+from typing import Any
+
+VALID_DEALER_PROFILE_PAYLOAD: dict[str, Any] = {
     "business_name": "Kolkata Recyclers Pvt Ltd",
     "owner_name": "Test Owner",
     "phone": "9876500001",
