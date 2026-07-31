@@ -1,5 +1,14 @@
 import type { UserProfile, UserRole } from "@/types/auth";
 import type { AdminAnalytics, AdminDealerSummary, AdminUser } from "@/types/admin";
+import type {
+  AnalyticsInsight,
+  AnalyticsOverview,
+  CarbonSavings,
+  CollectorPerformance,
+  DealerPerformance,
+  MaterialBreakdown,
+  MonthlyStat,
+} from "@/types/analytics";
 import type { DealerInventoryLot, DealerInventoryLotPage } from "@/types/inventory";
 import type { CitizenRequestSummary, PickupRequest } from "@/types/pickup";
 import type { CollectorSummary } from "@/types/collector";
@@ -178,4 +187,151 @@ export function createAdminDealer(overrides: Partial<AdminDealerSummary> = {}): 
     created_at: "2026-01-05T00:00:00Z",
     ...overrides,
   };
+}
+
+export function createAnalyticsOverview(
+  overrides: Partial<AnalyticsOverview> = {},
+): AnalyticsOverview {
+  return {
+    total_users: 1248,
+    citizens: 1020,
+    collectors: 168,
+    dealers: 42,
+    total_pickups: 3560,
+    completed_pickups: 3104,
+    pending_pickups: 220,
+    cancelled_pickups: 236,
+    total_weight_kg: 18920.5,
+    completed_rate: 87.19,
+    ...overrides,
+  };
+}
+
+export function createMaterialBreakdown(
+  overrides: Partial<MaterialBreakdown> = {},
+): MaterialBreakdown {
+  return {
+    plastic: 640,
+    paper: 410,
+    metal: 280,
+    glass: 190,
+    e_waste: 130,
+    organic: 60,
+    other: 25,
+    ...overrides,
+  };
+}
+
+const MONTHLY_FIXTURE: Array<Omit<MonthlyStat, "month">> = [
+  { pickup_count: 210, completed: 180, weight: 840.5 },
+  { pickup_count: 235, completed: 201, weight: 940.2 },
+  { pickup_count: 248, completed: 212, weight: 990.8 },
+  { pickup_count: 260, completed: 228, weight: 1050.1 },
+  { pickup_count: 275, completed: 240, weight: 1110.4 },
+  { pickup_count: 290, completed: 254, weight: 1170.7 },
+  { pickup_count: 305, completed: 268, weight: 1230.9 },
+  { pickup_count: 318, completed: 281, weight: 1290.3 },
+  { pickup_count: 330, completed: 292, weight: 1350.6 },
+  { pickup_count: 345, completed: 306, weight: 1410.2 },
+  { pickup_count: 360, completed: 320, weight: 1470.5 },
+  { pickup_count: 384, completed: 342, weight: 1550.0 },
+];
+
+export function createMonthlyAnalytics(
+  overrides: Partial<MonthlyStat>[] = [],
+): MonthlyStat[] {
+  return MONTHLY_FIXTURE.map((stats, index) => {
+    const monthIndex = 8 + index;
+    const year = 2025 + Math.floor(monthIndex / 12);
+    const month = `${year}-${String((monthIndex % 12) + 1).padStart(2, "0")}`;
+    return { month, ...stats, ...overrides[index] };
+  });
+}
+
+export function createCollectorPerformance(
+  overrides: Partial<CollectorPerformance>[] = [],
+): CollectorPerformance[] {
+  const collectors = [
+    {
+      collector_id: 2,
+      collector_name: "Test Collector",
+      completed_jobs: 156,
+      completion_rate: 92.3,
+      average_response_time: 1.8,
+    },
+    {
+      collector_id: 7,
+      collector_name: "Priya Sharma",
+      completed_jobs: 121,
+      completion_rate: 88.1,
+      average_response_time: 2.4,
+    },
+  ];
+  return collectors.map((collector, index) => ({
+    ...collector,
+    ...overrides[index],
+  }));
+}
+
+export function createDealerPerformance(
+  overrides: Partial<DealerPerformance>[] = [],
+): DealerPerformance[] {
+  const dealers = [
+    {
+      dealer_id: 3,
+      dealer_name: "Green Scrap Co",
+      materials_processed: 48,
+      total_weight: 2140.5,
+    },
+  ];
+  return dealers.map((dealer, index) => ({ ...dealer, ...overrides[index] }));
+}
+
+export function createCarbonSavings(
+  overrides: Partial<CarbonSavings> = {},
+): CarbonSavings {
+  return {
+    estimated_co2_saved: 7946.6,
+    trees_equivalent: 378.4,
+    plastic_recycled: 11240.2,
+    paper_recycled: 7680.3,
+    ...overrides,
+  };
+}
+
+export function createAnalyticsInsights(
+  overrides: Partial<AnalyticsInsight>[] = [],
+): AnalyticsInsight[] {
+  const insights = [
+    {
+      key: "most_recycled_material",
+      title: "Most Recycled Material",
+      message: "Plastic is the most recycled material with 640 completed pickups.",
+    },
+    {
+      key: "top_collector",
+      title: "Highest Performing Collector",
+      message:
+        "Test Collector leads collectors with 156 completed jobs and a 92.3% completion rate.",
+    },
+    {
+      key: "top_dealer",
+      title: "Highest Performing Dealer",
+      message:
+        "Green Scrap Co processed the most material with 2140.5 kg across 48 lots.",
+    },
+    {
+      key: "carbon_savings",
+      title: "Estimated Carbon Savings",
+      message:
+        "The platform has saved an estimated 7946.6 kg of CO2, equivalent to 378.4 trees.",
+    },
+    {
+      key: "pickup_trend",
+      title: "Pickup Completion Trend",
+      message:
+        "Completed pickups are up 12.5% in the last 6 months compared to the previous 6 months.",
+    },
+  ];
+  return insights.map((insight, index) => ({ ...insight, ...overrides[index] }));
 }

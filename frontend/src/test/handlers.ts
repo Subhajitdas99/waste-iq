@@ -5,9 +5,16 @@ import {
   createAdminAnalytics,
   createAdminDealer,
   createAdminUser,
+  createAnalyticsInsights,
+  createAnalyticsOverview,
+  createCarbonSavings,
   createCitizenSummary,
+  createCollectorPerformance,
   createCollectorSummary,
   createDealerLotPage,
+  createDealerPerformance,
+  createMaterialBreakdown,
+  createMonthlyAnalytics,
   createPickupRequest,
   createUser,
   usersByRole,
@@ -176,6 +183,34 @@ export const handlers = [
 
   http.get("*/admin/analytics", () => {
     return HttpResponse.json(createAdminAnalytics());
+  }),
+
+  http.get("*/admin/analytics/overview", () => {
+    return HttpResponse.json(createAnalyticsOverview());
+  }),
+
+  http.get("*/admin/analytics/materials", () => {
+    return HttpResponse.json(createMaterialBreakdown());
+  }),
+
+  http.get("*/admin/analytics/monthly", () => {
+    return HttpResponse.json(createMonthlyAnalytics());
+  }),
+
+  http.get("*/admin/analytics/collectors", () => {
+    return HttpResponse.json(createCollectorPerformance());
+  }),
+
+  http.get("*/admin/analytics/dealers", () => {
+    return HttpResponse.json(createDealerPerformance());
+  }),
+
+  http.get("*/admin/analytics/carbon", () => {
+    return HttpResponse.json(createCarbonSavings());
+  }),
+
+  http.get("*/admin/analytics/insights", () => {
+    return HttpResponse.json(createAnalyticsInsights());
   }),
 
   http.get("*/admin/users", () => {

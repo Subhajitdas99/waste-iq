@@ -9,6 +9,7 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ## [Unreleased]
 
 ### Added
+- **AI Analytics Dashboard** — admin-only analytics suite under `/admin/analytics/*` with platform overview KPIs, material distribution, 12-month pickup trends, collector/dealer performance rankings, carbon savings, and deterministic rule-based AI insights (no LLM); served by a dedicated analytics service layer with typed Pydantic v2 schemas and a new React 19 dashboard page (`/admin/analytics`) with reusable chart and card components
 - **AI Waste Classification v2** — improved classification confidence scores using updated Cloudinary AI transformations; `confidence` and `category` fields now populated automatically on image upload
 - **Municipality Dashboard** — new municipality-scoped admin role with city-level analytics, waste volume trends, and collector performance metrics
 - **Push Notification System** — in-app and browser push notifications for pickup status changes (pending → accepted, on_the_way, completed)

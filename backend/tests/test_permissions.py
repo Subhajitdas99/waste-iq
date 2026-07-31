@@ -5,6 +5,13 @@ ADMIN_ROUTES = [
     ("GET", "/admin/pricing-rules"),
     ("GET", "/admin/eligible-pickups"),
     ("GET", "/admin/inventory-lots"),
+    ("GET", "/admin/analytics/overview"),
+    ("GET", "/admin/analytics/materials"),
+    ("GET", "/admin/analytics/monthly"),
+    ("GET", "/admin/analytics/collectors"),
+    ("GET", "/admin/analytics/dealers"),
+    ("GET", "/admin/analytics/carbon"),
+    ("GET", "/admin/analytics/insights"),
 ]
 
 DEALER_ROUTES = [
