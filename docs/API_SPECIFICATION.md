@@ -770,6 +770,161 @@ Retrieve platform-wide analytics.
 
 ---
 
+### AI Analytics Dashboard Endpoints
+
+All AI analytics endpoints require `Authorization: Bearer <token>` with `role = admin`. They expose aggregated platform statistics and deterministic, rule-based insights (no LLM). Business logic lives in `app/services/analytics.py`; all responses are typed Pydantic v2 models from `app/schemas/analytics.py`.
+
+#### `GET /admin/analytics/overview`
+
+Platform-wide headcount and pickup lifecycle KPIs.
+
+**Response `200 OK`:**
+
+```json
+{
+  "total_users": 1248,
+  "citizens": 1020,
+  "collectors": 168,
+  "dealers": 42,
+  "total_pickups": 3560,
+  "completed_pickups": 3104,
+  "pending_pickups": 220,
+  "cancelled_pickups": 236,
+  "total_weight_kg": 18920.5,
+  "completed_rate": 87.19
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_users` | integer | Registered accounts across all roles |
+| `citizens` / `collectors` / `dealers` | integer | Registered accounts per role |
+| `total_pickups` | integer | All pickup requests created |
+| `completed_pickups` / `pending_pickups` / `cancelled_pickups` | integer | Pickups per lifecycle status |
+| `total_weight_kg` | float | Total collected weight reported by collectors |
+| `completed_rate` | float | Completed / total pickups, percent (0–100) |
+
+#### `GET /admin/analytics/materials`
+
+Completed pickups grouped by material bucket. Buckets are derived deterministically from the AI `category` code, falling back to `waste_type` keyword matching.
+
+**Response `200 OK`:**
+
+```json
+{
+  "plastic": 640,
+  "paper": 410,
+  "metal": 280,
+  "glass": 190,
+  "e_waste": 130,
+  "organic": 60,
+  "other": 25
+}
+```
+
+#### `GET /admin/analytics/monthly`
+
+Monthly pickup statistics for the last 12 months, oldest first. Every month in the window is returned, zero-filled when there is no activity.
+
+**Response `200 OK`:**
+
+```json
+[
+  { "month": "2025-09", "pickup_count": 210, "completed": 180, "weight": 840.5 },
+  { "month": "2025-10", "pickup_count": 235, "completed": 201, "weight": 940.2 }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `month` | string | `YYYY-MM` label |
+| `pickup_count` | integer | Pickups created in the month |
+| `completed` | integer | Pickups completed in the month |
+| `weight` | float | Collected weight reported in the month |
+
+#### `GET /admin/analytics/collectors`
+
+Collector performance ranked by completed jobs, then completion rate.
+
+**Response `200 OK`:**
+
+```json
+[
+  {
+    "collector_id": 7,
+    "collector_name": "Priya Sharma",
+    "completed_jobs": 156,
+    "completion_rate": 92.3,
+    "average_response_time": 1.8
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `collector_id` | integer | User ID of the collector |
+| `collector_name` | string | Display name |
+| `completed_jobs` | integer | Completed assignments |
+| `completion_rate` | float | Completed / assigned, percent (0–100) |
+| `average_response_time` | float | Average hours between request creation and assignment acceptance |
+
+#### `GET /admin/analytics/dealers`
+
+Dealer material processing ranked by total weight. Only dealers with at least one sold lot are returned.
+
+**Response `200 OK`:**
+
+```json
+[
+  {
+    "dealer_id": 12,
+    "dealer_name": "GreenCycle Scrap Pvt. Ltd.",
+    "materials_processed": 48,
+    "total_weight": 2140.5
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dealer_id` | integer | User ID of the dealer |
+| `dealer_name` | string | Business name (falls back to account name) |
+| `materials_processed` | integer | Sold inventory lots |
+| `total_weight` | float | Total sold weight in kg |
+
+#### `GET /admin/analytics/carbon`
+
+Estimated environmental impact of collected weight (~0.42 kg CO₂e per kg recycled; ~21 kg CO₂ absorbed per tree per year).
+
+**Response `200 OK`:**
+
+```json
+{
+  "estimated_co2_saved": 7946.6,
+  "trees_equivalent": 378.4,
+  "plastic_recycled": 11240.2,
+  "paper_recycled": 7680.3
+}
+```
+
+#### `GET /admin/analytics/insights`
+
+Deterministic, rule-based insights computed server-side from the analytics above: most recycled material, highest performing collector and dealer, estimated carbon savings, and the 6-month completion trend. Returns an empty array when there is no platform activity.
+
+**Response `200 OK`:**
+
+```json
+[
+  {
+    "key": "most_recycled_material",
+    "title": "Most Recycled Material",
+    "message": "Plastic is the most recycled material with 640 completed pickups."
+  }
+]
+```
+
+---
+
 ### `GET /admin/dealers`
 
 List all dealer profiles with verification status.

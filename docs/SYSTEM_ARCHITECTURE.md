@@ -225,6 +225,9 @@ flowchart TB
 | `services/` | `app/services/` | Business logic; orchestrates repositories and external services |
 | `repositories/` | `app/repositories/` | Raw data access queries; returns ORM objects |
 | `db/session.py` | `app/db/session.py` | SQLAlchemy engine + `SessionLocal` factory |
+| `routes/analytics.py` | `app/api/routes/analytics.py` | Admin AI analytics endpoints (overview, materials, monthly, collectors, dealers, carbon, insights) |
+| `services/analytics.py` | `app/services/analytics.py` | Analytics aggregations (SQLAlchemy) and deterministic rule-based insight generation |
+| `schemas/analytics.py` | `app/schemas/analytics.py` | Typed Pydantic v2 response models for every analytics endpoint |
 
 ---
 
@@ -355,6 +358,7 @@ The API follows RESTful conventions with JSON request/response bodies (except mu
 | `/dealer` | Dealer | Yes (dealer role) | Profile management |
 | `/dealer` | Dealer Inventory | Yes (approved dealer) | Marketplace browse, reserve, purchase |
 | `/admin` | Admin | Yes (admin role) | Users, analytics, dealer verification |
+| `/admin/analytics` | Admin Analytics | Yes (admin role) | Overview KPIs, material distribution, monthly trend, collector/dealer performance, carbon savings, rule-based insights |
 | `/admin` | Admin Inventory | Yes (admin role) | Lot management, pricing, categories |
 | `/health` | health | No | Application health check |
 
@@ -463,6 +467,18 @@ The database schema already has AI-ready fields:
 | `PickupRequest` | `image_url` | Cloudinary URL of the uploaded waste image |
 | `PickupRequest` | `category` | Detected material category (null until AI runs) |
 | `PickupRequest` | `confidence` | Classification confidence score (0.0–1.0) |
+
+### AI Analytics Dashboard (Implemented — Rule-Based)
+
+The **AI Analytics Dashboard** (`/admin/analytics/*`) delivers dashboard insights without an LLM. All insights are deterministic, server-side rules computed from live aggregates in `app/services/analytics.py`:
+
+| Insight | Rule |
+|---------|------|
+| Most recycled material | Highest material bucket count from completed pickups |
+| Highest performing collector | Most completed jobs (tie-break: completion rate) |
+| Highest performing dealer | Most total weight across sold lots |
+| Estimated carbon savings | ~0.42 kg CO₂e saved per kg recycled; ~21 kg CO₂ per tree |
+| Pickup completion trend | 6-month completion delta vs. the previous 6 months |
 
 ### Planned AI Integration
 

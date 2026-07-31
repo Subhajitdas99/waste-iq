@@ -51,6 +51,11 @@ const AdminOverviewPage = lazy(() =>
     default: m.AdminOverviewPage,
   }))
 );
+const AIAnalyticsPage = lazy(() =>
+  import("../pages/dashboard/AIAnalyticsPage").then((m) => ({
+    default: m.AIAnalyticsPage,
+  }))
+);
 const CitizenPickupsPage = lazy(() =>
   import("../pages/dashboard/CitizenPickupsPage").then((m) => ({
     default: m.CitizenPickupsPage,
@@ -186,6 +191,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="overview" replace /> },
       { path: "overview", element: lazyPage(AdminOverviewPage) },
+      { path: "analytics", element: lazyPage(AIAnalyticsPage) },
       { path: "profile", element: lazyPage(RoleProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],

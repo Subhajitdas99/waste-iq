@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3,
   ClipboardList,
   History,
   LayoutDashboard,
@@ -70,6 +71,7 @@ export const portalConfigByRole: Record<UserRole, PortalConfig> = {
     routePrefix: "/admin",
     navigation: [
       { label: "Overview", to: "/admin/overview", icon: LayoutDashboard },
+      { label: "AI Analytics", to: "/admin/analytics", icon: BarChart3 },
       { label: "Profile", to: "/admin/profile", icon: UserCircle2 },
       { label: "Settings", to: "/admin/settings", icon: Settings },
     ],
