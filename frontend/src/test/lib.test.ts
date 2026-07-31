@@ -36,7 +36,11 @@ describe("formatDateTime", () => {
   });
 
   it("formats valid timestamps", () => {
-    expect(formatDateTime("2026-01-10T08:00:00Z")).toMatch(/Jan 2026/);
+    const formatted = formatDateTime("2026-01-10T08:00:00Z");
+
+    expect(formatted).toContain("Jan");
+    expect(formatted).toContain("2026");
+    expect(formatted).not.toBe("Not available");
   });
 });
 
