@@ -186,6 +186,7 @@ def auth_headers() -> object:
 
 from typing import Any
 
+
 @pytest.fixture()
 def valid_pickup_payload() -> dict[str, Any]:
     """Valid payload accepted by POST /pickup-requests."""

@@ -55,9 +55,9 @@ interface CollectorMutationContext {
   previousDetail?: PickupRequestDetail;
 }
 
-function patchRequest<T extends PickupRequest | PickupRequestDetail>(
+function patchRequest<T extends PickupRequest>(
   request: T,
-  patch: Partial<T>,
+  patch: Partial<PickupRequest>,
 ): T {
   return { ...request, ...patch };
 }
@@ -107,7 +107,7 @@ async function cancelInFlightQueries(
 
 function useCollectorTransition(
   mutationFn: (requestId: number) => Promise<PickupRequest>,
-  optimisticPatch: <T extends PickupRequest | PickupRequestDetail>(request: T) => T,
+  optimisticPatch: <T extends PickupRequest>(request: T) => T,
 ) {
   const queryClient = useQueryClient();
 
@@ -210,7 +210,7 @@ export function useCompleteCollectorPickup() {
         collectorQueryKeys.detail(requestId),
       );
 
-      const markCompleted = (request: PickupRequest): PickupRequest =>
+      const markCompleted = <T extends PickupRequest>(request: T): T =>
         patchRequest(request, {
           status: "completed",
           assignment: request.assignment
@@ -269,7 +269,7 @@ export function useCancelCollectorPickup() {
         collectorQueryKeys.detail(requestId),
       );
 
-      const releasedRequest = (request: PickupRequest): PickupRequest =>
+      const releasedRequest = <T extends PickupRequest>(request: T): T =>
         patchRequest(request, {
           status: "pending",
           can_cancel: true,
