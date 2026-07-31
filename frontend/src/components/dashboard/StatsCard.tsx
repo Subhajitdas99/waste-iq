@@ -3,15 +3,33 @@ import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+type StatsTone = "default" | "primary" | "success" | "warning" | "danger";
+
 interface StatsCardProps {
   label: string;
   value: string;
   helper?: string;
   icon: ReactNode;
+  tone?: StatsTone;
   className?: string;
 }
 
-export function StatsCard({ label, value, helper, icon, className }: StatsCardProps) {
+const TONE_CLASSES: Record<StatsTone, string> = {
+  default: "bg-primary/10 text-primary",
+  primary: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  success: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  danger: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+};
+
+export function StatsCard({
+  label,
+  value,
+  helper,
+  icon,
+  tone = "default",
+  className,
+}: StatsCardProps) {
   return (
     <motion.div whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
       <Card
@@ -28,7 +46,7 @@ export function StatsCard({ label, value, helper, icon, className }: StatsCardPr
               <p className="mt-2 text-sm text-muted-foreground">{helper}</p>
             ) : null}
           </div>
-          <div className="rounded-2xl bg-primary/10 p-3 text-primary">{icon}</div>
+          <div className={cn("rounded-2xl p-3", TONE_CLASSES[tone])}>{icon}</div>
         </CardContent>
       </Card>
     </motion.div>

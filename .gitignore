@@ -27,6 +27,7 @@ pip-wheel-metadata/
 .coverage
 .coverage.*
 htmlcov/
+coverage/
 .tox/
 .mypy_cache/
 

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
@@ -25,7 +25,7 @@ PROFILE_REQUIRED_FIELDS = (
 )
 
 
-def _dealer_profile_query():
+def _dealer_profile_query() -> Select[tuple[DealerProfile]]:
     return select(DealerProfile).options(selectinload(DealerProfile.user))
 
 
@@ -113,6 +113,16 @@ def _get_profile_model_for_user(db: Session, user_id: int) -> DealerProfile | No
     ).scalar_one_or_none()
 
 
+def _get_profile_model_or_500(db: Session, user_id: int) -> DealerProfile:
+    profile = _get_profile_model_for_user(db, user_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Dealer profile could not be reloaded after update",
+        )
+    return profile
+
+
 def get_dealer_profile(db: Session, dealer: User) -> DealerProfileRead | None:
     profile = _get_profile_model_for_user(db, dealer.id)
     if profile is None:
@@ -139,9 +149,7 @@ def create_dealer_profile(
     profile = DealerProfile(user_id=dealer.id, **data)
     db.add(profile)
     db.commit()
-    created_profile = _get_profile_model_for_user(db, dealer.id)
-    assert created_profile is not None
-    return _to_profile_schema(created_profile)
+    return _to_profile_schema(_get_profile_model_or_500(db, dealer.id))
 
 
 def update_dealer_profile(
@@ -163,9 +171,7 @@ def update_dealer_profile(
         profile.approved_at = None
 
     db.commit()
-    profile = _get_profile_model_for_user(db, dealer.id)
-    assert profile is not None
-    return _to_profile_schema(profile)
+    return _to_profile_schema(_get_profile_model_or_500(db, dealer.id))
 
 
 def list_dealers_for_admin(db: Session) -> list[AdminDealerSummaryRead]:

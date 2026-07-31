@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 
 from fastapi import HTTPException, status
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import Select, asc, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -42,6 +43,17 @@ RESERVATION_TTL_HOURS = 24
 logger = logging.getLogger(__name__)
 
 
+@contextmanager
+def _commit_or_rollback(db: Session):
+    """Commit the active transaction, rolling back and re-raising on any error."""
+    try:
+        yield
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -75,7 +87,7 @@ def _extract_city_from_address(address: str) -> str:
     return "Kolkata"
 
 
-def _inventory_lot_query(include_events: bool = False):
+def _inventory_lot_query(include_events: bool = False) -> Select[tuple[InventoryLot]]:
     statement = select(InventoryLot).options(
         selectinload(InventoryLot.material_category),
         selectinload(InventoryLot.citizen),
@@ -89,7 +101,7 @@ def _inventory_lot_query(include_events: bool = False):
     return statement
 
 
-def _pricing_rule_query():
+def _pricing_rule_query() -> Select[tuple[PricingRule]]:
     return select(PricingRule).options(selectinload(PricingRule.material_category))
 
 
@@ -301,14 +313,9 @@ def _get_active_pricing_rule(db: Session, material_category_id: int, city: str) 
     )
     if not rules:
         logger.warning(
-            (
-                "Active pricing rule lookup failed: material_category_id=%s "
-                "original_city=%r normalized_city=%r current_timestamp=%s"
-            ),
+            "Active pricing rule lookup failed for material_category_id=%s and city=%r.",
             material_category_id,
             city,
-            normalized_city,
-            now.isoformat(),
             extra={
                 "material_category_id": material_category_id,
                 "original_city": city,
@@ -343,6 +350,24 @@ def _ensure_no_active_pricing_conflict(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An active pricing rule already exists for this material category and city",
+        )
+
+
+def _ensure_category_active(category: MaterialCategory) -> None:
+    if not category.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive material categories cannot be used",
+        )
+
+
+def _ensure_valid_pricing_date_range(
+    effective_from: datetime, effective_to: datetime | None
+) -> None:
+    if effective_to is not None and effective_to < effective_from:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="effective_to cannot be earlier than effective_from",
         )
 
 
@@ -449,16 +474,8 @@ def list_pricing_rules(
 def create_pricing_rule(db: Session, admin: User, payload: PricingRuleCreate) -> PricingRuleRead:
     _ensure_admin(admin)
     category = _get_category_or_404(db, payload.material_category_id)
-    if not category.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive material categories cannot be priced",
-        )
-    if payload.effective_to is not None and payload.effective_to < payload.effective_from:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="effective_to cannot be earlier than effective_from",
-        )
+    _ensure_category_active(category)
+    _ensure_valid_pricing_date_range(payload.effective_from, payload.effective_to)
 
     city = _normalize_city(payload.city)
     if payload.is_active:
@@ -495,11 +512,7 @@ def update_pricing_rule(
     next_is_active = update_data.get("is_active", rule.is_active)
     if "effective_to" in update_data and update_data["effective_to"] is not None:
         effective_from = update_data.get("effective_from", rule.effective_from)
-        if update_data["effective_to"] < effective_from:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="effective_to cannot be earlier than effective_from",
-            )
+        _ensure_valid_pricing_date_range(effective_from, update_data["effective_to"])
     if next_is_active:
         _ensure_no_active_pricing_conflict(
             db,
@@ -548,26 +561,32 @@ def deactivate_pricing_rule(db: Session, admin: User, pricing_rule_id: int) -> P
     return _serialize_pricing_rule(rule)
 
 
-def list_eligible_pickups_for_inventory(db: Session) -> list[EligiblePickupRead]:
-    statement = (
-        select(PickupRequest)
-        .options(
-            selectinload(PickupRequest.citizen),
-            selectinload(PickupRequest.assignment).selectinload(CollectorAssignment.collector),
-            selectinload(PickupRequest.inventory_lot),
-        )
-        .where(PickupRequest.status == PickupStatus.completed)
-        .order_by(PickupRequest.created_at.desc())
+def _pickup_for_inventory_query() -> Select[tuple[PickupRequest]]:
+    return select(PickupRequest).options(
+        selectinload(PickupRequest.citizen),
+        selectinload(PickupRequest.assignment).selectinload(CollectorAssignment.collector),
+        selectinload(PickupRequest.inventory_lot),
     )
+
+
+def _is_pickup_eligible_for_inventory(pickup: PickupRequest) -> bool:
+    return (
+        pickup.status == PickupStatus.completed
+        and pickup.assignment is not None
+        and pickup.assignment.weight_kg is not None
+        and pickup.assignment.weight_kg > 0
+        and pickup.inventory_lot is None
+    )
+
+
+def list_eligible_pickups_for_inventory(db: Session) -> list[EligiblePickupRead]:
+    statement = _pickup_for_inventory_query().where(PickupRequest.status == PickupStatus.completed)
+    statement = statement.order_by(PickupRequest.created_at.desc())
     pickup_requests = db.execute(statement).scalars().all()
 
     eligible_items: list[EligiblePickupRead] = []
     for pickup in pickup_requests:
-        if pickup.assignment is None or pickup.assignment.collector is None:
-            continue
-        if pickup.assignment.weight_kg is None or pickup.assignment.weight_kg <= 0:
-            continue
-        if pickup.inventory_lot is not None:
+        if not _is_pickup_eligible_for_inventory(pickup):
             continue
 
         eligible_items.append(
@@ -590,13 +609,7 @@ def list_eligible_pickups_for_inventory(db: Session) -> list[EligiblePickupRead]
 
 def _get_eligible_pickup_or_400(db: Session, pickup_request_id: int) -> PickupRequest:
     pickup = db.execute(
-        select(PickupRequest)
-        .options(
-            selectinload(PickupRequest.assignment),
-            selectinload(PickupRequest.citizen),
-            selectinload(PickupRequest.inventory_lot),
-        )
-        .where(PickupRequest.id == pickup_request_id)
+        _pickup_for_inventory_query().where(PickupRequest.id == pickup_request_id)
     ).scalar_one_or_none()
     if pickup is None:
         raise HTTPException(
@@ -628,11 +641,7 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
     _ensure_admin(admin)
     pickup = _get_eligible_pickup_or_400(db, payload.pickup_request_id)
     category = _get_category_or_404(db, payload.material_category_id)
-    if not category.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive material categories cannot be used for inventory",
-        )
+    _ensure_category_active(category)
 
     try:
         lot_status = InventoryLotStatus(payload.status)
@@ -665,33 +674,29 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
         updated_by=admin.id,
     )
     try:
-        db.add(lot)
-        db.flush()
-        lot.lot_number = _generate_lot_number(lot.id)
-        _create_lot_event(
-            db,
-            lot,
-            event_type=InventoryLotEventType.created,
-            actor=admin,
-            new_status=lot.status,
-            event_notes="Inventory lot created from completed pickup.",
-            metadata_json={
-                "pickup_request_id": pickup.id,
-                "pricing_rule_id": pricing_rule.id,
-                "weight_kg": weight_kg,
-                "lot_number": lot.lot_number,
-            },
-        )
-        db.commit()
+        with _commit_or_rollback(db):
+            db.add(lot)
+            db.flush()
+            lot.lot_number = _generate_lot_number(lot.id)
+            _create_lot_event(
+                db,
+                lot,
+                event_type=InventoryLotEventType.created,
+                actor=admin,
+                new_status=lot.status,
+                event_notes="Inventory lot created from completed pickup.",
+                metadata_json={
+                    "pickup_request_id": pickup.id,
+                    "pricing_rule_id": pricing_rule.id,
+                    "weight_kg": weight_kg,
+                    "lot_number": lot.lot_number,
+                },
+            )
     except IntegrityError as exc:
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An inventory lot already exists for this pickup",
         ) from exc
-    except Exception:
-        db.rollback()
-        raise
 
     lot = _get_lot_or_404(db, lot.id)
     return _serialize_inventory_lot(lot)
@@ -839,7 +844,7 @@ def update_inventory_lot(
     if not changed_fields:
         return _serialize_inventory_lot(lot)
 
-    try:
+    with _commit_or_rollback(db):
         lot.updated_by = admin.id
         _create_lot_event(
             db,
@@ -851,10 +856,6 @@ def update_inventory_lot(
             event_notes="Admin inventory fields updated.",
             metadata_json={"changed_fields": changed_fields},
         )
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
 
     lot = _get_lot_or_404(db, lot.id)
     return _serialize_inventory_lot(lot)
@@ -869,7 +870,7 @@ def archive_inventory_lot(
     _ensure_admin(admin)
     lot = _get_lot_or_404(db, lot_id)
     if lot.archived_at is None:
-        try:
+        with _commit_or_rollback(db):
             archive_reason = _normalize_optional_text(payload.archive_reason)
             lot.archived_at = _utc_now()
             lot.archive_reason = archive_reason
@@ -885,10 +886,6 @@ def archive_inventory_lot(
                 event_notes="Inventory lot archived.",
                 metadata_json={"archive_reason": archive_reason},
             )
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
         lot = _get_lot_or_404(db, lot.id)
 
     return _serialize_archive_result(lot)
@@ -898,7 +895,7 @@ def restore_inventory_lot(db: Session, admin: User, lot_id: int) -> InventoryLot
     _ensure_admin(admin)
     lot = _get_lot_or_404(db, lot_id)
     if lot.archived_at is not None:
-        try:
+        with _commit_or_rollback(db):
             previous_archive_reason = lot.archive_reason
             lot.archived_at = None
             lot.archive_reason = None
@@ -914,10 +911,6 @@ def restore_inventory_lot(db: Session, admin: User, lot_id: int) -> InventoryLot
                 event_notes="Inventory lot restored.",
                 metadata_json={"previous_archive_reason": previous_archive_reason},
             )
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
         lot = _get_lot_or_404(db, lot.id)
 
     return _serialize_archive_result(lot)
@@ -944,7 +937,7 @@ def release_expired_reservations(db: Session) -> int:
     if not expired_lots:
         return 0
 
-    try:
+    with _commit_or_rollback(db):
         for lot in expired_lots:
             previous_dealer_id = lot.reserved_by_dealer_id
             previous_reserved_at = lot.reserved_at
@@ -973,19 +966,24 @@ def release_expired_reservations(db: Session) -> int:
                     ),
                 },
             )
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
 
     return len(expired_lots)
 
 
-def _dealer_lot_detail_statement():
+def _dealer_lot_detail_statement() -> Select[tuple[InventoryLot]]:
     return select(InventoryLot).options(
         joinedload(InventoryLot.material_category),
         joinedload(InventoryLot.pricing_rule),
     )
+
+
+def _dealer_visible_lot_filters() -> list:
+    """Marketplace-visibility rule shared by all dealer-facing lot queries."""
+    return [
+        InventoryLot.status == InventoryLotStatus.available,
+        InventoryLot.archived_at.is_(None),
+        InventoryLot.visibility == InventoryLotVisibility.visible,
+    ]
 
 
 def list_inventory_lots_for_dealer(
@@ -1008,10 +1006,7 @@ def list_inventory_lots_for_dealer(
             status_code=status.HTTP_400_BAD_REQUEST, detail="page_size must be between 1 and 50"
         )
 
-    filters = [
-        InventoryLot.status == InventoryLotStatus.available,
-        InventoryLot.archived_at.is_(None),
-    ]
+    filters = _dealer_visible_lot_filters()
     if material_category_id is not None:
         filters.append(InventoryLot.material_category_id == material_category_id)
     if city is not None:
@@ -1044,10 +1039,7 @@ def get_inventory_lot_for_dealer(
     release_expired_reservations(db)
     lot = db.execute(
         _dealer_lot_detail_statement().where(
-            InventoryLot.id == lot_id,
-            InventoryLot.visibility == InventoryLotVisibility.visible,
-            InventoryLot.status == InventoryLotStatus.available,
-            InventoryLot.archived_at.is_(None),
+            InventoryLot.id == lot_id, *_dealer_visible_lot_filters()
         )
     ).scalar_one_or_none()
     if lot is None:
@@ -1063,7 +1055,7 @@ def reserve_inventory_lot_for_dealer(
     now = _utc_now()
     expires_at = now + timedelta(hours=RESERVATION_TTL_HOURS)
 
-    try:
+    with _commit_or_rollback(db):
         lot = db.execute(
             _dealer_lot_detail_statement().where(InventoryLot.id == lot_id).with_for_update()
         ).scalar_one_or_none()
@@ -1108,13 +1100,6 @@ def reserve_inventory_lot_for_dealer(
                 "reservation_expires_at": expires_at.isoformat(),
             },
         )
-        db.commit()
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
 
     lot = db.execute(_dealer_lot_detail_statement().where(InventoryLot.id == lot_id)).scalar_one()
     return _serialize_dealer_lot_detail(lot)

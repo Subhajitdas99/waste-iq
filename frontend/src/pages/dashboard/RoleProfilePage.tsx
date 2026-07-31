@@ -1,10 +1,9 @@
 import { ShieldCheck, UserCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
+import { AccountDetailsCard } from "@/components/dashboard/AccountDetailsCard";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
-import { ProfileCard } from "@/components/dashboard/ProfileCard";
 import { useAuth } from "@/context/AuthContext";
-import { formatDateTime } from "@/lib/pickup";
 import { getPortalConfig } from "@/lib/portal";
 
 export function RoleProfilePage() {
@@ -30,18 +29,7 @@ export function RoleProfilePage() {
       />
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <ProfileCard
-          title="Account Details"
-          description="Current user attributes loaded from the authentication API."
-          items={[
-            { label: "Full Name", value: user.name },
-            { label: "Email", value: user.email },
-            { label: "Phone", value: user.phone },
-            { label: "Role", value: user.role },
-            { label: "Member Since", value: formatDateTime(user.created_at) },
-            { label: "User ID", value: String(user.id) },
-          ]}
-        />
+        <AccountDetailsCard user={user} />
 
         <DashboardCard
           title="Current Access"

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_roles
+from app.models.user import User
 from app.schemas.dealer import AdminDealerSummaryRead, DealerVerificationActionRead
 from app.schemas.admin import AnalyticsRead
 from app.schemas.user import UserRead
@@ -18,7 +19,7 @@ router = APIRouter()
 @router.get("/users", response_model=list[UserRead])
 def admin_list_users(
     db: Session = Depends(get_db),
-    _: object = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ) -> list[UserRead]:
     return [UserRead.model_validate(user) for user in list_users(db)]
 
@@ -26,7 +27,7 @@ def admin_list_users(
 @router.get("/analytics", response_model=AnalyticsRead)
 def admin_analytics(
     db: Session = Depends(get_db),
-    _: object = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ) -> AnalyticsRead:
     return get_analytics(db)
 
@@ -34,7 +35,7 @@ def admin_analytics(
 @router.get("/dealers", response_model=list[AdminDealerSummaryRead])
 def admin_list_dealers(
     db: Session = Depends(get_db),
-    _: object = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ) -> list[AdminDealerSummaryRead]:
     return list_dealers_for_admin(db)
 
@@ -43,7 +44,7 @@ def admin_list_dealers(
 def admin_approve_dealer(
     dealer_user_id: int,
     db: Session = Depends(get_db),
-    _: object = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ) -> DealerVerificationActionRead:
     return approve_dealer_profile(db, dealer_user_id)
 
@@ -52,6 +53,6 @@ def admin_approve_dealer(
 def admin_reject_dealer(
     dealer_user_id: int,
     db: Session = Depends(get_db),
-    _: object = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ) -> DealerVerificationActionRead:
     return reject_dealer_profile(db, dealer_user_id)

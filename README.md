@@ -65,7 +65,7 @@ The system bridges the gap between informal waste collection practices and a mod
 - 📸 Cloudinary image upload with graceful fallback in development
 - 🗄️ Alembic database migrations with PostgreSQL (SQLite for local dev)
 - 🐳 Docker Compose for one-command local development
-- ⚙️ GitHub Actions CI for backend (lint + type-check + test) and frontend (lint + build)
+- ⚙️ GitHub Actions CI for backend (lint + type-check + test) and frontend (lint + test + build)
 
 ---
 
@@ -181,6 +181,7 @@ waste-iq/
 │   │   │   │   ├── collector.py
 │   │   │   │   ├── dealer.py
 │   │   │   │   ├── admin.py
+│   │   │   │   ├── analytics.py      # Admin analytics suite
 │   │   │   │   └── inventory.py     # Admin + Dealer inventory marketplace
 │   │   │   └── router.py
 │   │   ├── core/
@@ -405,6 +406,9 @@ npx tsc --noEmit
 
 # Lint
 npm run lint
+
+# Run tests
+npm test
 
 # Production build
 npm run build

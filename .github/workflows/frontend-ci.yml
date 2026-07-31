@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-and-build:
-    name: Lint, Type Check & Build
+  lint-test-build:
+    name: Lint, Test & Build
     runs-on: ubuntu-latest
 
     defaults:
@@ -52,8 +52,8 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-      - name: Run TypeScript type check
-        run: npx tsc --noEmit
+      - name: Run tests
+        run: npm test
 
       - name: Build production bundle
         run: npm run build

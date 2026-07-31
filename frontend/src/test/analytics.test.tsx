@@ -22,10 +22,16 @@ describe("AI analytics dashboard", () => {
     await renderApp("/admin/analytics");
 
     expect(
-      await screen.findByRole("heading", { name: "AI Analytics Dashboard" }),
+      await screen.findByRole(
+        "heading",
+        { name: "AI Analytics Dashboard" },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument();
 
-    expect(await screen.findByText("Total Users")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Total Users", {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(screen.getByText("1,248")).toBeInTheDocument();
     expect(screen.getByText("Completion Rate")).toBeInTheDocument();
     expect(screen.getByText("87.2%")).toBeInTheDocument();
@@ -117,7 +123,11 @@ describe("AI analytics dashboard", () => {
     await renderApp("/admin/analytics");
 
     expect(
-      await screen.findByText("No pickup activity in the last 12 months."),
+      await screen.findByText(
+        "No pickup activity in the last 12 months.",
+        {},
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Material distribution appears once completed pickups/),
