@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.collector_assignment import CollectorAssignment
@@ -19,56 +19,59 @@ from app.schemas.pickup_request import (
     PickupRequestUpdate,
 )
 from app.services.location import calculate_distance_km
+from app.services.stats import count_pickups_for_user
 
 _repository = PickupRequestRepository()
 
 
-def _serialize_assignment(request: PickupRequest) -> CollectorAssignmentRead | None:
-    if request.assignment is None:
+def _serialize_assignment(pickup_request: PickupRequest) -> CollectorAssignmentRead | None:
+    if pickup_request.assignment is None:
         return None
 
     return CollectorAssignmentRead(
-        id=request.assignment.id,
-        collector_id=request.assignment.collector_id,
-        collector_name=request.assignment.collector.name,
-        accepted_at=request.assignment.accepted_at,
-        completed_at=request.assignment.completed_at,
-        weight_kg=request.assignment.weight_kg,
+        id=pickup_request.assignment.id,
+        collector_id=pickup_request.assignment.collector_id,
+        collector_name=pickup_request.assignment.collector.name,
+        accepted_at=pickup_request.assignment.accepted_at,
+        completed_at=pickup_request.assignment.completed_at,
+        weight_kg=pickup_request.assignment.weight_kg,
     )
 
 
-def _to_schema(request: PickupRequest) -> PickupRequestRead:
-    assignment = _serialize_assignment(request)
+def _to_schema(pickup_request: PickupRequest) -> PickupRequestRead:
+    assignment = _serialize_assignment(pickup_request)
 
     return PickupRequestRead(
-        id=request.id,
-        user_id=request.user_id,
-        citizen_name=request.citizen.name,
-        citizen_phone=request.citizen.phone,
-        waste_type=request.waste_type,
-        category=request.category,
-        confidence=request.confidence,
-        image_url=request.image_url,
-        address=request.address,
-        latitude=request.latitude,
-        longitude=request.longitude,
-        estimated_weight_kg=request.estimated_weight_kg,
-        preferred_time=request.preferred_time,
-        notes=request.notes,
-        status=request.status.value,
-        created_at=request.created_at,
+        id=pickup_request.id,
+        user_id=pickup_request.user_id,
+        citizen_name=pickup_request.citizen.name,
+        citizen_phone=pickup_request.citizen.phone,
+        waste_type=pickup_request.waste_type,
+        category=pickup_request.category,
+        confidence=pickup_request.confidence,
+        image_url=pickup_request.image_url,
+        address=pickup_request.address,
+        latitude=pickup_request.latitude,
+        longitude=pickup_request.longitude,
+        estimated_weight_kg=pickup_request.estimated_weight_kg,
+        preferred_time=pickup_request.preferred_time,
+        notes=pickup_request.notes,
+        status=pickup_request.status.value,
+        created_at=pickup_request.created_at,
         assigned_collector_name=assignment.collector_name if assignment is not None else None,
-        can_cancel=request.status == PickupStatus.pending,
+        can_cancel=pickup_request.status == PickupStatus.pending,
         assignment=assignment,
     )
 
 
-def _to_nearby_schema(request: PickupRequest, distance_km: float) -> NearbyPickupRequestRead:
-    return NearbyPickupRequestRead(**_to_schema(request).model_dump(), distance_km=distance_km)
+def _to_nearby_schema(pickup_request: PickupRequest, distance_km: float) -> NearbyPickupRequestRead:
+    return NearbyPickupRequestRead(
+        **_to_schema(pickup_request).model_dump(), distance_km=distance_km
+    )
 
 
-def _to_detail_schema(request: PickupRequest) -> PickupRequestDetailRead:
-    base = _to_schema(request)
+def _to_detail_schema(pickup_request: PickupRequest) -> PickupRequestDetailRead:
+    base = _to_schema(pickup_request)
     timeline = [
         PickupRequestTimelineEventRead(
             id=event.id,
@@ -78,24 +81,50 @@ def _to_detail_schema(request: PickupRequest) -> PickupRequestDetailRead:
             actor_name=event.actor.name if event.actor is not None else None,
             actor_role=event.actor.role.value if event.actor is not None else None,
         )
-        for event in request.events
+        for event in pickup_request.events
     ]
     return PickupRequestDetailRead(**base.model_dump(), timeline=timeline)
 
 
-def _enforce_request_access(request: PickupRequest, user: User) -> None:
-    if user.role == "citizen" and request.user_id != user.id:
+def _enforce_request_access(pickup_request: PickupRequest, user: User) -> None:
+    if user.role == "citizen" and pickup_request.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You cannot view this pickup request"
         )
     if user.role == "collector":
         assigned_to_user = (
-            request.assignment is not None and request.assignment.collector_id == user.id
+            pickup_request.assignment is not None
+            and pickup_request.assignment.collector_id == user.id
         )
-        if request.status != PickupStatus.pending and not assigned_to_user:
+        if pickup_request.status != PickupStatus.pending and not assigned_to_user:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="You cannot view this pickup request"
             )
+
+
+def _available_pickup_filter():
+    """Pending requests that no collector has accepted yet."""
+    return [
+        PickupRequest.status == PickupStatus.pending,
+        ~PickupRequest.assignment.has(),
+    ]
+
+
+def _reload_pickup_or_500(db: Session, request_id: int) -> PickupRequest:
+    reloaded = _repository.get_by_id(db, request_id)
+    if reloaded is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Pickup request could not be reloaded after update",
+        )
+    return reloaded
+
+
+def _ensure_assigned_collector(pickup_request: PickupRequest, collector: User) -> None:
+    if pickup_request.assignment is None or pickup_request.assignment.collector_id != collector.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="This request is not assigned to you"
+        )
 
 
 def create_pickup_request(
@@ -105,20 +134,18 @@ def create_pickup_request(
     category: str | None = None,
     confidence: float | None = None,
 ) -> PickupRequestRead:
-    request_model = PickupRequest(
+    pickup_request = PickupRequest(
         user_id=citizen.id,
         category=category,
         confidence=confidence,
         **payload.model_dump(mode="python"),
     )
-    _repository.create(db, request_model)
+    _repository.create(db, pickup_request)
     _repository.add_status_event(
-        db, request_model, PickupStatus.pending, "Pickup request created.", actor=citizen
+        db, pickup_request, PickupStatus.pending, "Pickup request created.", actor=citizen
     )
     db.commit()
-    created_request = _repository.get_by_id(db, request_model.id)
-    assert created_request is not None
-    return _to_schema(created_request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
 def list_pickup_requests_for_user(db: Session, user: User) -> list[PickupRequestRead]:
@@ -141,10 +168,7 @@ def list_pickup_requests_for_user(db: Session, user: User) -> list[PickupRequest
 def list_available_pickup_requests_for_collector(db: Session) -> list[PickupRequestRead]:
     statement = (
         _repository.base_query()
-        .where(
-            PickupRequest.status == PickupStatus.pending,
-            ~PickupRequest.assignment.has(),
-        )
+        .where(*_available_pickup_filter())
         .order_by(PickupRequest.created_at.desc())
     )
 
@@ -158,24 +182,32 @@ def list_nearby_pickup_requests_for_collector(
     longitude: float,
     radius_km: float = 5,
 ) -> list[NearbyPickupRequestRead]:
-    statement = _repository.base_query().where(
-        PickupRequest.status == PickupStatus.pending,
-        ~PickupRequest.assignment.has(),
-    )
+    statement = _repository.base_query().where(*_available_pickup_filter())
 
     requests = db.execute(statement).unique().scalars().all()
     nearby_requests = [
-        (request, calculate_distance_km(latitude, longitude, request.latitude, request.longitude))
-        for request in requests
+        (
+            pickup_request,
+            calculate_distance_km(
+                latitude,
+                longitude,
+                pickup_request.latitude,
+                pickup_request.longitude,
+            ),
+        )
+        for pickup_request in requests
     ]
     nearby_requests = [
-        (request, distance_km)
-        for request, distance_km in nearby_requests
+        (pickup_request, distance_km)
+        for pickup_request, distance_km in nearby_requests
         if distance_km <= radius_km
     ]
     nearby_requests.sort(key=lambda item: item[1])
 
-    return [_to_nearby_schema(request, distance_km) for request, distance_km in nearby_requests]
+    return [
+        _to_nearby_schema(pickup_request, distance_km)
+        for pickup_request, distance_km in nearby_requests
+    ]
 
 
 def list_assigned_pickup_requests_for_collector(
@@ -205,52 +237,20 @@ def list_assigned_pickup_requests_for_collector(
 def get_pickup_request_for_user(
     db: Session, request_id: int, user: User
 ) -> PickupRequestDetailRead | None:
-    request = _repository.get_by_id(db, request_id, include_timeline=True)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id, include_timeline=True)
+    if pickup_request is None:
         return None
 
-    _enforce_request_access(request, user)
-    return _to_detail_schema(request)
+    _enforce_request_access(pickup_request, user)
+    return _to_detail_schema(pickup_request)
 
 
 def get_citizen_request_summary(db: Session, citizen: User) -> CitizenRequestSummaryRead:
-    total_requests = (
-        db.scalar(select(func.count(PickupRequest.id)).where(PickupRequest.user_id == citizen.id))
-        or 0
-    )
-    pending_requests = (
-        db.scalar(
-            select(func.count(PickupRequest.id)).where(
-                PickupRequest.user_id == citizen.id,
-                PickupRequest.status == PickupStatus.pending,
-            )
-        )
-        or 0
-    )
-    accepted_requests = (
-        db.scalar(
-            select(func.count(PickupRequest.id)).where(
-                PickupRequest.user_id == citizen.id,
-                PickupRequest.status == PickupStatus.accepted,
-            )
-        )
-        or 0
-    )
-    completed_requests = (
-        db.scalar(
-            select(func.count(PickupRequest.id)).where(
-                PickupRequest.user_id == citizen.id,
-                PickupRequest.status == PickupStatus.completed,
-            )
-        )
-        or 0
-    )
-
     return CitizenRequestSummaryRead(
-        total_requests=total_requests,
-        pending_requests=pending_requests,
-        accepted_requests=accepted_requests,
-        completed_requests=completed_requests,
+        total_requests=count_pickups_for_user(db, citizen.id),
+        pending_requests=count_pickups_for_user(db, citizen.id, PickupStatus.pending),
+        accepted_requests=count_pickups_for_user(db, citizen.id, PickupStatus.accepted),
+        completed_requests=count_pickups_for_user(db, citizen.id, PickupStatus.completed),
     )
 
 
@@ -260,21 +260,21 @@ def update_pickup_request(
     user: User,
     payload: PickupRequestUpdate,
 ) -> PickupRequestRead | None:
-    request = _repository.get_by_id(db, request_id)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
         return None
 
-    previous_status = request.status
+    previous_status = pickup_request.status
     update_data = payload.model_dump(exclude_unset=True, mode="json")
     next_status = None
 
     if user.role == "citizen":
-        if request.user_id != user.id:
+        if pickup_request.user_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You cannot update this pickup request",
             )
-        if request.status != PickupStatus.pending:
+        if pickup_request.status != PickupStatus.pending:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only pending pickup requests can be edited",
@@ -295,162 +295,149 @@ def update_pickup_request(
             ) from exc
 
     for field, value in update_data.items():
-        setattr(request, field, value)
+        setattr(pickup_request, field, value)
 
     if next_status is not None and next_status != previous_status:
         _repository.add_status_event(
-            db, request, next_status, f"Status updated to {next_status.value}.", actor=user
+            db, pickup_request, next_status, f"Status updated to {next_status.value}.", actor=user
         )
 
     db.commit()
-    request = _repository.get_by_id(db, request.id)
-    assert request is not None
-    return _to_schema(request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
 def accept_pickup_request(db: Session, collector: User, request_id: int) -> PickupRequestRead:
-    request = _repository.get_by_id(db, request_id)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
         )
-    if request.status != PickupStatus.pending:
+    if pickup_request.status != PickupStatus.pending:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Pickup request is no longer available"
         )
-    if request.user_id == collector.id:
+    if pickup_request.user_id == collector.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Collectors cannot accept their own request",
         )
 
-    assignment = CollectorAssignment(request_id=request.id, collector_id=collector.id)
-    request.status = PickupStatus.accepted
+    assignment = CollectorAssignment(request_id=pickup_request.id, collector_id=collector.id)
+    pickup_request.status = PickupStatus.accepted
     db.add(assignment)
     _repository.add_status_event(
         db,
-        request,
+        pickup_request,
         PickupStatus.accepted,
         "Collector accepted the pickup request.",
         actor=collector,
     )
     db.commit()
-    request = _repository.get_by_id(db, request.id)
-    assert request is not None
-    return _to_schema(request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
 def mark_pickup_request_on_the_way(
     db: Session, collector: User, request_id: int
 ) -> PickupRequestRead:
-    request = _repository.get_by_id(db, request_id)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
         )
-    if request.assignment is None or request.assignment.collector_id != collector.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="This request is not assigned to you"
-        )
-    if request.status != PickupStatus.accepted:
+    _ensure_assigned_collector(pickup_request, collector)
+    if pickup_request.status != PickupStatus.accepted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Only accepted requests can be started"
         )
 
-    request.status = PickupStatus.on_the_way
+    pickup_request.status = PickupStatus.on_the_way
     _repository.add_status_event(
-        db, request, PickupStatus.on_the_way, "Collector is on the way.", actor=collector
+        db,
+        pickup_request,
+        PickupStatus.on_the_way,
+        "Collector is on the way.",
+        actor=collector,
     )
     db.commit()
-    request = _repository.get_by_id(db, request.id)
-    assert request is not None
-    return _to_schema(request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
 def mark_pickup_request_collected(
     db: Session, collector: User, request_id: int
 ) -> PickupRequestRead:
-    request = _repository.get_by_id(db, request_id)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
         )
-    if request.assignment is None or request.assignment.collector_id != collector.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="This request is not assigned to you"
-        )
-    if request.status != PickupStatus.on_the_way:
+    _ensure_assigned_collector(pickup_request, collector)
+    if pickup_request.status != PickupStatus.on_the_way:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only in-progress requests can be collected",
         )
 
-    request.status = PickupStatus.collected
+    pickup_request.status = PickupStatus.collected
     _repository.add_status_event(
         db,
-        request,
+        pickup_request,
         PickupStatus.collected,
         "Waste has been collected and is awaiting final confirmation.",
         actor=collector,
     )
     db.commit()
-    request = _repository.get_by_id(db, request.id)
-    assert request is not None
-    return _to_schema(request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
 def complete_pickup_request(
     db: Session, collector: User, request_id: int, weight_kg: float
 ) -> PickupRequestRead:
-    request = _repository.get_by_id(db, request_id)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
         )
-    if request.assignment is None or request.assignment.collector_id != collector.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="This request is not assigned to you"
-        )
-    if request.status != PickupStatus.collected:
+    _ensure_assigned_collector(pickup_request, collector)
+    if pickup_request.status != PickupStatus.collected:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only collected requests can be completed",
         )
 
-    request.status = PickupStatus.completed
-    request.assignment.completed_at = datetime.now(timezone.utc)
-    request.assignment.weight_kg = weight_kg
+    pickup_request.status = PickupStatus.completed
+    pickup_request.assignment.completed_at = datetime.now(timezone.utc)
+    pickup_request.assignment.weight_kg = weight_kg
     _repository.add_status_event(
         db,
-        request,
+        pickup_request,
         PickupStatus.completed,
         f"Pickup completed with {round(weight_kg, 2)} kg reported.",
         actor=collector,
     )
     db.commit()
-    request = _repository.get_by_id(db, request.id)
-    assert request is not None
-    return _to_schema(request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
 def cancel_pickup_request(db: Session, citizen: User, request_id: int) -> PickupRequestRead | None:
-    request = _repository.get_by_id(db, request_id)
-    if request is None:
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
         return None
-    if request.user_id != citizen.id:
+    if pickup_request.user_id != citizen.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You cannot cancel this pickup request"
         )
-    if request.status != PickupStatus.pending:
+    if pickup_request.status != PickupStatus.pending:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Only pending requests can be cancelled"
         )
 
-    request.status = PickupStatus.cancelled
+    pickup_request.status = PickupStatus.cancelled
     _repository.add_status_event(
-        db, request, PickupStatus.cancelled, "Citizen cancelled the pickup request.", actor=citizen
+        db,
+        pickup_request,
+        PickupStatus.cancelled,
+        "Citizen cancelled the pickup request.",
+        actor=citizen,
     )
     db.commit()
-    request = _repository.get_by_id(db, request.id)
-    assert request is not None
-    return _to_schema(request)
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))

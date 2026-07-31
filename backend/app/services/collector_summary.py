@@ -5,6 +5,7 @@ from app.models.collector_assignment import CollectorAssignment
 from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.user import User
 from app.schemas.pickup_request import CollectorSummaryRead
+from app.services.stats import sum_collected_weight
 
 
 def get_collector_summary(db: Session, collector: User) -> CollectorSummaryRead:
@@ -50,18 +51,9 @@ def get_collector_summary(db: Session, collector: User) -> CollectorSummaryRead:
         or 0
     )
 
-    total_weight_kg = (
-        db.scalar(
-            select(func.coalesce(func.sum(CollectorAssignment.weight_kg), 0.0)).where(
-                CollectorAssignment.collector_id == collector.id
-            )
-        )
-        or 0.0
-    )
-
     return CollectorSummaryRead(
         total_assigned=total_assigned,
         active_jobs=active_jobs,
         completed_jobs=completed_jobs,
-        total_weight_kg=round(float(total_weight_kg), 2),
+        total_weight_kg=round(sum_collected_weight(db, collector.id), 2),
     )

@@ -1,4 +1,4 @@
-import {
+﻿import {
   CheckCircle2,
   ClipboardList,
   Clock,
@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
-import { AnalyticsCard } from "@/components/dashboard/AnalyticsCard";
+import { StatsCard } from "@/components/dashboard/StatsCard";
 import { CarbonImpactCard } from "@/components/dashboard/CarbonImpactCard";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
@@ -132,64 +132,64 @@ export function AIAnalyticsPage() {
           />
         ) : overview ? (
           <>
-            <AnalyticsCard
+            <StatsCard
               label="Total Users"
               value={formatAnalyticsNumber(overview.total_users)}
               helper="All registered accounts."
               icon={<Users className="h-5 w-5" />}
             />
-            <AnalyticsCard
+            <StatsCard
               label="Citizens"
               value={formatAnalyticsNumber(overview.citizens)}
               helper="Citizen accounts."
               icon={<Home className="h-5 w-5" />}
             />
-            <AnalyticsCard
+            <StatsCard
               label="Collectors"
               value={formatAnalyticsNumber(overview.collectors)}
               helper="Collector accounts."
               icon={<Truck className="h-5 w-5" />}
             />
-            <AnalyticsCard
+            <StatsCard
               label="Dealers"
               value={formatAnalyticsNumber(overview.dealers)}
               helper="Dealer accounts."
               icon={<Store className="h-5 w-5" />}
             />
-            <AnalyticsCard
+            <StatsCard
               label="Total Pickups"
               value={formatAnalyticsNumber(overview.total_pickups)}
               helper="All requests created."
               icon={<ClipboardList className="h-5 w-5" />}
             />
-            <AnalyticsCard
+            <StatsCard
               label="Completed Pickups"
               value={formatAnalyticsNumber(overview.completed_pickups)}
               helper="Requests fully collected."
               icon={<CheckCircle2 className="h-5 w-5" />}
               tone="success"
             />
-            <AnalyticsCard
+            <StatsCard
               label="Pending Pickups"
               value={formatAnalyticsNumber(overview.pending_pickups)}
               helper="Requests awaiting a collector."
               icon={<Clock className="h-5 w-5" />}
               tone="warning"
             />
-            <AnalyticsCard
+            <StatsCard
               label="Cancelled Pickups"
               value={formatAnalyticsNumber(overview.cancelled_pickups)}
               helper="Requests cancelled."
               icon={<XCircle className="h-5 w-5" />}
               tone="danger"
             />
-            <AnalyticsCard
+            <StatsCard
               label="Total Weight"
               value={formatWeight(overview.total_weight_kg)}
               helper="Reported collection weight."
               icon={<Scale className="h-5 w-5" />}
             />
-            <AnalyticsCard
+            <StatsCard
               label="Completion Rate"
               value={formatPercent(overview.completed_rate)}
               helper="Completed vs total requests."

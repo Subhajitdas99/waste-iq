@@ -17,17 +17,6 @@ class AIClassifierProvider(ABC):
 
 
 class YOLOv8Classifier(AIClassifierProvider):
-    SUPPORTED_CATEGORIES = [
-        "Plastic",
-        "Paper",
-        "Glass",
-        "Metal",
-        "Cardboard",
-        "E-Waste",
-        "Battery",
-        "Unknown",
-    ]
-
     def classify_image(self, image_path: str) -> dict[str, Any]:
         # TODO: Implement actual YOLOv8 inference here.
         # For now, returning a mock response as required (Do not call AI yet).

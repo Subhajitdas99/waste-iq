@@ -20,6 +20,7 @@ from app.schemas.analytics import (
     MaterialBreakdown,
     MonthlyStat,
 )
+from app.services.stats import count_pickups, count_users, sum_collected_weight
 
 # ~0.42 kg CO2e saved per kg of waste recycled (matches frontend recycling model).
 CO2_SAVED_PER_KG = 0.42
@@ -58,16 +59,6 @@ def _utc_naive(value: datetime) -> datetime:
 
 def _month_key(value: datetime) -> str:
     return _utc_naive(value).strftime("%Y-%m")
-
-
-def _count_users(db: Session, role: UserRole) -> int:
-    return db.scalar(select(func.count(User.id)).where(User.role == role)) or 0
-
-
-def _count_pickups(db: Session, status: PickupStatus) -> int:
-    return (
-        db.scalar(select(func.count(PickupRequest.id)).where(PickupRequest.status == status)) or 0
-    )
 
 
 def _material_bucket(text: str | None) -> str:
@@ -119,21 +110,19 @@ def _fetch_material_stats(db: Session) -> dict[str, _MaterialStats]:
 
 
 def get_overview_analytics(db: Session) -> AnalyticsOverview:
-    total_pickups = db.scalar(select(func.count(PickupRequest.id))) or 0
-    completed_pickups = _count_pickups(db, PickupStatus.completed)
-    pending_pickups = _count_pickups(db, PickupStatus.pending)
-    cancelled_pickups = _count_pickups(db, PickupStatus.cancelled)
-    total_weight_kg = (
-        db.scalar(select(func.coalesce(func.sum(CollectorAssignment.weight_kg), 0.0))) or 0.0
-    )
+    total_pickups = count_pickups(db)
+    completed_pickups = count_pickups(db, PickupStatus.completed)
+    pending_pickups = count_pickups(db, PickupStatus.pending)
+    cancelled_pickups = count_pickups(db, PickupStatus.cancelled)
+    total_weight_kg = sum_collected_weight(db)
 
     completed_rate = round(completed_pickups / total_pickups * 100, 2) if total_pickups else 0.0
 
     return AnalyticsOverview(
-        total_users=db.scalar(select(func.count(User.id))) or 0,
-        citizens=_count_users(db, UserRole.citizen),
-        collectors=_count_users(db, UserRole.collector),
-        dealers=_count_users(db, UserRole.dealer),
+        total_users=count_users(db),
+        citizens=count_users(db, UserRole.citizen),
+        collectors=count_users(db, UserRole.collector),
+        dealers=count_users(db, UserRole.dealer),
         total_pickups=total_pickups,
         completed_pickups=completed_pickups,
         pending_pickups=pending_pickups,

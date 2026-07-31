@@ -65,7 +65,6 @@ beforeAll(async () => {
     import("../pages/dashboard/PickupDetailsPage"),
     import("../pages/dashboard/PickupHistoryPage"),
     import("../pages/dashboard/ProfilePage"),
-    import("../pages/dashboard/SettingsPage"),
     import("../pages/dashboard/RoleProfilePage"),
     import("../pages/dashboard/RoleSettingsPage"),
     import("../pages/public/LandingPage"),

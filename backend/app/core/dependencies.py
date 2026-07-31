@@ -8,6 +8,10 @@ from app.core.config import Settings, get_settings
 from app.core.security import decode_access_token
 from app.db.session import SessionLocal
 from app.models.user import User
+from app.services.ai_classifier import AIClassifierProvider, get_classifier
+from app.services.pickup_request_creation import PickupRequestCreationService
+from app.services.pickup_request_images import PickupRequestImageService
+from app.services.upload import CloudinaryUploadConfig, CloudinaryUploader
 
 security = HTTPBearer(auto_error=False)
 
@@ -57,15 +61,11 @@ def require_roles(*roles: str):
     return dependency
 
 
-def get_ai_classifier():
-    from app.services.ai_classifier import get_classifier
-
+def get_ai_classifier() -> AIClassifierProvider:
     return get_classifier()
 
 
-def get_image_uploader(settings: Settings = Depends(get_settings)):
-    from app.services.upload import CloudinaryUploadConfig, CloudinaryUploader
-
+def get_image_uploader(settings: Settings = Depends(get_settings)) -> CloudinaryUploader:
     return CloudinaryUploader(
         config=CloudinaryUploadConfig(
             cloud_name=settings.cloudinary_cloud_name,
@@ -77,17 +77,13 @@ def get_image_uploader(settings: Settings = Depends(get_settings)):
 
 
 def get_pickup_request_image_service(
-    uploader=Depends(get_image_uploader),
-    classifier=Depends(get_ai_classifier),
-):
-    from app.services.pickup_request_images import PickupRequestImageService
-
+    uploader: CloudinaryUploader = Depends(get_image_uploader),
+    classifier: AIClassifierProvider = Depends(get_ai_classifier),
+) -> PickupRequestImageService:
     return PickupRequestImageService(uploader=uploader, classifier=classifier)
 
 
 def get_pickup_request_creation_service(
-    image_service=Depends(get_pickup_request_image_service),
-):
-    from app.services.pickup_request_creation import PickupRequestCreationService
-
+    image_service: PickupRequestImageService = Depends(get_pickup_request_image_service),
+) -> PickupRequestCreationService:
     return PickupRequestCreationService(image_service=image_service)

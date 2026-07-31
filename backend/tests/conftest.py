@@ -13,7 +13,7 @@ os.environ.setdefault("ADMIN_REGISTRATION_CODE", "test-admin-code")
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-# flake8: noqa: E402
+# noqa: E402 -- imports below depend on the sys.path setup above
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,16 +26,6 @@ from app.core.security import create_access_token, hash_password
 from app.main import app as fastapi_app
 from app.models.base import Base
 from app.models.user import User, UserRole
-
-from app.models import collector_assignment as collector_assignment_model  # noqa: F401
-from app.models import dealer_profile as dealer_profile_model  # noqa: F401
-from app.models import inventory_lot as inventory_lot_model  # noqa: F401
-from app.models import inventory_lot_event as inventory_lot_event_model  # noqa: F401
-from app.models import material_category as material_category_model  # noqa: F401
-from app.models import pickup_request as pickup_request_model  # noqa: F401
-from app.models import pickup_request_event as pickup_request_event_model  # noqa: F401
-from app.models import pricing_rule as pricing_rule_model  # noqa: F401
-from app.models import user as user_model  # noqa: F401
 
 
 @pytest.fixture()
@@ -162,6 +152,47 @@ def admin_headers(admin_user) -> dict[str, str]:
 @pytest.fixture()
 def second_dealer_headers(second_dealer_user) -> dict[str, str]:
     return _auth_headers(second_dealer_user)
+
+
+@pytest.fixture()
+def second_collector_user(db_session) -> User:
+    return _create_user(
+        db_session, role=UserRole.collector, email="collector2@test.com", phone="9000000006"
+    )
+
+
+@pytest.fixture()
+def second_collector_headers(second_collector_user) -> dict[str, str]:
+    return _auth_headers(second_collector_user)
+
+
+@pytest.fixture()
+def make_user(db_session):
+    """Factory for creating arbitrary extra users (default password "Test@1234")."""
+
+    def _factory(
+        *, role: UserRole, email: str, name: str = "Test User", phone: str = "9000000001"
+    ) -> User:
+        return _create_user(db_session, role=role, email=email, name=name, phone=phone)
+
+    return _factory
+
+
+@pytest.fixture()
+def auth_headers() -> object:
+    """Factory for building Bearer-token headers for a given user."""
+    return _auth_headers
+
+
+@pytest.fixture()
+def valid_pickup_payload() -> dict[str, str]:
+    """Valid payload accepted by POST /pickup-requests."""
+    return {
+        "waste_type": "Plastic bottles",
+        "address": "12 Lake Road, Kolkata, 700029",
+        "latitude": 22.5726,
+        "longitude": 88.3639,
+    }
 
 
 # ─── Approved dealer profile fixture ─────────────────────────────────────────

@@ -81,11 +81,6 @@ const ProfilePage = lazy(() =>
     default: m.ProfilePage,
   }))
 );
-const SettingsPage = lazy(() =>
-  import("../pages/dashboard/SettingsPage").then((m) => ({
-    default: m.SettingsPage,
-  }))
-);
 const RoleProfilePage = lazy(() =>
   import("../pages/dashboard/RoleProfilePage").then((m) => ({
     default: m.RoleProfilePage,
@@ -150,7 +145,7 @@ export const router = createBrowserRouter([
       { path: "pickups/:id", element: lazyPage(PickupDetailsPage) },
       { path: "history", element: lazyPage(PickupHistoryPage) },
       { path: "profile", element: lazyPage(ProfilePage) },
-      { path: "settings", element: lazyPage(SettingsPage) },
+      { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],
   },
   {
