@@ -105,7 +105,7 @@ cp .env.example .env
 Edit `frontend/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 ```
 
 ```bash
@@ -225,7 +225,7 @@ docker compose ps
 
 | Variable | Required | Default | Description | Example |
 |----------|----------|---------|-------------|---------|
-| `VITE_API_BASE_URL` | ✅ | `http://localhost:8000` | Base URL of the FastAPI backend | `https://api.waste-iq.dev` |
+| `VITE_API_URL` | ✅ | `http://localhost:8000` | Base URL of the FastAPI backend | `https://api.waste-iq.dev` |
 
 ---
 
@@ -361,7 +361,7 @@ Render.com
 
    | Variable | Value |
    |----------|-------|
-   | `VITE_API_BASE_URL` | `https://your-backend.onrender.com` |
+   | `VITE_API_URL` | `https://your-backend.onrender.com` |
 
 5. Click **Deploy**.
 
@@ -420,7 +420,7 @@ Run through this checklist before every production deployment:
 | 10 | Database backup is scheduled | ☐ | Render Starter: daily backups |
 | 11 | Uptime monitoring alert configured | ☐ | UptimeRobot or Better Uptime on `/health` |
 | 12 | `CHANGELOG.md` updated and version tag pushed | ☐ | `git tag v0.2.0 && git push --tags` |
-| 13 | Frontend `VITE_API_BASE_URL` points to production backend | ☐ | Not a localhost URL |
+| 13 | Frontend `VITE_API_URL` points to production backend | ☐ | Not a localhost URL |
 | 14 | No debug endpoints (`/debug/*`) reachable in production | ☐ | Remove or guard behind admin check |
 
 ---
@@ -580,7 +580,7 @@ alembic current
 | **`alembic upgrade head` fails** | Data in the database conflicts with the migration | Review the migration file; may require manual data fixes |
 | **Cloudinary upload fails (502)** | Cloudinary service is temporarily unavailable | Check [status.cloudinary.com](https://status.cloudinary.com); the app will return 502 |
 | **Cloudinary upload fails (503)** | Cloudinary credentials not configured | Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in `.env` |
-| **Frontend blank page after build** | `VITE_API_BASE_URL` not set or set to wrong URL | Verify `frontend/.env` or Render environment variable |
+| **Frontend blank page after build** | `VITE_API_URL` not set or set to wrong URL | Verify `frontend/.env` or Render environment variable |
 | **`npm install` fails** | Node.js version too old or corrupted `node_modules` | Run `node --version` (must be ≥ 20); delete `node_modules` and `package-lock.json`, then `npm install` |
 | **`ImportError` on Python startup** | Virtual environment not activated or dependencies not installed | Run `source .venv/bin/activate` then `pip install -r requirements.txt` |
 | **`ModuleNotFoundError: app`** | Running uvicorn from the wrong directory | Always run `uvicorn app.main:app` from inside the `backend/` directory |

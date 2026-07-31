@@ -36,6 +36,21 @@ const DashboardOverviewPage = lazy(() =>
     default: m.DashboardOverviewPage,
   }))
 );
+const CollectorOverviewPage = lazy(() =>
+  import("../pages/dashboard/CollectorOverviewPage").then((m) => ({
+    default: m.CollectorOverviewPage,
+  }))
+);
+const DealerOverviewPage = lazy(() =>
+  import("../pages/dashboard/DealerOverviewPage").then((m) => ({
+    default: m.DealerOverviewPage,
+  }))
+);
+const AdminOverviewPage = lazy(() =>
+  import("../pages/dashboard/AdminOverviewPage").then((m) => ({
+    default: m.AdminOverviewPage,
+  }))
+);
 const CitizenPickupsPage = lazy(() =>
   import("../pages/dashboard/CitizenPickupsPage").then((m) => ({
     default: m.CitizenPickupsPage,
@@ -64,6 +79,16 @@ const ProfilePage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("../pages/dashboard/SettingsPage").then((m) => ({
     default: m.SettingsPage,
+  }))
+);
+const RoleProfilePage = lazy(() =>
+  import("../pages/dashboard/RoleProfilePage").then((m) => ({
+    default: m.RoleProfilePage,
+  }))
+);
+const RoleSettingsPage = lazy(() =>
+  import("../pages/dashboard/RoleSettingsPage").then((m) => ({
+    default: m.RoleSettingsPage,
   }))
 );
 
@@ -121,6 +146,48 @@ export const router = createBrowserRouter([
       { path: "history", element: lazyPage(PickupHistoryPage) },
       { path: "profile", element: lazyPage(ProfilePage) },
       { path: "settings", element: lazyPage(SettingsPage) },
+    ],
+  },
+  {
+    path: "/collector",
+    element: (
+      <ProtectedRoute allowedRoles={["collector"]}>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="overview" replace /> },
+      { path: "overview", element: lazyPage(CollectorOverviewPage) },
+      { path: "profile", element: lazyPage(RoleProfilePage) },
+      { path: "settings", element: lazyPage(RoleSettingsPage) },
+    ],
+  },
+  {
+    path: "/dealer",
+    element: (
+      <ProtectedRoute allowedRoles={["dealer"]}>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="overview" replace /> },
+      { path: "overview", element: lazyPage(DealerOverviewPage) },
+      { path: "profile", element: lazyPage(RoleProfilePage) },
+      { path: "settings", element: lazyPage(RoleSettingsPage) },
+    ],
+  },
+  {
+    path: "/admin",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="overview" replace /> },
+      { path: "overview", element: lazyPage(AdminOverviewPage) },
+      { path: "profile", element: lazyPage(RoleProfilePage) },
+      { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],
   },
 ]);

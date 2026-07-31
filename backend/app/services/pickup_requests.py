@@ -52,6 +52,9 @@ def _to_schema(request: PickupRequest) -> PickupRequestRead:
         address=request.address,
         latitude=request.latitude,
         longitude=request.longitude,
+        estimated_weight_kg=request.estimated_weight_kg,
+        preferred_time=request.preferred_time,
+        notes=request.notes,
         status=request.status.value,
         created_at=request.created_at,
         assigned_collector_name=assignment.collector_name if assignment is not None else None,
@@ -106,7 +109,7 @@ def create_pickup_request(
         user_id=citizen.id,
         category=category,
         confidence=confidence,
-        **payload.model_dump(mode="json"),
+        **payload.model_dump(mode="python"),
     )
     _repository.create(db, request_model)
     _repository.add_status_event(

@@ -185,3 +185,78 @@ def test_citizen_summary_counts(client, citizen_headers):
 def test_collector_cannot_view_citizen_summary(client, collector_headers):
     response = client.get("/pickup-requests/citizen/summary", headers=collector_headers)
     assert response.status_code == 403
+
+
+def test_create_pickup_request_with_sprint5_details(client, citizen_headers):
+    """Sprint 5: estimated weight, preferred time and notes are persisted and returned."""
+    response = client.post(
+        "/pickup-requests",
+        data={
+            **VALID_PICKUP_PAYLOAD,
+            "estimated_weight_kg": "4.5",
+            "preferred_time": "2026-08-05T09:30:00",
+            "notes": "Please call before arriving at the gate.",
+        },
+        headers=citizen_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["estimated_weight_kg"] == 4.5
+    assert body["preferred_time"] == "2026-08-05T09:30:00"
+    assert body["notes"] == "Please call before arriving at the gate."
+
+
+def test_create_pickup_request_without_details_returns_nulls(client, citizen_headers):
+    response = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["estimated_weight_kg"] is None
+    assert body["preferred_time"] is None
+    assert body["notes"] is None
+
+
+def test_create_pickup_request_rejects_invalid_weight(client, citizen_headers):
+    response = client.post(
+        "/pickup-requests",
+        data={**VALID_PICKUP_PAYLOAD, "estimated_weight_kg": "-3"},
+        headers=citizen_headers,
+    )
+    assert response.status_code == 422
+
+    too_heavy = client.post(
+        "/pickup-requests",
+        data={**VALID_PICKUP_PAYLOAD, "estimated_weight_kg": "15000"},
+        headers=citizen_headers,
+    )
+    assert too_heavy.status_code == 422
+
+
+def test_create_pickup_request_rejects_overlong_notes(client, citizen_headers):
+    response = client.post(
+        "/pickup-requests",
+        data={**VALID_PICKUP_PAYLOAD, "notes": "x" * 2001},
+        headers=citizen_headers,
+    )
+    assert response.status_code == 422
+
+
+def test_list_pickup_requests_returns_sprint5_details(client, citizen_headers):
+    created = client.post(
+        "/pickup-requests",
+        data={
+            **VALID_PICKUP_PAYLOAD,
+            "estimated_weight_kg": "2.0",
+            "preferred_time": "2026-08-06T11:00:00",
+            "notes": "Leave outside the main door.",
+        },
+        headers=citizen_headers,
+    ).json()
+
+    response = client.get("/pickup-requests", headers=citizen_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["id"] == created["id"]
+    assert body[0]["estimated_weight_kg"] == 2.0
+    assert body[0]["preferred_time"] == "2026-08-06T11:00:00"
+    assert body[0]["notes"] == "Leave outside the main door."

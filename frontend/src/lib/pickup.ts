@@ -72,16 +72,6 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(new Date(value));
 }
 
-export function formatDate(value: string | null | undefined): string {
-  if (!value) {
-    return "Not available";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-  }).format(new Date(value));
-}
-
 export function formatWeight(weightKg: number | null | undefined): string {
   if (typeof weightKg !== "number") {
     return "Not reported";

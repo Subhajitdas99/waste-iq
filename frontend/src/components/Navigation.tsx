@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Menu, X, Leaf, Sun, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./ui/button";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { getRoleHomePath } from "@/lib/portal";
 
 const navLinks = [
   { name: "Home", path: "/" },
@@ -17,9 +18,9 @@ export function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
-  const { user, token } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const homePath = getRoleHomePath(user?.role);
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -35,15 +36,7 @@ export function Navigation() {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
-  const handleNavClick = (path: string) => {
-    if (path.includes("#")) {
-      const [route, hash] = path.split("#");
-      if (location.pathname === route || (route === "/" && location.pathname === "/")) {
-        document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" });
-      } else {
-        navigate(`${route}#${hash}`);
-      }
-    }
+  const handleNavClick = () => {
     setMobileMenuOpen(false);
   };
 
@@ -97,8 +90,8 @@ export function Navigation() {
             {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
           </button>
 
-          {token && user ? (
-            <Link to="/dashboard">
+          {isAuthenticated ? (
+            <Link to={homePath}>
               <Button className="font-medium">Dashboard</Button>
             </Link>
           ) : (
@@ -139,7 +132,7 @@ export function Navigation() {
               <Link
                 key={link.path}
                 to={link.path}
-                onClick={() => handleNavClick(link.path)}
+                onClick={handleNavClick}
                 className={`text-lg font-medium p-3 rounded-md focus:outline-none focus:ring-2 focus:ring-ring ${
                   isActive(link.path)
                     ? "bg-primary/10 text-primary"
@@ -153,8 +146,8 @@ export function Navigation() {
             <div className="h-px bg-border my-2" />
 
             <div className="flex flex-col gap-2">
-              {token && user ? (
-                <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+              {isAuthenticated ? (
+                <Link to={homePath} onClick={() => setMobileMenuOpen(false)}>
                   <Button className="w-full justify-center">Dashboard</Button>
                 </Link>
               ) : (

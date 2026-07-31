@@ -331,7 +331,7 @@ cp .env.example .env
 Edit `frontend/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 ```
 
 ```bash
@@ -365,7 +365,7 @@ The frontend will be available at **http://localhost:5173**.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `VITE_API_BASE_URL` | ✅ | `http://localhost:8000` | Backend API base URL |
+| `VITE_API_URL` | ✅ | `http://localhost:8000` | Backend API base URL |
 
 ---
 
@@ -467,7 +467,7 @@ Screenshots are located in [`docs/screenshots/`](docs/screenshots/).
 
 | Screen | Preview |
 |--------|---------|
-| Citizen Dashboard | `docs/screenshots/citizen-dashboard.png` |
+| Citizen Dashboard | `docs/screenshots/citizen-dashboard2.png` |
 | Pickup Request Form | `docs/screenshots/new-pickup.png` |
 | Collector Map View | `docs/screenshots/collector-nearby.png` |
 | Admin Analytics | `docs/screenshots/admin-analytics.png` |

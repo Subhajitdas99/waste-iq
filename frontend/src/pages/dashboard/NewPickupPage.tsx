@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, MapPin, Sparkles } from "lucide-react";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,10 +14,13 @@ import { ImageUploader } from "@/components/dashboard/ImageUploader";
 import { useBrowserGeolocation } from "@/hooks/useBrowserGeolocation";
 import { useCreateCitizenPickup } from "@/hooks/useCitizenPickups";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { formatDateTime, formatWeight } from "@/lib/pickup";
 import type { PickupRequest } from "@/types/pickup";
 
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_NOTES_LENGTH = 2000;
+const MAX_ESTIMATED_WEIGHT_KG = 10000;
 
 function isFile(value: unknown): value is File {
   return typeof File !== "undefined" && value instanceof File;
@@ -28,6 +31,33 @@ const pickupSchema = z.object({
   address: z.string().trim().min(8, "Pickup address must be at least 8 characters."),
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
+  estimated_weight_kg: z
+    .preprocess(
+      (value) =>
+        typeof value === "number" && Number.isFinite(value) ? value : undefined,
+      z
+        .number({ invalid_type_error: "Enter a valid estimated weight in kilograms." })
+        .min(0.1, "Estimated weight must be at least 0.1 kg.")
+        .max(MAX_ESTIMATED_WEIGHT_KG, "Estimated weight cannot exceed 10,000 kg.")
+        .optional(),
+    ),
+  preferred_time: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value : undefined))
+    .refine(
+      (value) => !value || !Number.isNaN(Date.parse(value)),
+      "Enter a valid date and time.",
+    )
+    .refine(
+      (value) => !value || Date.parse(value) > Date.now(),
+      "Preferred time must be in the future.",
+    ),
+  notes: z
+    .string()
+    .trim()
+    .max(MAX_NOTES_LENGTH, "Notes must be 2,000 characters or fewer.")
+    .optional(),
   image: z
     .custom<File | null | undefined>(
       (value) => value === null || value === undefined || isFile(value),
@@ -51,19 +81,29 @@ const defaultValues: PickupFormValues = {
   address: "",
   latitude: Number.NaN,
   longitude: Number.NaN,
+  estimated_weight_kg: undefined,
+  preferred_time: "",
+  notes: "",
   image: null,
 };
 
 const steps = [
   {
     title: "Material",
-    description: "Describe the recyclable waste and add an optional photo.",
+    description: "Describe the recyclable waste and add an optional photo for AI preview.",
     fields: ["waste_type", "image"] as const,
   },
   {
-    title: "Location",
-    description: "Add the pickup address and location coordinates.",
-    fields: ["address", "latitude", "longitude"] as const,
+    title: "Location & Details",
+    description: "Add the pickup address, estimated weight, preferred time, and any notes.",
+    fields: [
+      "address",
+      "latitude",
+      "longitude",
+      "estimated_weight_kg",
+      "preferred_time",
+      "notes",
+    ] as const,
   },
   {
     title: "Review",
@@ -124,6 +164,9 @@ export function NewPickupPage() {
           address: formValues.address,
           latitude: formValues.latitude,
           longitude: formValues.longitude,
+          estimated_weight_kg: formValues.estimated_weight_kg ?? null,
+          preferred_time: formValues.preferred_time ?? null,
+          notes: formValues.notes ?? null,
           image: formValues.image ?? null,
         },
         onUploadProgress: setUploadProgress,
@@ -138,17 +181,22 @@ export function NewPickupPage() {
     }
   };
 
+  const aiPreviewIsAvailable =
+    Boolean(successPickup?.category) &&
+    successPickup?.category !== "Unknown" &&
+    (successPickup?.confidence ?? 0) > 0;
+
   return (
     <>
       <SeoHead
         title="Create Pickup"
-        description="Create a new Waste-IQ pickup request with image upload and exact citizen location details."
+        description="Create a new Waste-IQ pickup request with weight, preferred time, notes, and image upload."
         path="/dashboard/pickups/new"
       />
 
       <PageHeader
         title="Create Pickup Request"
-        description="This multi-step flow uses only the existing FastAPI pickup request fields and upload endpoint."
+        description="This multi-step flow submits the full Sprint 5 citizen contract: material, location, scheduling, and photo."
         actions={
           <Button asChild variant="outline">
             <Link to="/dashboard/pickups">
@@ -182,6 +230,15 @@ export function NewPickupPage() {
               </div>
             ))}
           </div>
+
+          {successPickup ? (
+            <div
+              role="status"
+              className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"
+            >
+              Pickup request #{successPickup.id} was created successfully.
+            </div>
+          ) : null}
 
           <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
             {currentStep === 0 ? (
@@ -220,13 +277,60 @@ export function NewPickupPage() {
                   <Label htmlFor="address">Pickup Address</Label>
                   <textarea
                     id="address"
-                    rows={5}
-                    placeholder="Street address, area, city, and any location clarifier supported by the current backend."
-                    className="flex min-h-[140px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    rows={4}
+                    placeholder="Street address, area, city, and any location clarifier."
+                    className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     {...register("address")}
                   />
                   {errors.address ? (
                     <p className="text-sm text-destructive">{errors.address.message}</p>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="estimated_weight_kg">Estimated Weight (kg)</Label>
+                    <Input
+                      id="estimated_weight_kg"
+                      type="number"
+                      min="0.1"
+                      max={MAX_ESTIMATED_WEIGHT_KG}
+                      step="any"
+                      placeholder="e.g. 4.5"
+                      {...register("estimated_weight_kg", { valueAsNumber: true })}
+                    />
+                    {errors.estimated_weight_kg ? (
+                      <p className="text-sm text-destructive">
+                        {errors.estimated_weight_kg.message}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="preferred_time">Preferred Pickup Time</Label>
+                    <Input
+                      id="preferred_time"
+                      type="datetime-local"
+                      {...register("preferred_time")}
+                    />
+                    {errors.preferred_time ? (
+                      <p className="text-sm text-destructive">{errors.preferred_time.message}</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes (optional)</Label>
+                  <textarea
+                    id="notes"
+                    rows={3}
+                    maxLength={MAX_NOTES_LENGTH}
+                    placeholder="Landmark details, gate instructions, or special handling requests."
+                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    {...register("notes")}
+                  />
+                  {errors.notes ? (
+                    <p className="text-sm text-destructive">{errors.notes.message}</p>
                   ) : null}
                 </div>
 
@@ -306,6 +410,20 @@ export function NewPickupPage() {
                       <dd className="mt-1 font-medium">{values.address}</dd>
                     </div>
                     <div>
+                      <dt className="text-sm text-muted-foreground">Estimated Weight</dt>
+                      <dd className="mt-1 font-medium">
+                        {formatWeight(values.estimated_weight_kg)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-muted-foreground">Preferred Time</dt>
+                      <dd className="mt-1 font-medium">
+                        {values.preferred_time
+                          ? formatDateTime(values.preferred_time)
+                          : "No preferred time"}
+                      </dd>
+                    </div>
+                    <div>
                       <dt className="text-sm text-muted-foreground">Latitude</dt>
                       <dd className="mt-1 font-medium">{values.latitude}</dd>
                     </div>
@@ -313,18 +431,21 @@ export function NewPickupPage() {
                       <dt className="text-sm text-muted-foreground">Longitude</dt>
                       <dd className="mt-1 font-medium">{values.longitude}</dd>
                     </div>
+                    <div className="md:col-span-2">
+                      <dt className="text-sm text-muted-foreground">Notes</dt>
+                      <dd className="mt-1 font-medium">
+                        {values.notes?.trim() ? values.notes : "No notes provided"}
+                      </dd>
+                    </div>
                   </dl>
                 </div>
 
                 {apiError ? (
-                  <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  <div
+                    role="alert"
+                    className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                  >
                     {apiError}
-                  </div>
-                ) : null}
-
-                {successPickup ? (
-                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
-                    Pickup request #{successPickup.id} was created successfully.
                   </div>
                 ) : null}
               </div>
@@ -356,28 +477,41 @@ export function NewPickupPage() {
 
         <div className="space-y-6">
           <DashboardCard
-            title="Supported Backend Fields"
-            description="Sprint 3 is intentionally scoped to the existing FastAPI citizen pickup contract."
+            title="Supported Request Fields"
+            description="Every field in this form maps to the FastAPI citizen pickup contract."
           >
             <ul className="space-y-3 text-sm text-muted-foreground">
-              <li>`waste_type`</li>
-              <li>`address`</li>
-              <li>`latitude`</li>
-              <li>`longitude`</li>
+              <li>`waste_type` and `address`</li>
+              <li>`latitude` / `longitude` (browser geolocation)</li>
+              <li>`estimated_weight_kg` — optional, 0.1–10,000 kg</li>
+              <li>`preferred_time` — optional future datetime</li>
+              <li>`notes` — optional, up to 2,000 characters</li>
               <li>`image` (multipart upload on create)</li>
             </ul>
           </DashboardCard>
 
           <DashboardCard
-            title="API Notes"
-            description="These requested UX fields are not included in the current backend and are therefore not faked in the frontend."
+            title="AI Image Preview"
+            description="Photos are analyzed on upload and the result is stored with the request."
           >
-            <ul className="space-y-3 text-sm text-muted-foreground">
-              <li>Preferred pickup date and time</li>
-              <li>Landmark and special instructions</li>
-              <li>Estimated weight at request time</li>
-              <li>Material category selection beyond backend `waste_type` and returned AI classification</li>
-            </ul>
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p>
+                  The classifier returns a material category and confidence score. The model is
+                  currently on standby, so uploaded photos return{" "}
+                  <span className="font-medium">Unknown</span> with{" "}
+                  <span className="font-medium">0%</span> confidence until the inference service
+                  is deployed.
+                </p>
+                <p className="mt-2">
+                  Once live, the detected category and confidence appear in the success panel and
+                  on the pickup details page.
+                </p>
+              </div>
+            </div>
           </DashboardCard>
 
           {successPickup ? (
@@ -396,6 +530,25 @@ export function NewPickupPage() {
                     </p>
                   </div>
                 </div>
+
+                <div className="mt-4 rounded-2xl border border-dashed bg-background/60 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    AI Image Preview
+                  </p>
+                  {aiPreviewIsAvailable ? (
+                    <p className="mt-2 text-sm font-medium">
+                      Detected material: {successPickup?.category} (
+                      {((successPickup?.confidence ?? 0) * 100).toFixed(0)}% confidence)
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {successPickup?.image_url
+                        ? "Photo stored with the request. Classification preview activates when the AI model is live."
+                        : "No photo attached to this request, so there is nothing to classify."}
+                    </p>
+                  )}
+                </div>
+
                 <Button asChild className="mt-4 w-full">
                   <Link to={`/dashboard/pickups/${successPickup.id}`}>View Pickup Details</Link>
                 </Button>

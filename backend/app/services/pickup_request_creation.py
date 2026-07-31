@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,9 @@ class PickupRequestCreationService:
         address: str,
         latitude: float,
         longitude: float,
+        estimated_weight_kg: float | None,
+        preferred_time: datetime | None,
+        notes: str | None,
         image: UploadFile | None,
     ) -> PickupRequestRead:
         processed_image = self._image_service.process_image(image=image, user_id=citizen.id)
@@ -28,6 +33,9 @@ class PickupRequestCreationService:
             address=address,
             latitude=latitude,
             longitude=longitude,
+            estimated_weight_kg=estimated_weight_kg,
+            preferred_time=preferred_time,
+            notes=notes,
             image_url=processed_image.image_url,
         )
         return create_pickup_request(

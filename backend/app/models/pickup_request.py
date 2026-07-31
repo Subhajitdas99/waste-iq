@@ -5,7 +5,6 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.models.base import Base
 
 
@@ -32,6 +31,9 @@ class PickupRequest(Base):
     address: Mapped[str] = mapped_column(Text, nullable=False)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    estimated_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    preferred_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[PickupStatus] = mapped_column(
         Enum(PickupStatus, native_enum=False),
         nullable=False,

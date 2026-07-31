@@ -2,20 +2,21 @@ import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { LoadingScreen } from "@/components/ui/spinner";
+import { getRoleHomePath } from "@/lib/portal";
 
 interface GuestRouteProps {
   children: ReactNode;
 }
 
 export function GuestRoute({ children }: GuestRouteProps) {
-  const { user, token, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
   }
 
-  if (token && user) {
-    return <Navigate to="/dashboard" replace />;
+  if (isAuthenticated) {
+    return <Navigate to={getRoleHomePath(user?.role)} replace />;
   }
 
   return <>{children}</>;
