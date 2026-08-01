@@ -1,5 +1,5 @@
 import type { UserRole } from "@/types/auth";
-import type { DealerVerificationStatus } from "@/types/dealer";
+import type { DealerApprovalEvent, DealerApprovalStatus, DealerProfile } from "@/types/dealer";
 
 export interface RoleBreakdown {
   citizens: number;
@@ -44,10 +44,37 @@ export interface AdminDealerSummary {
   business_name: string | null;
   owner_name: string | null;
   city: string | null;
-  pincode: string | null;
+  postal_code: string | null;
   materials_accepted: string[];
-  verification_status: DealerVerificationStatus;
+  approval_status: DealerApprovalStatus;
+  rejected_reason: string | null;
   approved_at: string | null;
   profile_completion: number;
   created_at: string;
+}
+
+export interface AdminDealerListPage {
+  items: AdminDealerSummary[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
+
+export interface AdminDealerDetail {
+  user_id: number;
+  user_name: string;
+  user_email: string;
+  account_phone: string;
+  profile: DealerProfile;
+  timeline: DealerApprovalEvent[];
+}
+
+export interface AdminDealerListQuery {
+  page?: number;
+  page_size?: number;
+  status?: DealerApprovalStatus;
+  search?: string;
+  sort_by?: string;
+  sort_order?: "asc" | "desc";
 }

@@ -1,6 +1,7 @@
 from app.models.collector_assignment import CollectorAssignment
 from app.models.dealer_inventory import DealerInventory, DealerInventoryStatus
-from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
+from app.models.dealer_profile import DealerApprovalStatus, DealerProfile
+from app.models.dealer_profile_event import DealerProfileEvent
 from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 from app.models.inventory_lot_event import InventoryLotEvent, InventoryLotEventType
 from app.models.material_category import MaterialCategory
@@ -13,7 +14,8 @@ __all__ = [
     "User",
     "UserRole",
     "DealerProfile",
-    "DealerVerificationStatus",
+    "DealerApprovalStatus",
+    "DealerProfileEvent",
     "DealerInventory",
     "DealerInventoryStatus",
     "MaterialCategory",

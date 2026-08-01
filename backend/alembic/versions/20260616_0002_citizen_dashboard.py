@@ -73,39 +73,31 @@ def upgrade() -> None:
         op.f("ix_pickup_request_events_status"), "pickup_request_events", ["status"], unique=False
     )
 
-    op.execute(
-        """
+    op.execute("""
         INSERT INTO pickup_request_events (request_id, actor_id, status, note, created_at)
         SELECT id, user_id, 'pending', 'Pickup request created.', created_at
         FROM pickup_requests
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         INSERT INTO pickup_request_events (request_id, actor_id, status, note, created_at)
         SELECT pr.id, ca.collector_id, 'accepted', 'Collector accepted the pickup request.', ca.accepted_at
         FROM pickup_requests pr
         JOIN collector_assignments ca ON ca.request_id = pr.id
         WHERE pr.status IN ('accepted', 'completed')
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         INSERT INTO pickup_request_events (request_id, actor_id, status, note, created_at)
         SELECT pr.id, ca.collector_id, 'completed', 'Pickup completed.', COALESCE(ca.completed_at, pr.created_at)
         FROM pickup_requests pr
         JOIN collector_assignments ca ON ca.request_id = pr.id
         WHERE pr.status = 'completed'
-        """
-    )
-    op.execute(
-        """
+        """)
+    op.execute("""
         INSERT INTO pickup_request_events (request_id, actor_id, status, note, created_at)
         SELECT id, user_id, 'cancelled', 'Citizen cancelled the pickup request.', created_at
         FROM pickup_requests
         WHERE status = 'cancelled'
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

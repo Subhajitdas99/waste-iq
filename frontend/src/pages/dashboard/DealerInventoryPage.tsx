@@ -9,6 +9,7 @@ import {
 } from "@/hooks/useDealerStock";
 import DealerInventoryTable from "@/components/dashboard/DealerInventoryTable";
 import { Pagination } from "@/components/dashboard/Pagination";
+import { DealerApprovalGate } from "@/components/dashboard/DealerApprovalGate";
 
 export default function DealerInventoryPage() {
   const [page, setPage] = useState(1);
@@ -39,7 +40,8 @@ export default function DealerInventoryPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <DealerApprovalGate>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">
@@ -98,6 +100,7 @@ export default function DealerInventoryPage() {
           onPageChange={setPage}
         />
       )}
-    </div>
+      </div>
+    </DealerApprovalGate>
   );
 }

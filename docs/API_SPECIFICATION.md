@@ -561,6 +561,21 @@ Complete a pickup by recording the waste weight. Transitions status to `complete
 
 All dealer profile endpoints require `Authorization: Bearer <token>` with `role = dealer`.
 
+Profiles follow the approval workflow enum `approval_status`:
+`draft → submitted → approved | rejected`. Only `approved` dealers can access
+the inventory marketplace.
+
+Allowed transitions:
+
+| From | To |
+|------|----|
+| `draft` | `submitted` |
+| `submitted` | `draft`, `approved`, `rejected` |
+| `approved` | `draft` (via profile edit) |
+| `rejected` | `draft`, `submitted` |
+
+Invalid transitions return `400`.
+
 ### `POST /dealer/profile`
 
 Create the dealer's business profile. Each dealer can have only one profile.
@@ -574,7 +589,8 @@ Create the dealer's business profile. Each dealer can have only one profile.
   "phone": "+912234567890",
   "address": "Plot 45, MIDC Industrial Area, Thane",
   "city": "Thane",
-  "pincode": "400604",
+  "state": "Maharashtra",
+  "postal_code": "400604",
   "gst_number": "27AABCG1234M1ZX",
   "license_number": "MH-SCR-2024-00456",
   "materials_accepted": ["PAPER", "PET_PLASTIC", "ALUMINIUM"]
@@ -585,8 +601,9 @@ Create the dealer's business profile. Each dealer can have only one profile.
 
 | Status | Scenario |
 |--------|----------|
-| `201` | Profile created (status: pending) |
-| `409` | Profile already exists for this user |
+| `201` | Profile created (status: draft) |
+| `400` | Profile already exists for this user |
+| `409` | GST or license number already registered to another dealer |
 | `422` | Missing required fields |
 
 ---
@@ -604,16 +621,23 @@ Retrieve the authenticated dealer's own profile.
   "business_name": "GreenCycle Scrap Pvt. Ltd.",
   "owner_name": "Priya Menon",
   "phone": "+912234567890",
+  "email": "priya@greencycle.in",
   "address": "Plot 45, MIDC Industrial Area, Thane",
   "city": "Thane",
-  "pincode": "400604",
+  "state": "Maharashtra",
+  "postal_code": "400604",
   "gst_number": "27AABCG1234M1ZX",
   "license_number": "MH-SCR-2024-00456",
+  "business_type": "Scrap dealer",
+  "description": "Buying paper, plastic, and aluminium.",
   "materials_accepted": ["PAPER", "PET_PLASTIC", "ALUMINIUM"],
-  "verification_status": "pending",
+  "approval_status": "submitted",
+  "rejection_reason": null,
+  "is_verified": false,
   "approved_at": null,
   "created_at": "2026-05-15T12:00:00Z",
-  "updated_at": "2026-05-15T12:00:00Z"
+  "updated_at": "2026-05-15T12:00:00Z",
+  "profile_completion": 85
 }
 ```
 
@@ -624,9 +648,11 @@ Retrieve the authenticated dealer's own profile.
 
 ---
 
-### `PATCH /dealer/profile`
+### `PUT /dealer/profile` · `PATCH /dealer/profile`
 
-Update the dealer's profile. All fields are optional.
+Update the dealer's profile. All fields are optional. Editing a profile that is
+not in `draft` resets it to `draft`, clears `rejection_reason`/`approved_at`,
+and records a `draft` timeline event for re-review.
 
 **Request Body (all optional):**
 
@@ -639,11 +665,66 @@ Update the dealer's profile. All fields are optional.
 
 **Response `200 OK`:** Updated `DealerProfileRead`.
 
+| Status | Scenario |
+|--------|----------|
+| `200` | Profile updated (reset to draft if it was not draft) |
+| `404` | Profile does not exist yet |
+| `409` | GST or license number already registered to another dealer |
+
+---
+
+### `POST /dealer/profile/submit`
+
+Move the profile from `draft` (or `rejected`) to `submitted` for admin review.
+
+**Response `200 OK`:** Updated `DealerProfileRead`.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Profile submitted for review |
+| `400` | Invalid transition from current status |
+| `404` | Profile does not exist yet |
+
+---
+
+### `GET /dealer/profile/timeline`
+
+Retrieve the approval timeline for the authenticated dealer's profile
+(newest first).
+
+**Response `200 OK`:**
+
+```json
+[
+  {
+    "id": 4,
+    "status": "submitted",
+    "note": "Profile submitted for review.",
+    "actor_name": "Priya Menon",
+    "actor_role": "dealer",
+    "created_at": "2026-05-16T09:00:00Z"
+  },
+  {
+    "id": 3,
+    "status": "draft",
+    "note": "Profile created.",
+    "actor_name": "Priya Menon",
+    "actor_role": "dealer",
+    "created_at": "2026-05-15T12:00:00Z"
+  }
+]
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Timeline returned |
+| `404` | Profile does not exist yet |
+
 ---
 
 ## 7. Dealer Inventory Marketplace
 
-> 🔒 All marketplace endpoints require `role = dealer` AND `verification_status = approved`.
+> 🔒 All marketplace endpoints require `role = dealer` AND `approval_status = approved`.
 
 ### `GET /dealer/inventory/lots`
 
@@ -927,52 +1008,130 @@ Deterministic, rule-based insights computed server-side from the analytics above
 
 ### `GET /admin/dealers`
 
-List all dealer profiles with verification status.
+List all dealer profiles with approval status. Admin-only.
+
+| Query Param | Type | Required | Description |
+|-------------|------|----------|-------------|
+| `page` | integer | ❌ | Page number (default `1`) |
+| `page_size` | integer | ❌ | Items per page, 1–100 (default `20`) |
+| `status` | string | ❌ | Filter by `draft` \| `submitted` \| `approved` \| `rejected` |
+| `search` | string | ❌ | Case-insensitive match on business name, owner name, city |
+| `sort_by` | string | ❌ | `created_at` (default) \| `updated_at` \| `business_name` \| `city` |
+| `sort_order` | string | ❌ | `asc` \| `desc` (default `desc`) |
 
 **Response `200 OK`:**
 
 ```json
-[
-  {
-    "user_id": 12,
-    "business_name": "GreenCycle Scrap Pvt. Ltd.",
-    "city": "Thane",
-    "verification_status": "pending",
-    "created_at": "2026-05-15T12:00:00Z"
-  }
-]
+{
+  "items": [
+    {
+      "user_id": 12,
+      "user_name": "Priya Menon",
+      "user_email": "priya@greencycle.in",
+      "account_phone": "+912234567890",
+      "has_profile": true,
+      "business_name": "GreenCycle Scrap Pvt. Ltd.",
+      "owner_name": "Priya Menon",
+      "city": "Thane",
+      "postal_code": "400604",
+      "materials_accepted": ["PAPER", "ALUMINIUM"],
+      "approval_status": "submitted",
+      "rejected_reason": null,
+      "approved_at": null,
+      "profile_completion": 85,
+      "created_at": "2026-05-15T12:00:00Z"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total_items": 1,
+  "total_pages": 1
+}
+```
+
+---
+
+### `GET /admin/dealers/pending`
+
+List dealer profiles awaiting review (`approval_status = submitted`). Same
+query parameters and paginated envelope as `GET /admin/dealers`.
+
+---
+
+### `GET /admin/dealers/{dealer_user_id}`
+
+Retrieve a single dealer's profile plus its full approval timeline.
+
+**Response `200 OK`:**
+
+```json
+{
+  "user_id": 12,
+  "user_name": "Priya Menon",
+  "user_email": "priya@greencycle.in",
+  "account_phone": "+912234567890",
+  "profile": { "...": "DealerProfileRead object" },
+  "timeline": [
+    {
+      "id": 2,
+      "status": "submitted",
+      "note": "Profile submitted for review.",
+      "actor_name": "Priya Menon",
+      "actor_role": "dealer",
+      "created_at": "2026-05-16T09:00:00Z"
+    }
+  ]
+}
 ```
 
 ---
 
 ### `POST /admin/dealers/{dealer_user_id}/approve`
 
-Approve a dealer's profile, granting marketplace access.
+Approve a dealer's profile, granting marketplace access. Only valid from
+`submitted`.
 
-**Response `200 OK`:**
+**Response `200 OK`:** `DealerApprovalActionRead`.
 
 ```json
 {
-  "dealer_user_id": 12,
-  "status": "approved",
-  "approved_at": "2026-06-01T11:00:00Z"
+  "profile_id": 4,
+  "user_id": 12,
+  "approval_status": "approved",
+  "rejection_reason": null,
+  "is_verified": true,
+  "approved_at": "2026-06-01T11:00:00Z",
+  "updated_at": "2026-06-01T11:00:00Z"
 }
 ```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Profile approved |
+| `400` | Invalid transition from current status |
+| `404` | Dealer or profile not found |
 
 ---
 
 ### `POST /admin/dealers/{dealer_user_id}/reject`
 
-Reject a dealer's profile.
+Reject a dealer's profile with a required reason. Only valid from `submitted`.
 
-**Response `200 OK`:**
+**Request Body:**
 
 ```json
 {
-  "dealer_user_id": 12,
-  "status": "rejected"
+  "reason": "GST number could not be verified"
 }
 ```
+
+**Response `200 OK`:** `DealerApprovalActionRead` with `approval_status: "rejected"` and `rejection_reason` set.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Profile rejected |
+| `400` | Invalid transition or empty reason |
+| `404` | Dealer or profile not found |
 
 ---
 

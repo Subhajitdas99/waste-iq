@@ -254,7 +254,7 @@ Records which collector accepted a specific pickup request and tracks completion
 
 ## 6. Table: `dealer_profiles`
 
-Business profile for users with the `dealer` role. Requires admin verification before marketplace access is granted.
+Business profile for users with the `dealer` role. Requires admin approval before marketplace access is granted.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |--------|------|----------|---------|-------------|-------------|
@@ -263,16 +263,44 @@ Business profile for users with the `dealer` role. Requires admin verification b
 | `business_name` | `VARCHAR(160)` | No | — | NOT NULL | Registered business name |
 | `owner_name` | `VARCHAR(120)` | No | — | NOT NULL | Full name of the business owner |
 | `phone` | `VARCHAR(20)` | No | — | NOT NULL | Business contact phone |
+| `email` | `VARCHAR(254)` | Yes | NULL | — | Business contact email (defaults to account email) |
 | `address` | `TEXT` | No | — | NOT NULL | Business address |
 | `city` | `VARCHAR(100)` | No | — | NOT NULL, INDEX | City of operation |
-| `pincode` | `VARCHAR(12)` | No | — | NOT NULL, INDEX | Postal code |
-| `gst_number` | `VARCHAR(30)` | Yes | NULL | — | GST registration number (optional) |
-| `license_number` | `VARCHAR(50)` | Yes | NULL | — | Scrap dealer license number (optional) |
+| `state` | `VARCHAR(100)` | Yes | NULL | — | State of operation |
+| `postal_code` | `VARCHAR(12)` | No | — | NOT NULL, INDEX | Postal code (renamed from `pincode`) |
+| `gst_number` | `VARCHAR(30)` | Yes | NULL | UNIQUE | GST registration number (optional, unique per dealer) |
+| `license_number` | `VARCHAR(50)` | Yes | NULL | UNIQUE | Scrap dealer license number (optional, unique per dealer) |
+| `business_type` | `VARCHAR(50)` | Yes | NULL | — | Business category (e.g. scrap dealer) |
+| `profile_image` | `VARCHAR(500)` | Yes | NULL | — | Profile image URL |
+| `description` | `TEXT` | Yes | NULL | — | Business description (max 2000 chars) |
 | `materials_accepted` | `JSON` | No | — | NOT NULL | Array of material category codes accepted |
-| `verification_status` | `VARCHAR` (Enum) | No | `pending` | NOT NULL, INDEX | `pending` / `approved` / `rejected` |
+| `approval_status` | `VARCHAR` (Enum) | No | `draft` | NOT NULL, INDEX | `draft` / `submitted` / `approved` / `rejected` |
+| `rejection_reason` | `TEXT` | Yes | NULL | — | Reason provided by admin when rejected |
+| `is_verified` | `BOOLEAN` | No | `false` | NOT NULL | True once approved |
 | `approved_at` | `TIMESTAMPTZ` | Yes | NULL | — | Timestamp of admin approval |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Profile creation timestamp |
 | `updated_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Last update timestamp (auto-updates) |
+
+### Approval transitions
+
+`draft → submitted → approved | rejected`, with `approved/rejected → draft`
+(when the dealer edits the profile) and `rejected → submitted` (resubmission).
+Every transition is recorded in `dealer_profile_events`.
+
+---
+
+## 6a. Table: `dealer_profile_events`
+
+Audit trail for every dealer profile approval-status transition.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `profile_id` | `INTEGER` | No | — | FK → `dealer_profiles.id` (CASCADE), INDEX | Related dealer profile |
+| `actor_user_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), INDEX | User who performed the transition |
+| `status` | `VARCHAR` (Enum) | No | — | NOT NULL | New approval status after the transition |
+| `note` | `TEXT` | Yes | NULL | — | Human-readable note describing the change |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Event timestamp |
 
 ---
 
@@ -389,7 +417,9 @@ Immutable event log for every state change on an inventory lot.
 | `collector_assignments` | `ix_collector_assignments_collector_id` | `collector_id` | B-Tree | Collector's assignment list |
 | `dealer_profiles` | `ix_dealer_profiles_user_id` | `user_id` | B-Tree (UNIQUE) | One profile per user |
 | `dealer_profiles` | `ix_dealer_profiles_city` | `city` | B-Tree | Filter dealers by city |
-| `dealer_profiles` | `ix_dealer_profiles_verification_status` | `verification_status` | B-Tree | Admin: list pending dealers |
+| `dealer_profiles` | `ix_dealer_profiles_approval_status` | `approval_status` | B-Tree | Admin: list pending dealers |
+| `dealer_profile_events` | `ix_dealer_profile_events_profile_id` | `profile_id` | B-Tree | Events per profile |
+| `dealer_profile_events` | `ix_dealer_profile_events_actor_user_id` | `actor_user_id` | B-Tree | Events per actor |
 | `material_categories` | `ix_material_categories_code` | `code` | B-Tree (UNIQUE) | Lookup by code |
 | `material_categories` | `ix_material_categories_is_active` | `is_active` | B-Tree | Active category filter |
 | `pricing_rules` | `ix_pricing_rules_material_category_id` | `material_category_id` | B-Tree | Rules per category |
@@ -462,7 +492,7 @@ Waste-IQ uses **string enums** (stored as `VARCHAR` with `native_enum=False` in 
 |------|--------|---------|
 | `UserRole` | `citizen`, `collector`, `dealer`, `admin` | `users.role` |
 | `PickupStatus` | `pending`, `accepted`, `on_the_way`, `collected`, `completed`, `cancelled` | `pickup_requests.status` |
-| `DealerVerificationStatus` | `pending`, `approved`, `rejected` | `dealer_profiles.verification_status` |
+| `DealerApprovalStatus` | `draft`, `submitted`, `approved`, `rejected` | `dealer_profiles.approval_status`, `dealer_profile_events.status` |
 | `InventoryLotStatus` | `available`, `reserved`, `sold` | `inventory_lots.status` |
 | `InventoryLotVisibility` | `visible`, `hidden` | `inventory_lots.visibility` |
 | `InventoryLotEventType` | `created`, `updated`, `status_changed`, `archived`, `restored`, `reserved`, `reservation_expired` | `inventory_lot_events.event_type` |

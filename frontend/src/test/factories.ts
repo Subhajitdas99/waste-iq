@@ -1,5 +1,16 @@
 import type { UserProfile, UserRole } from "@/types/auth";
-import type { AdminAnalytics, AdminDealerSummary, AdminUser } from "@/types/admin";
+import type {
+  AdminAnalytics,
+  AdminDealerListPage,
+  AdminDealerSummary,
+  AdminUser,
+} from "@/types/admin";
+import type {
+  DealerApprovalAction,
+  DealerApprovalEvent,
+  DealerApprovalStatus,
+  DealerProfile,
+} from "@/types/dealer";
 import type {
   AnalyticsInsight,
   AnalyticsOverview,
@@ -226,12 +237,86 @@ export function createAdminDealer(overrides: Partial<AdminDealerSummary> = {}): 
     business_name: "Green Scrap Co",
     owner_name: "Test Dealer",
     city: "Kolkata",
-    pincode: "700001",
+    postal_code: "700001",
     materials_accepted: ["plastic", "paper"],
-    verification_status: "pending",
+    approval_status: "submitted",
+    rejected_reason: null,
     approved_at: null,
     profile_completion: 80,
     created_at: "2026-01-05T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function createAdminDealerListPage(
+  overrides: Partial<AdminDealerListPage> = {},
+): AdminDealerListPage {
+  return {
+    items: [createAdminDealer()],
+    page: 1,
+    page_size: 20,
+    total_items: 1,
+    total_pages: 1,
+    ...overrides,
+  };
+}
+
+export function createDealerProfile(
+  overrides: Partial<DealerProfile> = {},
+): DealerProfile {
+  return {
+    id: 11,
+    user_id: 3,
+    business_name: "Green Scrap Co",
+    owner_name: "Test Dealer",
+    phone: "+15550000003",
+    email: "dealer@example.com",
+    address: "12 Green Street, Kolkata",
+    city: "Kolkata",
+    state: "West Bengal",
+    postal_code: "700001",
+    gst_number: "19ABCDE1234F1Z5",
+    license_number: null,
+    business_type: "Scrap dealer",
+    profile_image: null,
+    description: "Local scrap buying and recycling business.",
+    materials_accepted: ["plastic", "paper"],
+    approval_status: "approved",
+    rejection_reason: null,
+    is_verified: true,
+    approved_at: "2026-01-06T09:00:00Z",
+    created_at: "2026-01-05T08:00:00Z",
+    updated_at: "2026-01-06T09:00:00Z",
+    profile_completion: 100,
+    ...overrides,
+  };
+}
+
+export function createDealerApprovalEvent(
+  overrides: Partial<DealerApprovalEvent> = {},
+): DealerApprovalEvent {
+  return {
+    id: 1,
+    status: "submitted",
+    note: "Profile submitted for review.",
+    actor_name: "Test Dealer",
+    actor_role: "dealer",
+    created_at: "2026-01-05T09:00:00Z",
+    ...overrides,
+  };
+}
+
+export function createDealerApprovalAction(
+  overrides: Partial<DealerApprovalAction> = {},
+): DealerApprovalAction {
+  return {
+    profile_id: 11,
+    user_id: 3,
+    approval_status: "approved" as DealerApprovalStatus,
+    rejection_reason: null,
+    is_verified: true,
+    approved_at: "2026-01-06T09:00:00Z",
+    updated_at: "2026-01-06T09:00:00Z",
     ...overrides,
   };
 }

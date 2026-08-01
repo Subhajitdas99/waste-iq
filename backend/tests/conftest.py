@@ -198,24 +198,27 @@ def valid_pickup_payload() -> dict[str, Any]:
     }
 
 
-# ─── Approved dealer profile fixture ─────────────────────────────────────────
+# ─── Dealer profile fixtures (approval workflow) ─────────────────────────────
 
 
 @pytest.fixture()
 def approved_dealer_profile(db_session, dealer_user):
     """An APPROVED dealer profile for dealer_user, created directly via the model."""
-    from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
+    from app.models.dealer_profile import DealerProfile, DealerApprovalStatus
 
     profile = DealerProfile(
         user_id=dealer_user.id,
         business_name="Test Recyclers Pvt Ltd",
         owner_name="Dealer Owner",
         phone="9000000003",
+        email="dealer@test.com",
         address="123 Industrial Area, Kolkata",
         city="Kolkata",
-        pincode="700001",
+        state="West Bengal",
+        postal_code="700001",
         materials_accepted=["PET Plastic", "Cardboard"],
-        verification_status=DealerVerificationStatus.approved,
+        approval_status=DealerApprovalStatus.approved,
+        is_verified=True,
         approved_at=datetime.now(timezone.utc),
     )
     db_session.add(profile)
@@ -225,20 +228,46 @@ def approved_dealer_profile(db_session, dealer_user):
 
 
 @pytest.fixture()
-def pending_dealer_profile(db_session, dealer_user):
-    """A PENDING (unapproved) dealer profile."""
-    from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
+def submitted_dealer_profile(db_session, dealer_user):
+    """A SUBMITTED (awaiting review) dealer profile."""
+    from app.models.dealer_profile import DealerProfile, DealerApprovalStatus
 
     profile = DealerProfile(
         user_id=dealer_user.id,
         business_name="Pending Recyclers",
         owner_name="Pending Owner",
         phone="9000000003",
+        email="dealer@test.com",
         address="456 Pending Lane, Kolkata",
         city="Kolkata",
-        pincode="700002",
+        state="West Bengal",
+        postal_code="700002",
         materials_accepted=["E-Waste"],
-        verification_status=DealerVerificationStatus.pending,
+        approval_status=DealerApprovalStatus.submitted,
+    )
+    db_session.add(profile)
+    db_session.commit()
+    db_session.refresh(profile)
+    return profile
+
+
+@pytest.fixture()
+def draft_dealer_profile(db_session, dealer_user):
+    """A DRAFT (not yet submitted) dealer profile."""
+    from app.models.dealer_profile import DealerProfile, DealerApprovalStatus
+
+    profile = DealerProfile(
+        user_id=dealer_user.id,
+        business_name="Draft Recyclers",
+        owner_name="Draft Owner",
+        phone="9000000003",
+        email="dealer@test.com",
+        address="789 Draft Lane, Kolkata",
+        city="Kolkata",
+        state="West Bengal",
+        postal_code="700003",
+        materials_accepted=["Paper"],
+        approval_status=DealerApprovalStatus.draft,
     )
     db_session.add(profile)
     db_session.commit()

@@ -29,8 +29,8 @@ Waste-IQ is a multi-role, API-driven platform that digitizes the recyclable wast
 |-------|--------------------|
 | **Citizen** | Submits pickup requests for recyclable waste |
 | **Collector** | Accepts and fulfills pickup requests in the field |
-| **Scrap Dealer** | Purchases verified inventory lots through the marketplace |
-| **Admin** | Manages the platform, verifies dealers, and creates inventory |
+| **Scrap Dealer** | Creates a business profile, awaits approval, then purchases verified inventory lots through the marketplace |
+| **Admin** | Manages the platform, reviews and approves/rejects dealer profiles, and creates inventory |
 
 The system consists of a **React single-page application** communicating with a **FastAPI REST API**, backed by a **PostgreSQL relational database**, with **Cloudinary** for image storage.
 
@@ -184,7 +184,8 @@ flowchart TB
         AUTH_SVC["AuthService\nauthenticate_user, register_user"]
         PICKUP_SVC["PickupService\ncreate, accept, complete…"]
         INVENTORY_SVC["InventoryService\ncreate_lot, reserve, purchase"]
-        DEALER_SVC["DealerService\ncreate_profile, verify"]
+        DEALER_SVC["DealerProfileService\ncreate, update, submit"]
+        APPROVAL_SVC["AdminDealerApprovalService\napprove, reject, review queue"]
         ADMIN_SVC["AdminService\nanalytics, user_mgmt"]
         UPLOAD_SVC["UploadService\nCloudinary integration"]
     end
@@ -228,6 +229,9 @@ flowchart TB
 | `routes/analytics.py` | `app/api/routes/analytics.py` | Admin AI analytics endpoints (overview, materials, monthly, collectors, dealers, carbon, insights) |
 | `services/analytics.py` | `app/services/analytics.py` | Analytics aggregations (SQLAlchemy) and deterministic rule-based insight generation |
 | `schemas/analytics.py` | `app/schemas/analytics.py` | Typed Pydantic v2 response models for every analytics endpoint |
+| `services/dealer_profiles.py` | `app/services/dealer_profiles.py` | Dealer profile lifecycle: create, update, submit, approval timeline |
+| `services/dealer_approval.py` | `app/services/dealer_approval.py` | Approval transition validation, `is_dealer_approved` guard, admin review/approve/reject |
+| `repositories/dealer_profiles.py` | `app/repositories/dealer_profiles.py` | Dealer profile & event data access, paginated listing with search/sort/filter |
 
 ---
 
@@ -306,6 +310,25 @@ Each state transition is recorded as a `PickupRequestEvent` with the actor's use
 
 ## 7. Inventory Marketplace Flow
 
+### Dealer Approval Workflow
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft: Dealer creates profile
+    draft --> submitted: Dealer submits for review
+    submitted --> approved: Admin approves
+    submitted --> rejected: Admin rejects (with reason)
+    approved --> draft: Dealer edits profile
+    rejected --> draft: Dealer edits profile
+    rejected --> submitted: Dealer resubmits
+    approved --> [*]: Marketplace access granted
+```
+
+Every transition is persisted in `dealer_profile_events` (actor, status, note,
+timestamp) and surfaced as an approval timeline to the dealer and admins.
+Inventory browsing/reservation endpoints require `approval_status = approved`
+(`403` with an explanatory detail otherwise).
+
 ```mermaid
 sequenceDiagram
     actor A as Admin
@@ -313,14 +336,14 @@ sequenceDiagram
     participant BE as FastAPI Backend
     participant DB as PostgreSQL
 
-    Note over A,DB: Phase 1 — Lot Creation
+    Note over D,DB: Phase 1 — Lot Creation
     A->>BE: POST /admin/inventory/lots\n{pickup_request_id, material_category_id, weight_kg, quality_grade}
     BE->>DB: Create InventoryLot (status=available, visibility=visible)
     BE->>DB: Record InventoryLotEvent (type=created)
     BE-->>A: InventoryLot created (lot_number, total_listed_amount)
 
     Note over D,DB: Phase 2 — Dealer Browse & Reserve
-    D->>BE: GET /dealer/inventory/lots?city=Mumbai&material_category_id=3
+    D->>BE: GET /dealer/inventory-lots?city=Mumbai&material_category_id=3
     BE->>DB: SELECT lots WHERE status=available AND visibility=visible
     DB-->>BE: List of available lots
     BE-->>D: [{lot_number, weight_kg, unit_price, source_city, quality_grade}]
@@ -355,9 +378,9 @@ The API follows RESTful conventions with JSON request/response bodies (except mu
 | `/auth` | Authentication | No (register/login) | User registration, login, profile |
 | `/pickup-requests` | Pickup Requests | Yes | Full pickup lifecycle |
 | `/collector` | Collector | Yes (collector role) | Collector-specific operations |
-| `/dealer` | Dealer | Yes (dealer role) | Profile management |
+| `/dealer` | Dealer | Yes (dealer role) | Profile management, submit for approval, approval timeline |
 | `/dealer` | Dealer Inventory | Yes (approved dealer) | Marketplace browse, reserve, purchase |
-| `/admin` | Admin | Yes (admin role) | Users, analytics, dealer verification |
+| `/admin` | Admin | Yes (admin role) | Users, analytics, dealer review queue (approve/reject) |
 | `/admin/analytics` | Admin Analytics | Yes (admin role) | Overview KPIs, material distribution, monthly trend, collector/dealer performance, carbon savings, rule-based insights |
 | `/admin` | Admin Inventory | Yes (admin role) | Lot management, pricing, categories |
 | `/health` | health | No | Application health check |

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BarChart3, RefreshCcw, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
@@ -6,19 +7,24 @@ import { SeoHead } from "@/components/seo/SeoHead";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { StatsCard } from "@/components/dashboard/StatsCard";
+import { DealerApprovalDialog } from "@/components/dashboard/DealerApprovalDialog";
 import {
   useAdminAnalytics,
   useAdminDealers,
   useAdminUsers,
+  useApproveDealer,
+  usePendingAdminDealers,
+  useRejectDealer,
 } from "@/hooks/useAdminDashboard";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime, formatWeight } from "@/lib/pickup";
+import type { AdminDealerSummary } from "@/types/admin";
 
 function formatRole(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-function getVerificationClassName(status: string): string {
+function getApprovalClassName(status: string): string {
   switch (status) {
     case "approved":
       return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
@@ -29,28 +35,52 @@ function getVerificationClassName(status: string): string {
   }
 }
 
+type ReviewDialogState =
+  | { dealer: AdminDealerSummary; mode: "approve" | "reject" }
+  | null;
+
 export function AdminOverviewPage() {
+  const [reviewDialog, setReviewDialog] = useState<ReviewDialogState>(null);
   const analyticsQuery = useAdminAnalytics();
   const usersQuery = useAdminUsers();
   const dealersQuery = useAdminDealers();
+  const pendingQuery = usePendingAdminDealers();
+  const approveMutation = useApproveDealer();
+  const rejectMutation = useRejectDealer();
   const analytics = analyticsQuery.data;
   const users = usersQuery.data ?? [];
-  const dealers = dealersQuery.data ?? [];
-  const pendingDealers = dealers.filter((dealer) => dealer.verification_status === "pending");
+  const pendingDealers = pendingQuery.data?.items ?? [];
   const isRefreshing =
-    analyticsQuery.isFetching || usersQuery.isFetching || dealersQuery.isFetching;
+    analyticsQuery.isFetching ||
+    usersQuery.isFetching ||
+    dealersQuery.isFetching ||
+    pendingQuery.isFetching;
+  const isPending = approveMutation.isPending || rejectMutation.isPending;
+
+  const handleConfirmReview = (reason?: string) => {
+    if (!reviewDialog) {
+      return;
+    }
+    const { dealer, mode } = reviewDialog;
+    if (mode === "approve") {
+      approveMutation.mutate(dealer.user_id);
+    } else if (reason) {
+      rejectMutation.mutate({ dealerUserId: dealer.user_id, reason });
+    }
+    setReviewDialog(null);
+  };
 
   return (
     <>
       <SeoHead
         title="Admin Dashboard"
-        description="Monitor Waste-IQ platform analytics, user records, and dealer verification data."
+        description="Monitor Waste-IQ platform analytics, user records, and dealer approval data."
         path="/admin/overview"
       />
 
       <PageHeader
         title="Platform Overview"
-        description="Live platform analytics, newest users, and dealer verification records from the admin API."
+        description="Live platform analytics, newest users, and dealer approval records from the admin API."
         actions={
           <Button
             type="button"
@@ -62,6 +92,7 @@ export function AdminOverviewPage() {
                 analyticsQuery.refetch(),
                 usersQuery.refetch(),
                 dealersQuery.refetch(),
+                pendingQuery.refetch(),
               ]);
             }}
           >
@@ -189,43 +220,74 @@ export function AdminOverviewPage() {
 
         <DashboardCard
           title="Dealer Review Queue"
-          description={`Showing the latest six dealer records. ${pendingDealers.length} currently ${pendingDealers.length === 1 ? "needs" : "need"} review.`}
+          description={`Dealers currently awaiting approval. ${pendingDealers.length} ${pendingDealers.length === 1 ? "profile" : "profiles"} need review.`}
         >
-          {dealersQuery.isPending && !dealersQuery.data ? (
+          {pendingQuery.isPending && !pendingQuery.data ? (
             <LoadingSkeleton count={2} />
-          ) : dealersQuery.isError ? (
+          ) : pendingQuery.isError ? (
             <div role="alert" className="text-sm text-destructive">
-              {getApiErrorMessage(dealersQuery.error, "Unable to load dealer records.")}
+              {getApiErrorMessage(pendingQuery.error, "Unable to load dealer records.")}
             </div>
-          ) : dealers.length > 0 ? (
+          ) : pendingDealers.length > 0 ? (
             <div className="space-y-3">
-              {dealers.slice(0, 6).map((dealer) => (
+              {pendingDealers.map((dealer) => (
                 <div key={dealer.user_id} className="rounded-2xl border bg-muted/20 p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-medium">{dealer.business_name ?? dealer.user_name}</p>
                       <p className="text-sm text-muted-foreground">{dealer.user_email}</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {dealer.city ?? "City not provided"} - {dealer.profile_completion}% profile complete
+                        {dealer.city ?? "City not provided"} - {dealer.postal_code ?? "no postal code"} -{" "}
+                        {dealer.profile_completion}% profile complete
                       </p>
                     </div>
                     <span
-                      className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold capitalize ${getVerificationClassName(dealer.verification_status)}`}
+                      className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold capitalize ${getApprovalClassName(dealer.approval_status)}`}
                     >
-                      {dealer.has_profile ? dealer.verification_status : "Profile missing"}
+                      {dealer.has_profile ? dealer.approval_status : "Profile missing"}
                     </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isPending || !dealer.has_profile}
+                      onClick={() => setReviewDialog({ dealer, mode: "approve" })}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={isPending || !dealer.has_profile}
+                      onClick={() => setReviewDialog({ dealer, mode: "reject" })}
+                    >
+                      Reject
+                    </Button>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
             <EmptyState
-              title="No dealer records found"
-              description="Dealer accounts and their verification status will appear here."
+              title="No dealers awaiting approval"
+              description="New dealer applications will appear here once submitted."
             />
           )}
         </DashboardCard>
       </section>
+
+      {reviewDialog ? (
+        <DealerApprovalDialog
+          isOpen
+          mode={reviewDialog.mode}
+          dealerName={reviewDialog.dealer.business_name ?? reviewDialog.dealer.user_name}
+          isPending={isPending}
+          onConfirm={handleConfirmReview}
+          onClose={() => setReviewDialog(null)}
+        />
+      ) : null}
     </>
   );
 }

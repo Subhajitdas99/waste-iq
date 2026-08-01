@@ -8,6 +8,7 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { Pagination } from "@/components/dashboard/Pagination";
 import { StatsCard } from "@/components/dashboard/StatsCard";
+import { DealerApprovalGate } from "@/components/dashboard/DealerApprovalGate";
 import { useDealerInventory } from "@/hooks/useDealerInventory";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime, formatWeight } from "@/lib/pickup";
@@ -30,7 +31,7 @@ export function DealerOverviewPage() {
   }, [inventory, page]);
 
   return (
-    <>
+    <DealerApprovalGate>
       <SeoHead
         title="Dealer Inventory"
         description="Browse live, available recyclable inventory lots in the Waste-IQ dealer marketplace."
@@ -39,7 +40,7 @@ export function DealerOverviewPage() {
 
       <PageHeader
         title="Available Inventory"
-        description="Marketplace lots currently available to your dealer account. Inventory browsing requires an approved dealer profile."
+        description="Marketplace lots currently available to your approved dealer account."
         actions={
           <Button
             type="button"
@@ -164,6 +165,6 @@ export function DealerOverviewPage() {
           )}
         </DashboardCard>
       </section>
-    </>
+    </DealerApprovalGate>
   );
 }

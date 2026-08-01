@@ -9,7 +9,11 @@ from app.models.user import User
 
 
 def test_create_dealer_inventory(
-    client: TestClient, db_session: Session, dealer_user: User, dealer_headers: dict
+    client: TestClient,
+    db_session: Session,
+    dealer_user: User,
+    dealer_headers: dict,
+    approved_dealer_profile,
 ) -> None:
     # First create a completed pickup request
     pickup = PickupRequest(
@@ -42,7 +46,11 @@ def test_create_dealer_inventory(
 
 
 def test_create_inventory_invalid_pickup(
-    client: TestClient, db_session: Session, dealer_user: User, dealer_headers: dict
+    client: TestClient,
+    db_session: Session,
+    dealer_user: User,
+    dealer_headers: dict,
+    approved_dealer_profile,
 ) -> None:
     pickup = PickupRequest(
         user_id=1,
@@ -68,7 +76,11 @@ def test_create_inventory_invalid_pickup(
 
 
 def test_list_and_update_inventory(
-    client: TestClient, db_session: Session, dealer_user: User, dealer_headers: dict
+    client: TestClient,
+    db_session: Session,
+    dealer_user: User,
+    dealer_headers: dict,
+    approved_dealer_profile,
 ) -> None:
     pickup = PickupRequest(
         user_id=1,
@@ -107,7 +119,11 @@ def test_list_and_update_inventory(
 
 
 def test_inventory_lifecycle(
-    client: TestClient, db_session: Session, dealer_user: User, dealer_headers: dict
+    client: TestClient,
+    db_session: Session,
+    dealer_user: User,
+    dealer_headers: dict,
+    approved_dealer_profile,
 ) -> None:
     pickup = PickupRequest(
         user_id=1,
@@ -151,3 +167,33 @@ def test_inventory_lifecycle(
     # Try to delete sold
     res = client.delete(f"/dealer/inventory/{inv.id}", headers=dealer_headers)
     assert res.status_code == 400
+
+
+# ─── Approval gate ────────────────────────────────────────────────────────────
+
+
+def test_unapproved_dealer_cannot_list_inventory(client, dealer_headers, submitted_dealer_profile):
+    res = client.get("/dealer/inventory", headers=dealer_headers)
+    assert res.status_code == 403
+
+
+def test_dealer_without_profile_cannot_create_inventory(client, dealer_headers):
+    res = client.post(
+        "/dealer/inventory",
+        headers=dealer_headers,
+        json={
+            "pickup_request_id": 1,
+            "material_type": "Aluminum",
+            "category": "Metal",
+            "quantity_kg": 5.5,
+            "price_per_kg": 2.0,
+        },
+    )
+    assert res.status_code == 403
+
+
+def test_unapproved_dealer_cannot_access_inventory_detail(
+    client, dealer_headers, submitted_dealer_profile
+):
+    res = client.get("/dealer/inventory/1", headers=dealer_headers)
+    assert res.status_code == 403

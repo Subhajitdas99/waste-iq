@@ -1,32 +1,139 @@
-from datetime import datetime, timezone
-
 from fastapi import HTTPException, status
-from sqlalchemy import Select, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
-from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
+from app.models.dealer_profile import DealerApprovalStatus, DealerProfile
 from app.models.user import User, UserRole
+from app.repositories.dealer_profiles import DealerProfileRepository
 from app.schemas.dealer import (
-    AdminDealerSummaryRead,
+    DealerApprovalEventRead,
     DealerProfileCreate,
     DealerProfileRead,
     DealerProfileUpdate,
-    DealerVerificationActionRead,
 )
-
-PROFILE_REQUIRED_FIELDS = (
-    "business_name",
-    "owner_name",
-    "phone",
-    "address",
-    "city",
-    "pincode",
-    "materials_accepted",
+from app.services.dealer_approval import (
+    _to_event_schema,
+    _to_profile_schema,
+    is_dealer_approved,
+    validate_approval_transition,
 )
 
 
-def _dealer_profile_query() -> Select[tuple[DealerProfile]]:
-    return select(DealerProfile).options(selectinload(DealerProfile.user))
+class DealerProfileService:
+    def __init__(self, repository: DealerProfileRepository | None = None) -> None:
+        self._repository = repository or DealerProfileRepository()
+
+    def get_profile(self, db: Session, dealer: User) -> DealerProfileRead | None:
+        profile = self._repository.get_by_user_id(db, dealer.id)
+        if profile is None:
+            return None
+        return _to_profile_schema(profile)
+
+    def get_timeline(self, db: Session, dealer: User) -> list[DealerApprovalEventRead]:
+        profile = self._repository.get_by_user_id(db, dealer.id)
+        if profile is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
+            )
+        events = self._repository.list_events(db, profile.id)
+        return [_to_event_schema(event) for event in events]
+
+    def create_profile(
+        self, db: Session, dealer: User, payload: DealerProfileCreate
+    ) -> DealerProfileRead:
+        if dealer.role != UserRole.dealer:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only dealers can create dealer profiles",
+            )
+
+        existing = self._repository.get_by_user_id(db, dealer.id)
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Dealer profile already exists"
+            )
+
+        data = payload.model_dump(mode="python")
+        self._validate_unique_identifiers(db, dealer.id, data)
+        data["email"] = data.get("email") or dealer.email
+        data["materials_accepted"] = _normalize_materials(data["materials_accepted"])
+
+        profile = DealerProfile(user_id=dealer.id, **data)
+        db.add(profile)
+        db.flush()
+        self._repository.add_event(
+            db, profile, status=DealerApprovalStatus.draft, note="Profile created.", actor=dealer
+        )
+        return _to_profile_schema(self._repository.save(db, profile))
+
+    def update_profile(
+        self, db: Session, dealer: User, payload: DealerProfileUpdate
+    ) -> DealerProfileRead | None:
+        profile = self._repository.get_by_user_id(db, dealer.id)
+        if profile is None:
+            return None
+
+        update_data = payload.model_dump(exclude_unset=True, mode="python")
+        self._validate_unique_identifiers(db, dealer.id, update_data)
+        if "materials_accepted" in update_data:
+            update_data["materials_accepted"] = _normalize_materials(
+                update_data["materials_accepted"]
+            )
+
+        for field, value in update_data.items():
+            setattr(profile, field, value)
+
+        if profile.approval_status != DealerApprovalStatus.draft:
+            validate_approval_transition(profile.approval_status, DealerApprovalStatus.draft)
+            profile.approval_status = DealerApprovalStatus.draft
+            profile.rejection_reason = None
+            profile.approved_at = None
+            profile.is_verified = False
+            self._repository.add_event(
+                db,
+                profile,
+                status=DealerApprovalStatus.draft,
+                note="Profile updated and reset to draft for review.",
+                actor=dealer,
+            )
+
+        return _to_profile_schema(self._repository.save(db, profile))
+
+    def submit_profile(self, db: Session, dealer: User) -> DealerProfileRead:
+        profile = self._repository.get_by_user_id(db, dealer.id)
+        if profile is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
+            )
+
+        validate_approval_transition(profile.approval_status, DealerApprovalStatus.submitted)
+
+        profile.approval_status = DealerApprovalStatus.submitted
+        profile.rejection_reason = None
+        self._repository.add_event(
+            db,
+            profile,
+            status=DealerApprovalStatus.submitted,
+            note="Profile submitted for review.",
+            actor=dealer,
+        )
+        return _to_profile_schema(self._repository.save(db, profile))
+
+    def is_approved(self, db: Session, dealer: User) -> bool:
+        return is_dealer_approved(db, dealer)
+
+    def _validate_unique_identifiers(self, db: Session, dealer_id: int, data: dict) -> None:
+        gst_number = data.get("gst_number")
+        if gst_number and self._repository.gst_number_exists(db, gst_number, dealer_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="GST number is already registered to another dealer",
+            )
+        license_number = data.get("license_number")
+        if license_number and self._repository.license_number_exists(db, license_number, dealer_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="License number is already registered to another dealer",
+            )
 
 
 def _normalize_materials(materials: list[str]) -> list[str]:
@@ -44,176 +151,3 @@ def _normalize_materials(materials: list[str]) -> list[str]:
             detail="At least one accepted material is required",
         )
     return normalized
-
-
-def _calculate_profile_completion(profile: DealerProfile | None) -> int:
-    if profile is None:
-        return 0
-
-    completed_fields = 0
-    for field in PROFILE_REQUIRED_FIELDS:
-        value = getattr(profile, field)
-        if isinstance(value, list):
-            if value:
-                completed_fields += 1
-        elif value:
-            completed_fields += 1
-
-    return round((completed_fields / len(PROFILE_REQUIRED_FIELDS)) * 100)
-
-
-def _to_profile_schema(profile: DealerProfile) -> DealerProfileRead:
-    return DealerProfileRead(
-        id=profile.id,
-        user_id=profile.user_id,
-        business_name=profile.business_name,
-        owner_name=profile.owner_name,
-        phone=profile.phone,
-        address=profile.address,
-        city=profile.city,
-        pincode=profile.pincode,
-        gst_number=profile.gst_number,
-        license_number=profile.license_number,
-        materials_accepted=list(profile.materials_accepted),
-        verification_status=profile.verification_status.value,
-        approved_at=profile.approved_at,
-        created_at=profile.created_at,
-        updated_at=profile.updated_at,
-        profile_completion=_calculate_profile_completion(profile),
-    )
-
-
-def _to_admin_summary(user: User) -> AdminDealerSummaryRead:
-    profile = user.dealer_profile
-    return AdminDealerSummaryRead(
-        user_id=user.id,
-        user_name=user.name,
-        user_email=user.email,
-        account_phone=user.phone,
-        has_profile=profile is not None,
-        business_name=profile.business_name if profile is not None else None,
-        owner_name=profile.owner_name if profile is not None else None,
-        city=profile.city if profile is not None else None,
-        pincode=profile.pincode if profile is not None else None,
-        materials_accepted=list(profile.materials_accepted) if profile is not None else [],
-        verification_status=(
-            profile.verification_status.value
-            if profile is not None
-            else DealerVerificationStatus.pending.value
-        ),
-        approved_at=profile.approved_at if profile is not None else None,
-        profile_completion=_calculate_profile_completion(profile),
-        created_at=profile.created_at if profile is not None else user.created_at,
-    )
-
-
-def _get_profile_model_for_user(db: Session, user_id: int) -> DealerProfile | None:
-    return db.execute(
-        _dealer_profile_query().where(DealerProfile.user_id == user_id)
-    ).scalar_one_or_none()
-
-
-def _get_profile_model_or_500(db: Session, user_id: int) -> DealerProfile:
-    profile = _get_profile_model_for_user(db, user_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Dealer profile could not be reloaded after update",
-        )
-    return profile
-
-
-def get_dealer_profile(db: Session, dealer: User) -> DealerProfileRead | None:
-    profile = _get_profile_model_for_user(db, dealer.id)
-    if profile is None:
-        return None
-    return _to_profile_schema(profile)
-
-
-def create_dealer_profile(
-    db: Session, dealer: User, payload: DealerProfileCreate
-) -> DealerProfileRead:
-    if dealer.role != UserRole.dealer:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only dealers can create dealer profiles"
-        )
-
-    existing = _get_profile_model_for_user(db, dealer.id)
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Dealer profile already exists"
-        )
-
-    data = payload.model_dump(mode="json")
-    data["materials_accepted"] = _normalize_materials(data["materials_accepted"])
-    profile = DealerProfile(user_id=dealer.id, **data)
-    db.add(profile)
-    db.commit()
-    return _to_profile_schema(_get_profile_model_or_500(db, dealer.id))
-
-
-def update_dealer_profile(
-    db: Session, dealer: User, payload: DealerProfileUpdate
-) -> DealerProfileRead | None:
-    profile = _get_profile_model_for_user(db, dealer.id)
-    if profile is None:
-        return None
-
-    update_data = payload.model_dump(exclude_unset=True, mode="json")
-    if "materials_accepted" in update_data:
-        update_data["materials_accepted"] = _normalize_materials(update_data["materials_accepted"])
-
-    for field, value in update_data.items():
-        setattr(profile, field, value)
-
-    if update_data and profile.verification_status != DealerVerificationStatus.pending:
-        profile.verification_status = DealerVerificationStatus.pending
-        profile.approved_at = None
-
-    db.commit()
-    return _to_profile_schema(_get_profile_model_or_500(db, dealer.id))
-
-
-def list_dealers_for_admin(db: Session) -> list[AdminDealerSummaryRead]:
-    statement = (
-        select(User)
-        .options(selectinload(User.dealer_profile))
-        .where(User.role == UserRole.dealer)
-        .order_by(User.created_at.desc())
-    )
-    users = db.execute(statement).scalars().all()
-    return [_to_admin_summary(user) for user in users]
-
-
-def approve_dealer_profile(db: Session, dealer_user_id: int) -> DealerVerificationActionRead:
-    profile = _get_profile_model_for_user(db, dealer_user_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
-        )
-
-    profile.verification_status = DealerVerificationStatus.approved
-    profile.approved_at = datetime.now(timezone.utc)
-    db.commit()
-    return DealerVerificationActionRead(
-        user_id=profile.user_id,
-        verification_status=profile.verification_status.value,
-        approved_at=profile.approved_at,
-    )
-
-
-def reject_dealer_profile(db: Session, dealer_user_id: int) -> DealerVerificationActionRead:
-    profile = _get_profile_model_for_user(db, dealer_user_id)
-    if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
-        )
-
-    profile.verification_status = DealerVerificationStatus.rejected
-    profile.approved_at = None
-    db.commit()
-    return DealerVerificationActionRead(
-        user_id=profile.user_id,
-        verification_status=profile.verification_status.value,
-        approved_at=profile.approved_at,
-    )

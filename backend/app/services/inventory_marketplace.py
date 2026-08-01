@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.collector_assignment import CollectorAssignment
-from app.models.dealer_profile import DealerProfile, DealerVerificationStatus
+from app.services.dealer_approval import is_dealer_approved
 from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 from app.models.inventory_lot_event import InventoryLotEvent, InventoryLotEventType
 from app.models.material_category import MaterialCategory
@@ -282,11 +282,7 @@ def _ensure_approved_dealer(db: Session, dealer: User) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Only dealers can browse inventory"
         )
-
-    profile = db.execute(
-        select(DealerProfile).where(DealerProfile.user_id == dealer.id)
-    ).scalar_one_or_none()
-    if profile is None or profile.verification_status != DealerVerificationStatus.approved:
+    if not is_dealer_approved(db, dealer):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Dealer approval is required to browse inventory",

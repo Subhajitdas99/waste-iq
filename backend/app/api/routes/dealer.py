@@ -3,18 +3,19 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_roles
 from app.models.user import User
-from app.schemas.dealer import DealerProfileCreate, DealerProfileRead, DealerProfileUpdate
+from app.schemas.dealer import (
+    DealerApprovalEventRead,
+    DealerProfileCreate,
+    DealerProfileRead,
+    DealerProfileUpdate,
+)
 from app.schemas.dealer_inventory import (
     DealerInventoryCreate,
     DealerInventoryPageRead,
     DealerInventoryRead,
     DealerInventoryUpdate,
 )
-from app.services.dealer_profiles import (
-    create_dealer_profile,
-    get_dealer_profile,
-    update_dealer_profile,
-)
+from app.services.dealer_profiles import DealerProfileService
 from app.services.dealer_inventory import (
     create_dealer_inventory,
     delete_dealer_inventory,
@@ -28,6 +29,8 @@ from app.services.dealer_inventory import (
 
 router = APIRouter()
 
+_dealer_profile_service = DealerProfileService()
+
 
 @router.post("/profile", response_model=DealerProfileRead, status_code=status.HTTP_201_CREATED)
 def create_profile(
@@ -35,7 +38,7 @@ def create_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("dealer")),
 ) -> DealerProfileRead:
-    return create_dealer_profile(db, current_user, payload)
+    return _dealer_profile_service.create_profile(db, current_user, payload)
 
 
 @router.get("/profile", response_model=DealerProfileRead)
@@ -43,7 +46,7 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("dealer")),
 ) -> DealerProfileRead:
-    profile = get_dealer_profile(db, current_user)
+    profile = _dealer_profile_service.get_profile(db, current_user)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
@@ -51,18 +54,35 @@ def get_profile(
     return profile
 
 
+@router.put("/profile", response_model=DealerProfileRead)
 @router.patch("/profile", response_model=DealerProfileRead)
-def patch_profile(
+def update_profile(
     payload: DealerProfileUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("dealer")),
 ) -> DealerProfileRead:
-    profile = update_dealer_profile(db, current_user, payload)
+    profile = _dealer_profile_service.update_profile(db, current_user, payload)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Dealer profile not found"
         )
     return profile
+
+
+@router.post("/profile/submit", response_model=DealerProfileRead)
+def submit_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("dealer")),
+) -> DealerProfileRead:
+    return _dealer_profile_service.submit_profile(db, current_user)
+
+
+@router.get("/profile/timeline", response_model=list[DealerApprovalEventRead])
+def get_profile_timeline(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("dealer")),
+) -> list[DealerApprovalEventRead]:
+    return _dealer_profile_service.get_timeline(db, current_user)
 
 
 @router.get("/inventory", response_model=DealerInventoryPageRead)

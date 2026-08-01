@@ -14,6 +14,15 @@ from app.schemas.dealer_inventory import (
     DealerInventoryRead,
     DealerInventoryUpdate,
 )
+from app.services.dealer_approval import is_dealer_approved
+
+
+def _ensure_approved_dealer(db: Session, current_user: User) -> None:
+    if not is_dealer_approved(db, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer approval is required to manage inventory",
+        )
 
 
 def _to_schema(inventory: DealerInventory) -> DealerInventoryRead:
@@ -27,6 +36,7 @@ def list_dealer_inventories(
     page_size: int = 20,
     status_filter: str | None = None,
 ) -> DealerInventoryPageRead:
+    _ensure_approved_dealer(db, current_user)
     parsed_status = None
     if status_filter:
         try:
@@ -56,6 +66,7 @@ def get_dealer_inventory(db: Session, current_user: User, inventory_id: int) -> 
 def _get_dealer_inventory_model(
     db: Session, current_user: User, inventory_id: int
 ) -> DealerInventory:
+    _ensure_approved_dealer(db, current_user)
     inv = repo.get_dealer_inventory(db, current_user.id, inventory_id)
     if not inv:
         raise HTTPException(
@@ -67,6 +78,7 @@ def _get_dealer_inventory_model(
 def create_dealer_inventory(
     db: Session, current_user: User, payload: DealerInventoryCreate
 ) -> DealerInventoryRead:
+    _ensure_approved_dealer(db, current_user)
     # 1. Validate pickup request exists and is completed
     pickup = db.scalars(
         select(PickupRequest).where(PickupRequest.id == payload.pickup_request_id)

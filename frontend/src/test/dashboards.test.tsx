@@ -82,7 +82,7 @@ describe("admin dashboard", () => {
     expect(screen.getByText("150")).toBeInTheDocument();
 
     expect(screen.getByText("Green Scrap Co")).toBeInTheDocument();
-    expect(screen.getAllByText("pending").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("submitted").length).toBeGreaterThan(0);
 
     expect(screen.getByText("Test Citizen")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();

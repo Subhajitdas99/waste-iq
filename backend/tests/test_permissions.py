@@ -64,7 +64,7 @@ def test_collector_cannot_create_dealer_profile(client, collector_headers):
             "phone": "9000000000",
             "address": "Some address here",
             "city": "Kolkata",
-            "pincode": "700001",
+            "postal_code": "700001",
             "materials_accepted": ["PET"],
         },
         headers=collector_headers,

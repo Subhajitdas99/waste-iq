@@ -56,6 +56,11 @@ const DealerInventoryPage = lazy(() =>
     default: m.default,
   }))
 );
+const DealerProfilePage = lazy(() =>
+  import("../pages/dashboard/DealerProfilePage").then((m) => ({
+    default: m.DealerProfilePage,
+  }))
+);
 const AdminOverviewPage = lazy(() =>
   import("../pages/dashboard/AdminOverviewPage").then((m) => ({
     default: m.AdminOverviewPage,
@@ -184,7 +189,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="overview" replace /> },
       { path: "overview", element: lazyPage(DealerOverviewPage) },
       { path: "inventory", element: lazyPage(DealerInventoryPage) },
-      { path: "profile", element: lazyPage(RoleProfilePage) },
+      { path: "profile", element: lazyPage(DealerProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],
   },

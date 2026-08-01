@@ -5,6 +5,7 @@ import {
   authResponseFor,
   createAdminAnalytics,
   createAdminDealer,
+  createAdminDealerListPage,
   createAdminUser,
   createAnalyticsInsights,
   createAnalyticsOverview,
@@ -12,8 +13,11 @@ import {
   createCitizenSummary,
   createCollectorPerformance,
   createCollectorSummary,
+  createDealerApprovalAction,
+  createDealerApprovalEvent,
   createDealerLotPage,
   createDealerPerformance,
+  createDealerProfile,
   createMaterialBreakdown,
   createMonthlyAnalytics,
   createPickupRequest,
@@ -354,6 +358,43 @@ export const handlers = [
     return HttpResponse.json(createDealerLotPage());
   }),
 
+  http.get("*/dealer/profile", () => {
+    return HttpResponse.json(createDealerProfile());
+  }),
+
+  http.get("*/dealer/profile/timeline", () => {
+    return HttpResponse.json([
+      createDealerApprovalEvent({
+        id: 2,
+        status: "approved",
+        note: "Profile approved by administrator.",
+        actor_name: "Test Admin",
+        actor_role: "admin",
+        created_at: "2026-01-06T09:00:00Z",
+      }),
+      createDealerApprovalEvent(),
+    ]);
+  }),
+
+  http.post("*/dealer/profile/submit", () => {
+    return HttpResponse.json(
+      createDealerProfile({ approval_status: "submitted", is_verified: false, approved_at: null }),
+    );
+  }),
+
+  http.post("*/dealer/profile", () => {
+    return HttpResponse.json(
+      createDealerProfile({ approval_status: "draft", is_verified: false, approved_at: null }),
+      { status: 201 },
+    );
+  }),
+
+  http.put("*/dealer/profile", () => {
+    return HttpResponse.json(
+      createDealerProfile({ approval_status: "draft", is_verified: false, approved_at: null }),
+    );
+  }),
+
   http.get("*/admin/analytics", () => {
     return HttpResponse.json(createAdminAnalytics());
   }),
@@ -391,6 +432,35 @@ export const handlers = [
   }),
 
   http.get("*/admin/dealers", () => {
-    return HttpResponse.json([createAdminDealer()]);
+    return HttpResponse.json(createAdminDealerListPage());
+  }),
+
+  http.get("*/admin/dealers/pending", () => {
+    return HttpResponse.json(createAdminDealerListPage());
+  }),
+
+  http.post("*/admin/dealers/:id/approve", ({ params }) => {
+    const dealer = createAdminDealer({ user_id: Number(params.id) });
+    return HttpResponse.json(
+      createDealerApprovalAction({
+        user_id: dealer.user_id,
+        profile_id: dealer.user_id,
+      }),
+    );
+  }),
+
+  http.post("*/admin/dealers/:id/reject", async ({ request, params }) => {
+    const body = (await request.json()) as { reason?: string };
+    const dealer = createAdminDealer({ user_id: Number(params.id) });
+    return HttpResponse.json(
+      createDealerApprovalAction({
+        user_id: dealer.user_id,
+        profile_id: dealer.user_id,
+        approval_status: "rejected",
+        is_verified: false,
+        approved_at: null,
+        rejection_reason: body.reason ?? "No reason provided",
+      }),
+    );
   }),
 ];
