@@ -5,7 +5,6 @@
 ---
 
 ## Table of Contents
-
 1. [Overview](#1-overview)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Frontend Architecture](#3-frontend-architecture)
@@ -232,6 +231,20 @@ flowchart TB
 | `services/dealer_profiles.py` | `app/services/dealer_profiles.py` | Dealer profile lifecycle: create, update, submit, approval timeline |
 | `services/dealer_approval.py` | `app/services/dealer_approval.py` | Approval transition validation, `is_dealer_approved` guard, admin review/approve/reject |
 | `repositories/dealer_profiles.py` | `app/repositories/dealer_profiles.py` | Dealer profile & event data access, paginated listing with search/sort/filter |
+| `routes/marketplace.py` | `app/api/routes/marketplace.py` | Marketplace endpoints: inventory browse/detail, reserve, cancel-reservation, purchase, orders, transactions |
+| `services/marketplace.py` | `app/services/marketplace.py` | Marketplace business logic: reservation TTL (24h), purchase under row lock, order + transaction creation, expiry release |
+| `repositories/marketplace.py` | `app/repositories/marketplace.py` | Marketplace data access: paginated inventory/orders/transactions queries |
+| `models/marketplace_order.py` | `app/models/marketplace_order.py` | `marketplace_orders` ORM model (one order per purchased lot) |
+| `models/marketplace_transaction.py` | `app/models/marketplace_transaction.py` | `marketplace_transactions` financial ledger model |
+| `routes/collector_map.py` | `app/api/routes/collector_map.py` | Live map & route endpoints: `/collector/map`, `/collector/location`, `/collector/route`, `/collector/nearby-pickups`, `/collector/navigation/{pickup_id}` |
+| `services/collector_map.py` | `app/services/collector_map.py` | Live-map assembly, location upsert + history append, route ordering, nearby search, navigation geometry |
+| `repositories/collector_locations.py` | `app/repositories/collector_locations.py` | Data access for `collector_locations` / `collector_location_history` |
+| `models/collector_location.py` | `app/models/collector_location.py` | `collector_locations` (latest position) + `collector_location_history` (append-only) ORM models |
+| `models/notification.py` | `app/models/notification.py` | `notifications` ORM model + `NotificationType` / `NotificationStatus` enums |
+| `routes/notifications.py` | `app/api/routes/notifications.py` | Notification inbox endpoints (list, unread, count, read, read-all, delete) |
+| `services/notifications.py` | `app/services/notifications.py` | `NotificationService` (CRUD), `NotificationDispatcher` (event hooks), `NotificationBroadcaster` (admin broadcast) |
+| `services/notification_formatters.py` | `app/services/notification_formatters.py` | Pure title/message/link/metadata formatters per notification type |
+| `repositories/notifications.py` | `app/repositories/notifications.py` | Notification data access: ownership-scoped queries, pagination, bulk read/delete |
 
 ---
 
@@ -308,6 +321,104 @@ Each state transition is recorded as a `PickupRequestEvent` with the actor's use
 
 ---
 
+## 6.5 Collector Live Map & Route Tracking (Issue #13)
+
+The collector live map is a self-contained feature spanning both layers. The frontend renders an SVG-projected map (no external map/tile dependency) from data aggregated by a single backend endpoint.
+
+```mermaid
+flowchart LR
+    GEO["navigator.geolocation\nuseBrowserGeolocation"]
+    FE["CollectorMapPage\n/collector/map"]
+
+    subgraph API["FastAPI /collector/* (role=collector)"]
+        MAP["GET /map"]
+        LOC["GET|POST /location"]
+        ROUTE["GET /route"]
+        NEAR["GET /nearby-pickups"]
+        NAV["GET /navigation/{pickup_id}"]
+    end
+
+    subgraph SVC["services/collector_map.py"]
+        ASSEMBLE["assemble map payload"]
+        UPSERT["upsert location +\nappend to history"]
+        OPT["nearest-neighbour route order"]
+        SEARCH["haversine nearby search + radius"]
+        GEOM["navigation geometry + ETA"]
+    end
+
+    subgraph REPO["repositories"]
+        COLLOC["CollectorLocationsRepository"]
+        PICKUPREPO["PickupRequestsRepository\nnearby_pickups_with_distance()"]
+    end
+
+    DB[("collector_locations /\ncollector_location_history")]
+    PDB[("pickup_requests /\ncollector_assignments")]
+
+    GEO --> FE
+    FE -->|report position| LOC
+    FE --> MAP & ROUTE & NEAR & NAV
+    MAP --> ASSEMBLE --> COLLOC
+    LOC --> UPSERT --> COLLOC
+    ROUTE --> OPT --> PICKUPREPO
+    NEAR --> SEARCH --> PICKUPREPO
+    NAV --> GEOM --> PICKUPREPO
+    COLLOC --> DB
+    PICKUPREPO --> PDB
+```
+
+Key decisions:
+
+- **Latest-position table (`collector_locations`)** — one row per collector (unique on `collector_id`); `POST /collector/location` upserts it and appends an immutable row to `collector_location_history` for route tracking.
+- **Single-payload map endpoint** — `GET /collector/map` returns collector position, in-range pickup markers, the ordered route, and nearby pickups in one round trip so the page renders in a single query.
+- **Deterministic travel estimates** — distance uses the existing Haversine service; ETAs use a default motor speed constant (`DEFAULT_ROUTE_SPEED_KMPH = 25.0`) so outputs stay reproducible without a mapping service.
+- **SVG projection on the client** — `frontend/src/lib/map.ts` computes an equirectangular fit projection over the visible points, so the map auto-centers and auto-scales with no external tile/geocoding dependency.
+
+---
+
+## 6.6 Notification & Communication System (Issue #14)
+
+A centralized, database-backed notification inbox shared by all four roles. The platform emits notifications automatically from business events; admins can additionally broadcast announcements; users consume them through a React inbox and a header bell.
+
+```mermaid
+flowchart LR
+    subgraph HOOKS["Domain services (emit)"]
+        PICKUP["pickup_requests.py\npickup_created/accepted/started/\ncollected/completed"]
+        DEALER["dealer_profiles.py +\ndealer_approval.py\nsubmit / approve / reject"]
+        INV["inventory_marketplace.py\ncreate / reserve / expire"]
+        MKT["marketplace.py\ncancel / purchase"]
+        ADMIN["admin.py\nPOST /admin/notifications/broadcast"]
+    end
+
+    DISP["NotificationDispatcher\n(formatters + recipients)"]
+    SVC["NotificationService"]
+    BROAD["NotificationBroadcaster"]
+
+    DB[("notifications\n(user_id, type, status, …)")]
+    API["GET/POST/DELETE /notifications/*"]
+    FE["Header bell + /{role}/notifications"]
+
+    PICKUP --> DISP
+    DEALER --> DISP
+    INV --> DISP
+    MKT --> DISP
+    ADMIN --> BROAD
+    DISP --> SVC
+    BROAD --> SVC
+    SVC --> DB
+    DB --> API --> FE
+```
+
+Key decisions:
+
+- **Event-driven via an injected singleton** — `NotificationDispatcher()` (`_dispatcher`) is injected at module level into the pickup / dealer / marketplace services. Notifications flush inside the caller's transaction and ride the domain service's commit, so a failed business action never leaves orphaned notifications; only the inbox CRUD operations and `NotificationBroadcaster` commit their own transaction.
+- **Ownership scoping at the repository** — every read/mark/delete query filters on `user_id`, so one user can never act on another's notification (404 on mismatch).
+- **Recipient targeting by role** — admin-profile-submitted notifies all admins; reserve notifies both the citizen owner and the reserving dealer with type-specific copy; expired reservations notify the *previous* dealer via `notify_reservation_expired(db, lot, previous_dealer_id)`.
+- **Broadcast is role-based** — `NotificationBroadcaster.broadcast` roots `recipient_roles` in `UserRole`, writes one row per recipient, and returns `recipients_count`.
+- **Pure formatters** — `notification_formatters.py` returns `(title, message, link, metadata)` so dispatcher and broadcaster stay URL/UI-agnostic; links are frontend routes (`/dashboard/pickups/{id}`, `/dealer/marketplace/{lot_id}`).
+- **Frontend straight reads the API** — `useNotifications` hooks expose paginated list, unread list/count (30 s auto-refresh for the bell), plus optimistic mark-read / mark-all-read / delete / delete-read mutations; the legacy localStorage citizen notifications UI is left untouched and coexists.
+
+---
+
 ## 7. Inventory Marketplace Flow
 
 ### Dealer Approval Workflow
@@ -343,26 +454,34 @@ sequenceDiagram
     BE-->>A: InventoryLot created (lot_number, total_listed_amount)
 
     Note over D,DB: Phase 2 — Dealer Browse & Reserve
-    D->>BE: GET /dealer/inventory-lots?city=Mumbai&material_category_id=3
-    BE->>DB: SELECT lots WHERE status=available AND visibility=visible
-    DB-->>BE: List of available lots
-    BE-->>D: [{lot_number, weight_kg, unit_price, source_city, quality_grade}]
+    D->>BE: GET /marketplace/inventory?city=Mumbai&material_category_id=3
+    BE->>DB: SELECT lots WHERE status=available AND visibility=visible\n(page/sort/search applied)
+    DB-->>BE: Paginated list of available lots
+    BE-->>D: [{items, page, total_items, total_pages}]
 
-    D->>BE: POST /dealer/inventory/lots/{lot_id}/reserve
+    D->>BE: POST /marketplace/inventory/{lot_id}/reserve
     BE->>DB: UPDATE lot SET status=reserved,\nreserved_by_dealer_id=?,\nreservation_expires_at=NOW()+24h
     BE->>DB: Record InventoryLotEvent (type=reserved)
-    BE-->>D: Lot reserved (expires_at)
+    BE->>DB: Insert MarketplaceTransaction (type=reservation, status=completed)
+    BE-->>D: Lot reserved (expires_at, is_reserved_by_me=true)
 
     Note over D,DB: Phase 3 — Purchase Confirmation
-    D->>BE: POST /dealer/inventory/lots/{lot_id}/purchase
-    BE->>DB: CHECK reservation_expires_at > NOW()
-    alt Reservation expired
-        BE-->>D: 409 Conflict — reservation expired
+    D->>BE: POST /marketplace/inventory/{lot_id}/purchase
+    BE->>DB: SELECT lot FOR UPDATE — validate reserved by me + not expired
+    alt Reservation expired or held by another dealer
+        BE-->>D: 409 Conflict
     else Reservation valid
         BE->>DB: UPDATE lot SET status=sold
         BE->>DB: Record InventoryLotEvent (type=status_changed, new=sold)
-        BE-->>D: Purchase confirmed
+        BE->>DB: Insert MarketplaceOrder + MarketplaceTransaction (type=purchase)
+        BE-->>D: 201 Order created (order_number, transactions)
     end
+
+    Note over D,DB: Phase 4 — History & Ledger
+    D->>BE: GET /marketplace/orders
+    BE-->>D: Paginated order history
+    D->>BE: GET /marketplace/transactions?transaction_type=purchase
+    BE-->>D: Paginated transaction ledger
 ```
 
 ---
@@ -379,7 +498,8 @@ The API follows RESTful conventions with JSON request/response bodies (except mu
 | `/pickup-requests` | Pickup Requests | Yes | Full pickup lifecycle |
 | `/collector` | Collector | Yes (collector role) | Collector-specific operations |
 | `/dealer` | Dealer | Yes (dealer role) | Profile management, submit for approval, approval timeline |
-| `/dealer` | Dealer Inventory | Yes (approved dealer) | Marketplace browse, reserve, purchase |
+| `/marketplace` | Marketplace | Yes (approved dealer) | Inventory browse/search/detail, reserve, cancel reservation, purchase, orders, transactions |
+| `/dealer` | Dealer Inventory | Yes (approved dealer) | Legacy marketplace browse/reserve (`/dealer/inventory-lots*`) |
 | `/admin` | Admin | Yes (admin role) | Users, analytics, dealer review queue (approve/reject) |
 | `/admin/analytics` | Admin Analytics | Yes (admin role) | Overview KPIs, material distribution, monthly trend, collector/dealer performance, carbon savings, rule-based insights |
 | `/admin` | Admin Inventory | Yes (admin role) | Lot management, pricing, categories |

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.dealer_profile import DealerApprovalStatus, DealerProfile
 from app.models.dealer_profile_event import DealerProfileEvent
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.repositories.dealer_profiles import DealerProfileRepository
 from app.schemas.dealer import (
     AdminDealerDetailRead,
@@ -15,6 +15,7 @@ from app.schemas.dealer import (
     DealerApprovalEventRead,
     DealerProfileRead,
 )
+from app.services.notifications import NotificationDispatcher
 
 # Allowed approval workflow transitions. Editing a profile always moves it
 # back to `draft` so the updated business information can be reviewed again.
@@ -59,6 +60,24 @@ def validate_approval_transition(
 def is_dealer_approved(db: Session, dealer: User) -> bool:
     profile = DealerProfileRepository().get_by_user_id(db, dealer.id)
     return profile is not None and profile.approval_status == DealerApprovalStatus.approved
+
+
+def ensure_approved_dealer(db: Session, dealer: User) -> None:
+    """Raise 403 unless the user is a dealer with an approved profile.
+
+    Shared guard used by every dealer-facing marketplace and inventory
+    endpoint so the approval gate is enforced in exactly one place.
+    """
+    if dealer.role != UserRole.dealer:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only dealers can access the marketplace",
+        )
+    if not is_dealer_approved(db, dealer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer approval is required to access the marketplace",
+        )
 
 
 def _calculate_profile_completion(profile: DealerProfile) -> int:
@@ -149,6 +168,7 @@ def _to_action_schema(profile: DealerProfile) -> DealerApprovalActionRead:
 class AdminDealerApprovalService:
     def __init__(self, repository: DealerProfileRepository | None = None) -> None:
         self._repository = repository or DealerProfileRepository()
+        self._dispatcher = NotificationDispatcher()
 
     def list_dealers(
         self,
@@ -233,6 +253,7 @@ class AdminDealerApprovalService:
         self._repository.add_event(
             db, profile, status=DealerApprovalStatus.approved, note="Profile approved.", actor=admin
         )
+        self._dispatcher.notify_dealer_profile_approved(db, profile)
         return _to_action_schema(self._repository.save(db, profile))
 
     def reject_dealer(
@@ -252,6 +273,7 @@ class AdminDealerApprovalService:
             note=f"Profile rejected: {reason}",
             actor=admin,
         )
+        self._dispatcher.notify_dealer_profile_rejected(db, profile, reason)
         return _to_action_schema(self._repository.save(db, profile))
 
     def _get_profile_by_user_id_or_404(self, db: Session, dealer_user_id: int) -> DealerProfile:

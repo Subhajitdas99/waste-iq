@@ -1,6 +1,8 @@
 import { http, HttpResponse } from "msw";
 import type { UserProfile } from "@/types/auth";
 import type { PickupRequest, PickupStatus } from "@/types/pickup";
+import type { CollectorLocation } from "@/types/map";
+import type { AppNotification } from "@/types/notification";
 import {
   authResponseFor,
   createAdminAnalytics,
@@ -11,6 +13,8 @@ import {
   createAnalyticsOverview,
   createCarbonSavings,
   createCitizenSummary,
+  createCollectorLocation as makeCollectorLocation,
+  createCollectorMapPayload,
   createCollectorPerformance,
   createCollectorSummary,
   createDealerApprovalAction,
@@ -18,10 +22,19 @@ import {
   createDealerLotPage,
   createDealerPerformance,
   createDealerProfile,
+  createMarketplaceLot,
+  createMarketplaceOrder,
+  createMarketplaceOrderDetail,
+  createMarketplaceTransaction,
   createMaterialBreakdown,
   createMonthlyAnalytics,
+  createNavigation,
+  createNearbyPickup,
+  createNotification,
+  createNotificationPage,
   createPickupRequest,
   createPickupRequestDetail,
+  createRouteSummary,
   createUser,
   usersByRole,
 } from "./factories";
@@ -106,6 +119,208 @@ export function resetPickupStore(): void {
   pickupStore = buildPickupStore();
 }
 
+// ─── Marketplace store ───────────────────────────────────────────────────────
+
+function buildMarketplaceStore() {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 23 * 60 * 60 * 1000).toISOString();
+  const reservedAt = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+
+  return {
+    lots: [
+      createMarketplaceLot({
+        id: 201,
+        lot_number: "LOT-2026-000201",
+        material_category_name: "PET Plastic",
+        material_description: "Mixed PET bottles",
+        weight_kg: 42.5,
+        unit_price_per_kg_snapshot: 18.0,
+        total_listed_amount: 765.0,
+        source_city: "Kolkata",
+        seller_name: "Test Citizen",
+      }),
+      createMarketplaceLot({
+        id: 202,
+        lot_number: "LOT-2026-000202",
+        material_category_name: "Cardboard",
+        material_description: "Cardboard boxes",
+        weight_kg: 120.0,
+        unit_price_per_kg_snapshot: 6.5,
+        total_listed_amount: 780.0,
+        source_city: "Howrah",
+        seller_name: "Test Citizen",
+      }),
+      createMarketplaceLot({
+        id: 203,
+        lot_number: "LOT-2026-000203",
+        material_category_name: "Glass",
+        material_description: "Glass bottles",
+        weight_kg: 25.0,
+        unit_price_per_kg_snapshot: 4.0,
+        total_listed_amount: 100.0,
+        source_city: "Kolkata",
+        seller_name: "Test Citizen",
+        status: "reserved",
+        is_reserved_by_me: true,
+        reserved_at: reservedAt,
+        reservation_expires_at: expiresAt,
+      }),
+      createMarketplaceLot({
+        id: 204,
+        lot_number: "LOT-2026-000204",
+        material_category_name: "Metal",
+        material_description: "Aluminum cans",
+        weight_kg: 30.0,
+        unit_price_per_kg_snapshot: 55.0,
+        total_listed_amount: 1650.0,
+        source_city: "Kolkata",
+        seller_name: "Test Citizen",
+        status: "sold",
+        is_reserved_by_me: false,
+      }),
+    ],
+    transactions: [
+      createMarketplaceTransaction({
+        id: 501,
+        inventory_lot_id: 203,
+        lot_number: "LOT-2026-000203",
+        material_category_name: "Glass",
+        quantity_kg: 25.0,
+        total_amount: 100.0,
+        transaction_type: "reservation",
+        created_at: reservedAt,
+      }),
+      createMarketplaceTransaction({
+        id: 502,
+        inventory_lot_id: 204,
+        lot_number: "LOT-2026-000204",
+        material_category_name: "Metal",
+        quantity_kg: 30.0,
+        total_amount: 1650.0,
+        transaction_type: "reservation",
+        created_at: "2026-01-11T09:00:00Z",
+      }),
+      createMarketplaceTransaction({
+        id: 503,
+        order_id: 301,
+        inventory_lot_id: 204,
+        lot_number: "LOT-2026-000204",
+        material_category_name: "Metal",
+        quantity_kg: 30.0,
+        total_amount: 1650.0,
+        transaction_type: "purchase",
+        status: "completed",
+        created_at: "2026-01-11T09:30:00Z",
+      }),
+    ],
+    orders: [
+      createMarketplaceOrder({
+        id: 301,
+        order_number: "ORD-2026-000301",
+        inventory_lot_id: 204,
+        lot_number: "LOT-2026-000204",
+        material_category_name: "Metal",
+        material_description: "Aluminum cans",
+        quantity_kg: 30.0,
+        total_amount: 1650.0,
+        created_at: "2026-01-11T09:30:00Z",
+        updated_at: "2026-01-11T09:30:00Z",
+      }),
+    ],
+  };
+}
+
+export let marketplaceStore = buildMarketplaceStore();
+
+export function resetMarketplaceStore(): void {
+  marketplaceStore = buildMarketplaceStore();
+}
+
+// ─── Notification store ──────────────────────────────────────────────────────
+
+export function buildNotificationStore(): AppNotification[] {
+  return [
+    createNotification({
+      id: 701,
+      user_id: 1,
+      title: "Pickup request created",
+      message: "Your pickup request for Cardboard was created.",
+      type: "pickup_created",
+      link: "/dashboard/pickups/3",
+      created_at: "2026-01-05T09:00:00Z",
+    }),
+    createNotification({
+      id: 702,
+      user_id: 1,
+      title: "Pickup accepted",
+      message: "Test Collector accepted your pickup request.",
+      type: "pickup_accepted",
+      link: "/dashboard/pickups/5",
+      created_at: "2026-01-04T10:30:00Z",
+    }),
+    createNotification({
+      id: 703,
+      user_id: 1,
+      title: "Pickup completed",
+      message: "Your pickup request was completed. Weight collected: 12.5 kg.",
+      type: "pickup_completed",
+      status: "read",
+      link: "/dashboard/pickups/2",
+      read_at: "2026-01-03T11:00:00Z",
+      created_at: "2026-01-03T10:00:00Z",
+    }),
+    createNotification({
+      id: 704,
+      user_id: 4,
+      title: "New dealer profile submitted",
+      message: "Green Scrap Co submitted a dealer profile for approval.",
+      type: "dealer_profile_submitted",
+      link: "/admin/dealers/3",
+      created_at: "2026-01-05T08:00:00Z",
+    }),
+    createNotification({
+      id: 705,
+      user_id: 3,
+      title: "Inventory lot listed",
+      message: "Your inventory lot LOT-2026-000201 is now listed on the marketplace.",
+      type: "inventory_created",
+      link: "/dealer/marketplace/201",
+      created_at: "2026-01-05T07:00:00Z",
+    }),
+  ];
+}
+
+export let notificationStore: AppNotification[] = buildNotificationStore();
+
+export function resetNotificationStore(): void {
+  notificationStore = buildNotificationStore();
+}
+
+function requireDealer(request: Request): boolean {
+  return requireAuthorization(request)?.role === "dealer";
+}
+
+function marketplaceLotById(lotId: number) {
+  return marketplaceStore.lots.find((lot) => lot.id === lotId);
+}
+
+function nextTransactionId(): number {
+  return Math.max(...marketplaceStore.transactions.map((transaction) => transaction.id)) + 1;
+}
+
+function nextOrderId(): number {
+  return Math.max(...marketplaceStore.orders.map((order) => order.id)) + 1;
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number): { items: T[]; totalItems: number } {
+  const totalItems = items.length;
+  const start = (page - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    totalItems,
+  };
+}
+
 function requireCollector(request: Request): boolean {
   return requireAuthorization(request)?.role === "collector";
 }
@@ -119,7 +334,7 @@ function applyTransition(
   requestId: number,
   status: PickupStatus,
   patch: Partial<PickupRequest> = {},
-): HttpResponse<any> {
+) {
   if (!requireCollector(request)) {
     return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
   }
@@ -132,6 +347,12 @@ function applyTransition(
 
   Object.assign(pickup, { status, ...patch });
   return HttpResponse.json(pickup);
+}
+
+export let collectorLocationStore: CollectorLocation = makeCollectorLocation();
+
+export function resetCollectorMapStore(): void {
+  collectorLocationStore = makeCollectorLocation();
 }
 
 export const handlers = [
@@ -228,6 +449,22 @@ export const handlers = [
 
   http.get("*/pickup-requests/citizen/summary", () => {
     return HttpResponse.json(createCitizenSummary());
+  }),
+
+  http.get("*/pickup-requests/:id", ({ request, params }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const pickup = pickupStore.find((candidate) => candidate.id === Number(params.id));
+
+    if (!pickup) {
+      return HttpResponse.json({ detail: "Pickup request not found" }, { status: 404 });
+    }
+
+    return HttpResponse.json(createPickupRequestDetail(pickup));
   }),
 
   http.get("*/collector/summary", () => {
@@ -354,6 +591,84 @@ export const handlers = [
     });
   }),
 
+  // ─── Collector live map & route tracking ──────────────────────────────────
+
+  http.get("*/collector/map", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const url = new URL(request.url);
+    const radiusKm = Number(url.searchParams.get("radius_km") ?? 5);
+    return HttpResponse.json(
+      createCollectorMapPayload({ collector: collectorLocationStore, radius_km: radiusKm }),
+    );
+  }),
+
+  http.get("*/collector/location", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    return HttpResponse.json(collectorLocationStore);
+  }),
+
+  http.post("*/collector/location", async ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const body = (await request.json()) as {
+      latitude?: number;
+      longitude?: number;
+      accuracy?: number | null;
+    };
+
+    if (typeof body.latitude !== "number" || typeof body.longitude !== "number") {
+      return HttpResponse.json({ detail: "latitude and longitude are required" }, { status: 422 });
+    }
+
+    collectorLocationStore = {
+      latitude: body.latitude,
+      longitude: body.longitude,
+      accuracy: body.accuracy ?? null,
+      updated_at: new Date().toISOString(),
+    };
+    return HttpResponse.json(collectorLocationStore);
+  }),
+
+  http.get("*/collector/route", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    return HttpResponse.json(createRouteSummary());
+  }),
+
+  http.get("*/collector/nearby-pickups", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    return HttpResponse.json([
+      createNearbyPickup(),
+      createNearbyPickup({
+        id: 4,
+        waste_type: "Glass bottles",
+        address: "88 Park Avenue, Kolkata",
+        distance_km: 2.3,
+      }),
+    ]);
+  }),
+
+  http.get("*/collector/navigation/:id", ({ request }) => {
+    if (!requireCollector(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    return HttpResponse.json(createNavigation());
+  }),
+
   http.get("*/dealer/inventory-lots", () => {
     return HttpResponse.json(createDealerLotPage());
   }),
@@ -462,5 +777,461 @@ export const handlers = [
         rejection_reason: body.reason ?? "No reason provided",
       }),
     );
+  }),
+
+  // ─── Marketplace ───────────────────────────────────────────────────────────
+
+  http.get("*/marketplace/inventory", ({ request }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(url.searchParams.get("page_size") ?? 12);
+    const sortBy = url.searchParams.get("sort_by") ?? "created_at";
+    const sortOrder = url.searchParams.get("sort_order") ?? "desc";
+    const categoryId = url.searchParams.get("material_category_id");
+    const city = url.searchParams.get("city")?.toLowerCase();
+    const search = url.searchParams.get("search")?.toLowerCase();
+
+    let lots = marketplaceStore.lots.filter(
+      (lot) =>
+        lot.status !== "sold" &&
+        (lot.status === "available" || lot.is_reserved_by_me),
+    );
+
+    if (categoryId) {
+      lots = lots.filter((lot) => lot.material_category_id === Number(categoryId));
+    }
+    if (city) {
+      lots = lots.filter((lot) => lot.source_city.toLowerCase().includes(city));
+    }
+    if (search) {
+      lots = lots.filter(
+        (lot) =>
+          lot.material_description?.toLowerCase().includes(search) ||
+          lot.material_category_name.toLowerCase().includes(search),
+      );
+    }
+
+    lots = [...lots].sort((a, b) => {
+      const valueA = a[sortBy as keyof typeof a];
+      const valueB = b[sortBy as keyof typeof b];
+      if (typeof valueA === "string" && typeof valueB === "string") {
+        return sortOrder === "asc" ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
+      }
+      const numericA = Number(valueA ?? 0);
+      const numericB = Number(valueB ?? 0);
+      return sortOrder === "asc" ? numericA - numericB : numericB - numericA;
+    });
+
+    const { items, totalItems } = paginate(lots, page, pageSize);
+    return HttpResponse.json({
+      items,
+      page,
+      page_size: pageSize,
+      total_items: totalItems,
+      total_pages: Math.ceil(totalItems / pageSize),
+    });
+  }),
+
+  http.get("*/marketplace/inventory/:id", ({ request, params }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const lot = marketplaceLotById(Number(params.id));
+
+    if (!lot || lot.status === "sold" || (lot.status === "reserved" && !lot.is_reserved_by_me)) {
+      return HttpResponse.json({ detail: "Inventory lot not found" }, { status: 404 });
+    }
+
+    return HttpResponse.json(lot);
+  }),
+
+  http.post("*/marketplace/inventory/:id/reserve", ({ request, params }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const lot = marketplaceLotById(Number(params.id));
+
+    if (!lot) {
+      return HttpResponse.json({ detail: "Inventory lot not found" }, { status: 404 });
+    }
+    if (lot.status === "reserved") {
+      return HttpResponse.json({ detail: "Inventory lot is already reserved" }, { status: 409 });
+    }
+    if (lot.status === "sold") {
+      return HttpResponse.json({ detail: "Inventory lot is already sold" }, { status: 409 });
+    }
+
+    const now = new Date();
+    lot.status = "reserved";
+    lot.is_reserved_by_me = true;
+    lot.reserved_at = now.toISOString();
+    lot.reservation_expires_at = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+    marketplaceStore.transactions.push(
+      createMarketplaceTransaction({
+        id: nextTransactionId(),
+        inventory_lot_id: lot.id,
+        lot_number: lot.lot_number,
+        material_category_name: lot.material_category_name,
+        quantity_kg: lot.weight_kg,
+        total_amount: lot.total_listed_amount,
+        transaction_type: "reservation",
+        status: "completed",
+        created_at: lot.reserved_at,
+      }),
+    );
+
+    return HttpResponse.json(lot);
+  }),
+
+  http.post("*/marketplace/inventory/:id/cancel-reservation", ({ request, params }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const lot = marketplaceLotById(Number(params.id));
+
+    if (!lot) {
+      return HttpResponse.json({ detail: "Inventory lot not found" }, { status: 404 });
+    }
+    if (lot.status !== "reserved") {
+      return HttpResponse.json(
+        { detail: "Inventory lot is not currently reserved" },
+        { status: 400 },
+      );
+    }
+    if (!lot.is_reserved_by_me) {
+      return HttpResponse.json(
+        { detail: "Reservation is held by another dealer" },
+        { status: 409 },
+      );
+    }
+
+    lot.status = "available";
+    lot.is_reserved_by_me = false;
+    lot.reserved_at = null;
+    lot.reservation_expires_at = null;
+    marketplaceStore.transactions.push(
+      createMarketplaceTransaction({
+        id: nextTransactionId(),
+        inventory_lot_id: lot.id,
+        lot_number: lot.lot_number,
+        material_category_name: lot.material_category_name,
+        quantity_kg: lot.weight_kg,
+        total_amount: lot.total_listed_amount,
+        transaction_type: "cancellation",
+        status: "cancelled",
+        created_at: new Date().toISOString(),
+      }),
+    );
+
+    return HttpResponse.json(lot);
+  }),
+
+  http.post("*/marketplace/inventory/:id/purchase", ({ request, params }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const lot = marketplaceLotById(Number(params.id));
+
+    if (!lot) {
+      return HttpResponse.json({ detail: "Inventory lot not found" }, { status: 404 });
+    }
+    if (lot.status === "sold") {
+      return HttpResponse.json({ detail: "Inventory lot is already sold" }, { status: 409 });
+    }
+    if (lot.status !== "reserved") {
+      return HttpResponse.json(
+        { detail: "Inventory lot must be reserved before it can be purchased" },
+        { status: 400 },
+      );
+    }
+    if (!lot.is_reserved_by_me) {
+      return HttpResponse.json(
+        { detail: "Inventory lot is reserved by another dealer" },
+        { status: 409 },
+      );
+    }
+
+    const order = createMarketplaceOrder({
+      id: nextOrderId(),
+      order_number: `ORD-2026-000${String(nextOrderId()).padStart(3, "0")}`,
+      inventory_lot_id: lot.id,
+      lot_number: lot.lot_number,
+      material_category_id: lot.material_category_id,
+      material_category_name: lot.material_category_name,
+      material_description: lot.material_description,
+      quantity_kg: lot.weight_kg,
+      unit_price_per_kg_snapshot: lot.unit_price_per_kg_snapshot,
+      total_amount: lot.total_listed_amount,
+      currency_code: lot.currency_code ?? "INR",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    marketplaceStore.orders.push(order);
+
+    const purchaseTransaction = createMarketplaceTransaction({
+      id: nextTransactionId(),
+      order_id: order.id,
+      inventory_lot_id: lot.id,
+      lot_number: lot.lot_number,
+      material_category_name: lot.material_category_name,
+      quantity_kg: lot.weight_kg,
+      total_amount: lot.total_listed_amount,
+      transaction_type: "purchase",
+      status: "completed",
+      created_at: order.created_at,
+    });
+    marketplaceStore.transactions.push(purchaseTransaction);
+
+    lot.status = "sold";
+    lot.is_reserved_by_me = false;
+    lot.reserved_at = null;
+    lot.reservation_expires_at = null;
+
+    const detail = createMarketplaceOrderDetail({
+      ...order,
+      transactions: marketplaceStore.transactions.filter(
+        (transaction) => transaction.inventory_lot_id === lot.id,
+      ),
+    });
+
+    return HttpResponse.json(detail, { status: 201 });
+  }),
+
+  http.get("*/marketplace/orders", ({ request }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(url.searchParams.get("page_size") ?? 20);
+    const sorted = [...marketplaceStore.orders].sort((a, b) =>
+      b.created_at.localeCompare(a.created_at),
+    );
+    const { items, totalItems } = paginate(sorted, page, pageSize);
+    return HttpResponse.json({
+      items,
+      page,
+      page_size: pageSize,
+      total_items: totalItems,
+      total_pages: Math.ceil(totalItems / pageSize),
+    });
+  }),
+
+  http.get("*/marketplace/orders/:id", ({ request, params }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const order = marketplaceStore.orders.find((candidate) => candidate.id === Number(params.id));
+
+    if (!order) {
+      return HttpResponse.json({ detail: "Order not found" }, { status: 404 });
+    }
+
+    return HttpResponse.json(
+      createMarketplaceOrderDetail({
+        ...order,
+        transactions: marketplaceStore.transactions.filter(
+          (transaction) => transaction.inventory_lot_id === order.inventory_lot_id,
+        ),
+      }),
+    );
+  }),
+
+  http.get("*/marketplace/transactions", ({ request }) => {
+    if (!requireDealer(request)) {
+      return HttpResponse.json({ detail: "Forbidden" }, { status: 403 });
+    }
+
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(url.searchParams.get("page_size") ?? 20);
+    const transactionType = url.searchParams.get("transaction_type");
+
+    let transactions = [...marketplaceStore.transactions].sort((a, b) =>
+      b.created_at.localeCompare(a.created_at),
+    );
+    if (transactionType) {
+      transactions = transactions.filter(
+        (transaction) => transaction.transaction_type === transactionType,
+      );
+    }
+
+    const { items, totalItems } = paginate(transactions, page, pageSize);
+    return HttpResponse.json({
+      items,
+      page,
+      page_size: pageSize,
+      total_items: totalItems,
+      total_pages: Math.ceil(totalItems / pageSize),
+    });
+  }),
+
+  // ─── Notifications ─────────────────────────────────────────────────────────
+
+  http.get("*/notifications/unread/count", ({ request }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const unreadCount = notificationStore.filter(
+      (notification) => notification.user_id === user.id && notification.status === "unread",
+    ).length;
+    return HttpResponse.json({ unread_count: unreadCount });
+  }),
+
+  http.get("*/notifications/unread", ({ request }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    return HttpResponse.json(
+      notificationStore
+        .filter(
+          (notification) => notification.user_id === user.id && notification.status === "unread",
+        )
+        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    );
+  }),
+
+  http.get("*/notifications", ({ request }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(url.searchParams.get("page_size") ?? 20);
+    const status = url.searchParams.get("status");
+
+    let notifications = notificationStore.filter(
+      (notification) => notification.user_id === user.id,
+    );
+    if (status === "unread" || status === "read") {
+      notifications = notifications.filter((notification) => notification.status === status);
+    }
+    notifications = [...notifications].sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+    const { items, totalItems } = paginate(notifications, page, pageSize);
+    return HttpResponse.json(
+      createNotificationPage(items, {
+        page,
+        page_size: pageSize,
+        total_items: totalItems,
+        total_pages: Math.ceil(totalItems / pageSize),
+      }),
+    );
+  }),
+
+  http.get("*/notifications/:id", ({ request, params }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const notification = notificationStore.find(
+      (candidate) => candidate.id === Number(params.id) && candidate.user_id === user.id,
+    );
+
+    if (!notification) {
+      return HttpResponse.json({ detail: "Notification not found" }, { status: 404 });
+    }
+
+    return HttpResponse.json(notification);
+  }),
+
+  http.post("*/notifications/:id/read", ({ request, params }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const notification = notificationStore.find(
+      (candidate) => candidate.id === Number(params.id) && candidate.user_id === user.id,
+    );
+
+    if (!notification) {
+      return HttpResponse.json({ detail: "Notification not found" }, { status: 404 });
+    }
+
+    if (notification.status === "unread") {
+      notification.status = "read";
+      notification.read_at = new Date().toISOString();
+    }
+
+    return HttpResponse.json(notification);
+  }),
+
+  http.post("*/notifications/read-all", ({ request }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    let affected = 0;
+    for (const notification of notificationStore) {
+      if (notification.user_id === user.id && notification.status === "unread") {
+        notification.status = "read";
+        notification.read_at = new Date().toISOString();
+        affected += 1;
+      }
+    }
+
+    return HttpResponse.json({ affected });
+  }),
+
+  http.delete("*/notifications/read", ({ request }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const readNotifications = notificationStore.filter(
+      (notification) => notification.user_id === user.id && notification.status === "read",
+    );
+    notificationStore = notificationStore.filter(
+      (notification) =>
+        !(notification.user_id === user.id && notification.status === "read"),
+    );
+
+    return HttpResponse.json({ affected: readNotifications.length });
+  }),
+
+  http.delete("*/notifications/:id", ({ request, params }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const index = notificationStore.findIndex(
+      (candidate) => candidate.id === Number(params.id) && candidate.user_id === user.id,
+    );
+
+    if (index === -1) {
+      return HttpResponse.json({ detail: "Notification not found" }, { status: 404 });
+    }
+
+    notificationStore.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
 ];

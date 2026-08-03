@@ -18,10 +18,11 @@ from app.schemas.pickup_request import (
     PickupRequestTimelineEventRead,
     PickupRequestUpdate,
 )
-from app.services.location import calculate_distance_km
+from app.services.notifications import NotificationDispatcher
 from app.services.stats import count_pickups_for_user
 
 _repository = PickupRequestRepository()
+_dispatcher = NotificationDispatcher()
 
 
 def _serialize_assignment(pickup_request: PickupRequest) -> CollectorAssignmentRead | None:
@@ -162,6 +163,7 @@ def create_pickup_request(
     _repository.add_status_event(
         db, pickup_request, PickupStatus.pending, "Pickup request created.", actor=citizen
     )
+    _dispatcher.notify_pickup_created(db, pickup_request)
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
@@ -200,27 +202,7 @@ def list_nearby_pickup_requests_for_collector(
     longitude: float,
     radius_km: float = 5,
 ) -> list[NearbyPickupRequestRead]:
-    statement = _repository.base_query().where(*_available_pickup_filter())
-
-    requests = db.execute(statement).unique().scalars().all()
-    nearby_requests = [
-        (
-            pickup_request,
-            calculate_distance_km(
-                latitude,
-                longitude,
-                pickup_request.latitude,
-                pickup_request.longitude,
-            ),
-        )
-        for pickup_request in requests
-    ]
-    nearby_requests = [
-        (pickup_request, distance_km)
-        for pickup_request, distance_km in nearby_requests
-        if distance_km <= radius_km
-    ]
-    nearby_requests.sort(key=lambda item: item[1])
+    nearby_requests = _repository.nearby_pickups_with_distance(db, latitude, longitude, radius_km)
 
     return [
         _to_nearby_schema(pickup_request, distance_km)
@@ -398,6 +380,7 @@ def accept_pickup_request(db: Session, collector: User, request_id: int) -> Pick
         "Collector accepted the pickup request.",
         actor=collector,
     )
+    _dispatcher.notify_pickup_accepted(db, pickup_request, collector)
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
@@ -416,6 +399,7 @@ def mark_pickup_request_on_the_way(
         "Collector is on the way.",
         actor=collector,
     )
+    _dispatcher.notify_pickup_started(db, pickup_request, collector)
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
@@ -438,6 +422,7 @@ def mark_pickup_request_collected(
         "Waste has been collected and is awaiting final confirmation.",
         actor=collector,
     )
+    _dispatcher.notify_pickup_collected(db, pickup_request, collector)
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
@@ -462,6 +447,7 @@ def complete_pickup_request(
         f"Pickup completed with {round(weight_kg, 2)} kg reported.",
         actor=collector,
     )
+    _dispatcher.notify_pickup_completed(db, pickup_request, weight_kg)
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 

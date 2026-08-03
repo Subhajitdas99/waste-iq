@@ -2,6 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 import { server } from "./server";
+import {
+  resetCollectorMapStore,
+  resetMarketplaceStore,
+  resetNotificationStore,
+  resetPickupStore,
+} from "./handlers";
 
 if (typeof window !== "undefined" && !window.ResizeObserver) {
   class ResizeObserverStub {
@@ -59,16 +65,22 @@ beforeAll(async () => {
     import("../pages/dashboard/DashboardOverviewPage"),
     import("../pages/dashboard/CollectorOverviewPage"),
     import("../pages/dashboard/DealerOverviewPage"),
+    import("../pages/dashboard/DealerInventoryPage"),
     import("../pages/dashboard/DealerProfilePage"),
+    import("../pages/dashboard/MarketplacePage"),
+    import("../pages/dashboard/MarketplaceDetailsPage"),
+    import("../pages/dashboard/OrderHistoryPage"),
     import("../pages/dashboard/AdminOverviewPage"),
     import("../pages/dashboard/CitizenPickupsPage"),
     import("../pages/dashboard/NewPickupPage"),
     import("../pages/dashboard/PickupDetailsPage"),
     import("../pages/dashboard/CollectorPickupDetailsPage"),
+    import("../pages/dashboard/CollectorMapPage"),
     import("../pages/dashboard/PickupHistoryPage"),
     import("../pages/dashboard/ProfilePage"),
     import("../pages/dashboard/RoleProfilePage"),
     import("../pages/dashboard/RoleSettingsPage"),
+    import("../pages/dashboard/NotificationsPage"),
     import("../pages/public/LandingPage"),
     import("../pages/public/FeaturesPage"),
     import("../pages/public/AboutPage"),
@@ -84,6 +96,10 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   vi.restoreAllMocks();
+  resetPickupStore();
+  resetMarketplaceStore();
+  resetCollectorMapStore();
+  resetNotificationStore();
 });
 
 afterAll(() => {

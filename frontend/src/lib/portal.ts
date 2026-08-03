@@ -1,10 +1,14 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  Bell,
   ClipboardList,
   History,
   LayoutDashboard,
+  Map,
   Settings,
+  ShoppingCart,
+  Store,
   UserCircle2,
 } from "lucide-react";
 import type { UserRole } from "@/types/auth";
@@ -35,6 +39,7 @@ export const portalConfigByRole: Record<UserRole, PortalConfig> = {
       { label: "Overview", to: "/dashboard/overview", icon: LayoutDashboard },
       { label: "Pickups", to: "/dashboard/pickups", icon: ClipboardList },
       { label: "History", to: "/dashboard/history", icon: History },
+      { label: "Notifications", to: "/dashboard/notifications", icon: Bell },
       { label: "Profile", to: "/dashboard/profile", icon: UserCircle2 },
       { label: "Settings", to: "/dashboard/settings", icon: Settings },
     ],
@@ -47,6 +52,8 @@ export const portalConfigByRole: Record<UserRole, PortalConfig> = {
     routePrefix: "/collector",
     navigation: [
       { label: "Overview", to: "/collector/overview", icon: LayoutDashboard },
+      { label: "Live Map", to: "/collector/map", icon: Map },
+      { label: "Notifications", to: "/collector/notifications", icon: Bell },
       { label: "Profile", to: "/collector/profile", icon: UserCircle2 },
       { label: "Settings", to: "/collector/settings", icon: Settings },
     ],
@@ -59,6 +66,10 @@ export const portalConfigByRole: Record<UserRole, PortalConfig> = {
     routePrefix: "/dealer",
     navigation: [
       { label: "Overview", to: "/dealer/overview", icon: LayoutDashboard },
+      { label: "Inventory", to: "/dealer/inventory", icon: ClipboardList },
+      { label: "Marketplace", to: "/dealer/marketplace", icon: Store },
+      { label: "Orders & History", to: "/dealer/orders", icon: ShoppingCart },
+      { label: "Notifications", to: "/dealer/notifications", icon: Bell },
       { label: "Profile", to: "/dealer/profile", icon: UserCircle2 },
       { label: "Settings", to: "/dealer/settings", icon: Settings },
     ],
@@ -72,6 +83,7 @@ export const portalConfigByRole: Record<UserRole, PortalConfig> = {
     navigation: [
       { label: "Overview", to: "/admin/overview", icon: LayoutDashboard },
       { label: "AI Analytics", to: "/admin/analytics", icon: BarChart3 },
+      { label: "Notifications", to: "/admin/notifications", icon: Bell },
       { label: "Profile", to: "/admin/profile", icon: UserCircle2 },
       { label: "Settings", to: "/admin/settings", icon: Settings },
     ],

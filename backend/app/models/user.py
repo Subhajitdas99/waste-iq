@@ -35,7 +35,16 @@ class User(Base):
         "PickupRequest", back_populates="citizen", cascade="all, delete-orphan"
     )
     collector_assignments = relationship("CollectorAssignment", back_populates="collector")
+    collector_location = relationship(
+        "CollectorLocation", back_populates="collector", uselist=False, cascade="all, delete-orphan"
+    )
+    collector_location_history = relationship(
+        "CollectorLocationHistory",
+        back_populates="collector",
+        cascade="all, delete-orphan",
+    )
     pickup_request_events = relationship("PickupRequestEvent", back_populates="actor")
     dealer_profile = relationship(
         "DealerProfile", back_populates="user", cascade="all, delete-orphan", uselist=False
     )
+    notifications = relationship("Notification", back_populates="user")

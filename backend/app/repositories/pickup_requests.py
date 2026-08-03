@@ -5,6 +5,7 @@ from app.models.collector_assignment import CollectorAssignment
 from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.pickup_request_event import PickupRequestEvent
 from app.models.user import User
+from app.services.location import nearest_search
 
 
 class PickupRequestRepository:
@@ -48,3 +49,27 @@ class PickupRequestRepository:
                 note=note,
             )
         )
+
+    def nearby_pickups_with_distance(
+        self,
+        db: Session,
+        latitude: float,
+        longitude: float,
+        radius_km: float,
+    ) -> list[tuple[PickupRequest, float]]:
+        """Pending (unassigned) pickup requests within ``radius_km`` of a point.
+
+        Returns ``(pickup_request, distance_km)`` pairs sorted nearest-first.
+        """
+        statement = self.base_query().where(
+            PickupRequest.status == PickupStatus.pending,
+            ~PickupRequest.assignment.has(),
+        )
+        requests = db.execute(statement).unique().scalars().all()
+        scored = nearest_search(
+            latitude,
+            longitude,
+            [(request.latitude, request.longitude) for request in requests],
+            radius_km,
+        )
+        return [(requests[index], distance_km) for index, distance_km in scored]

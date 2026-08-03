@@ -46,6 +46,11 @@ const CollectorPickupDetailsPage = lazy(() =>
     default: m.CollectorPickupDetailsPage,
   }))
 );
+const CollectorMapPage = lazy(() =>
+  import("../pages/dashboard/CollectorMapPage").then((m) => ({
+    default: m.CollectorMapPage,
+  }))
+);
 const DealerOverviewPage = lazy(() =>
   import("../pages/dashboard/DealerOverviewPage").then((m) => ({
     default: m.DealerOverviewPage,
@@ -59,6 +64,21 @@ const DealerInventoryPage = lazy(() =>
 const DealerProfilePage = lazy(() =>
   import("../pages/dashboard/DealerProfilePage").then((m) => ({
     default: m.DealerProfilePage,
+  }))
+);
+const MarketplacePage = lazy(() =>
+  import("../pages/dashboard/MarketplacePage").then((m) => ({
+    default: m.default,
+  }))
+);
+const MarketplaceDetailsPage = lazy(() =>
+  import("../pages/dashboard/MarketplaceDetailsPage").then((m) => ({
+    default: m.default,
+  }))
+);
+const OrderHistoryPage = lazy(() =>
+  import("../pages/dashboard/OrderHistoryPage").then((m) => ({
+    default: m.default,
   }))
 );
 const AdminOverviewPage = lazy(() =>
@@ -94,6 +114,11 @@ const PickupHistoryPage = lazy(() =>
 const ProfilePage = lazy(() =>
   import("../pages/dashboard/ProfilePage").then((m) => ({
     default: m.ProfilePage,
+  }))
+);
+const NotificationsPage = lazy(() =>
+  import("../pages/dashboard/NotificationsPage").then((m) => ({
+    default: m.default,
   }))
 );
 const RoleProfilePage = lazy(() =>
@@ -159,6 +184,7 @@ export const router = createBrowserRouter([
       { path: "pickups/new", element: lazyPage(NewPickupPage) },
       { path: "pickups/:id", element: lazyPage(PickupDetailsPage) },
       { path: "history", element: lazyPage(PickupHistoryPage) },
+      { path: "notifications", element: lazyPage(NotificationsPage) },
       { path: "profile", element: lazyPage(ProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],
@@ -173,7 +199,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="overview" replace /> },
       { path: "overview", element: lazyPage(CollectorOverviewPage) },
+      { path: "map", element: lazyPage(CollectorMapPage) },
       { path: "pickups/:id", element: lazyPage(CollectorPickupDetailsPage) },
+      { path: "notifications", element: lazyPage(NotificationsPage) },
       { path: "profile", element: lazyPage(RoleProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],
@@ -189,6 +217,10 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="overview" replace /> },
       { path: "overview", element: lazyPage(DealerOverviewPage) },
       { path: "inventory", element: lazyPage(DealerInventoryPage) },
+      { path: "marketplace", element: lazyPage(MarketplacePage) },
+      { path: "marketplace/:id", element: lazyPage(MarketplaceDetailsPage) },
+      { path: "orders", element: lazyPage(OrderHistoryPage) },
+      { path: "notifications", element: lazyPage(NotificationsPage) },
       { path: "profile", element: lazyPage(DealerProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],
@@ -204,6 +236,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="overview" replace /> },
       { path: "overview", element: lazyPage(AdminOverviewPage) },
       { path: "analytics", element: lazyPage(AIAnalyticsPage) },
+      { path: "notifications", element: lazyPage(NotificationsPage) },
       { path: "profile", element: lazyPage(RoleProfilePage) },
       { path: "settings", element: lazyPage(RoleSettingsPage) },
     ],

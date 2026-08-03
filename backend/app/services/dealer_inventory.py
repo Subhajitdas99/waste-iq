@@ -14,15 +14,11 @@ from app.schemas.dealer_inventory import (
     DealerInventoryRead,
     DealerInventoryUpdate,
 )
-from app.services.dealer_approval import is_dealer_approved
+from app.services.dealer_approval import ensure_approved_dealer
 
 
 def _ensure_approved_dealer(db: Session, current_user: User) -> None:
-    if not is_dealer_approved(db, current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dealer approval is required to manage inventory",
-        )
+    ensure_approved_dealer(db, current_user)
 
 
 def _to_schema(inventory: DealerInventory) -> DealerInventoryRead:

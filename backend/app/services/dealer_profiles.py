@@ -16,11 +16,13 @@ from app.services.dealer_approval import (
     is_dealer_approved,
     validate_approval_transition,
 )
+from app.services.notifications import NotificationDispatcher
 
 
 class DealerProfileService:
     def __init__(self, repository: DealerProfileRepository | None = None) -> None:
         self._repository = repository or DealerProfileRepository()
+        self._dispatcher = NotificationDispatcher()
 
     def get_profile(self, db: Session, dealer: User) -> DealerProfileRead | None:
         profile = self._repository.get_by_user_id(db, dealer.id)
@@ -116,6 +118,7 @@ class DealerProfileService:
             note="Profile submitted for review.",
             actor=dealer,
         )
+        self._dispatcher.notify_dealer_profile_submitted(db, profile)
         return _to_profile_schema(self._repository.save(db, profile))
 
     def is_approved(self, db: Session, dealer: User) -> bool:

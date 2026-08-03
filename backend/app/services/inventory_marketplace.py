@@ -12,13 +12,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.collector_assignment import CollectorAssignment
-from app.services.dealer_approval import is_dealer_approved
 from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 from app.models.inventory_lot_event import InventoryLotEvent, InventoryLotEventType
+from app.models.marketplace_transaction import (
+    MarketplaceTransactionStatus,
+    MarketplaceTransactionType,
+)
 from app.models.material_category import MaterialCategory
 from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.pricing_rule import PricingRule
 from app.models.user import User, UserRole
+from app.repositories.marketplace import create_transaction as create_marketplace_transaction
+from app.services.dealer_approval import ensure_approved_dealer
+from app.services.notifications import NotificationDispatcher
 from app.schemas.inventory import (
     DealerInventoryLotPageRead,
     DealerInventoryLotRead,
@@ -41,10 +47,11 @@ from app.schemas.inventory import (
 MONEY_PLACES = Decimal("0.01")
 RESERVATION_TTL_HOURS = 24
 logger = logging.getLogger(__name__)
+_dispatcher = NotificationDispatcher()
 
 
 @contextmanager
-def _commit_or_rollback(db: Session):
+def commit_or_rollback(db: Session):
     """Commit the active transaction, rolling back and re-raising on any error."""
     try:
         yield
@@ -54,17 +61,17 @@ def _commit_or_rollback(db: Session):
         raise
 
 
-def _utc_now() -> datetime:
+def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _to_decimal(value: float | Decimal) -> Decimal:
+def to_decimal(value: float | Decimal) -> Decimal:
     if isinstance(value, Decimal):
         return value.quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
     return Decimal(str(value)).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
 
 
-def _money_to_float(value: Decimal | None) -> float | None:
+def money_to_float(value: Decimal | None) -> float | None:
     if value is None:
         return None
     return float(value.quantize(MONEY_PLACES, rounding=ROUND_HALF_UP))
@@ -115,7 +122,7 @@ def _serialize_pricing_rule(rule: PricingRule) -> PricingRuleRead:
         material_category_id=rule.material_category_id,
         material_category_name=rule.material_category.name,
         city=rule.city,
-        unit_price_per_kg=_money_to_float(rule.unit_price_per_kg) or 0.0,
+        unit_price_per_kg=money_to_float(rule.unit_price_per_kg) or 0.0,
         currency_code=rule.currency_code,
         is_active=rule.is_active,
         effective_from=rule.effective_from,
@@ -140,8 +147,8 @@ def _serialize_inventory_lot(lot: InventoryLot) -> InventoryLotRead:
         material_category_name=lot.material_category.name,
         material_description=lot.material_description,
         weight_kg=round(float(lot.weight_kg), 2),
-        unit_price_per_kg_snapshot=_money_to_float(lot.unit_price_per_kg_snapshot) or 0.0,
-        total_listed_amount=_money_to_float(lot.total_listed_amount) or 0.0,
+        unit_price_per_kg_snapshot=money_to_float(lot.unit_price_per_kg_snapshot) or 0.0,
+        total_listed_amount=money_to_float(lot.total_listed_amount) or 0.0,
         pricing_rule_id=lot.pricing_rule_id,
         source_city=lot.source_city,
         source_address_snapshot=lot.source_address_snapshot,
@@ -165,8 +172,8 @@ def _serialize_dealer_lot(lot: InventoryLot) -> DealerInventoryLotRead:
         material_category_name=lot.material_category.name,
         material_description=lot.material_description,
         weight_kg=round(float(lot.weight_kg), 2),
-        unit_price_per_kg_snapshot=_money_to_float(lot.unit_price_per_kg_snapshot) or 0.0,
-        total_listed_amount=_money_to_float(lot.total_listed_amount) or 0.0,
+        unit_price_per_kg_snapshot=money_to_float(lot.unit_price_per_kg_snapshot) or 0.0,
+        total_listed_amount=money_to_float(lot.total_listed_amount) or 0.0,
         source_city=lot.source_city,
         status=lot.status.value,
         created_at=lot.created_at,
@@ -183,7 +190,7 @@ def _serialize_dealer_lot_detail(lot: InventoryLot) -> DealerMarketplaceLotDetai
         weight_kg=round(float(lot.weight_kg), 2),
         quality_grade=lot.quality_grade,
         source_city=lot.source_city,
-        total_listed_amount=_money_to_float(lot.total_listed_amount) or 0.0,
+        total_listed_amount=money_to_float(lot.total_listed_amount) or 0.0,
         currency_code=lot.pricing_rule.currency_code if lot.pricing_rule is not None else None,
         status=lot.status.value,
         reserved_at=lot.reserved_at,
@@ -204,12 +211,12 @@ def _serialize_archive_result(lot: InventoryLot) -> InventoryLotArchiveRead:
 
 
 def _build_lot_number_placeholder(pickup_request_id: int) -> str:
-    timestamp = _utc_now().strftime("%Y%m%d%H%M%S%f")
+    timestamp = utc_now().strftime("%Y%m%d%H%M%S%f")
     return f"PENDING-LOT-{pickup_request_id}-{timestamp}"
 
 
 def _generate_lot_number(lot_id: int) -> str:
-    year_part = _utc_now().year
+    year_part = utc_now().year
     return f"LOT-{year_part:04d}-{lot_id:06d}"
 
 
@@ -278,19 +285,11 @@ def _ensure_admin(user: User) -> None:
 
 
 def _ensure_approved_dealer(db: Session, dealer: User) -> None:
-    if dealer.role != UserRole.dealer:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only dealers can browse inventory"
-        )
-    if not is_dealer_approved(db, dealer):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dealer approval is required to browse inventory",
-        )
+    ensure_approved_dealer(db, dealer)
 
 
 def _get_active_pricing_rule(db: Session, material_category_id: int, city: str) -> PricingRule:
-    now = _utc_now()
+    now = utc_now()
     normalized_city = _normalize_city_for_pricing_lookup(city)
     rules = (
         db.execute(
@@ -367,7 +366,7 @@ def _ensure_valid_pricing_date_range(
         )
 
 
-def _create_lot_event(
+def create_lot_event(
     db: Session,
     lot: InventoryLot,
     *,
@@ -482,7 +481,7 @@ def create_pricing_rule(db: Session, admin: User, payload: PricingRuleCreate) ->
     rule = PricingRule(
         material_category_id=payload.material_category_id,
         city=city,
-        unit_price_per_kg=_to_decimal(payload.unit_price_per_kg),
+        unit_price_per_kg=to_decimal(payload.unit_price_per_kg),
         currency_code=payload.currency_code.upper(),
         is_active=payload.is_active,
         effective_from=payload.effective_from,
@@ -519,7 +518,7 @@ def update_pricing_rule(
 
     for field, value in update_data.items():
         if field == "unit_price_per_kg":
-            setattr(rule, field, _to_decimal(value))
+            setattr(rule, field, to_decimal(value))
         elif field == "currency_code" and value is not None:
             setattr(rule, field, value.upper())
         else:
@@ -649,8 +648,8 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
     source_city = _extract_city_from_address(pickup.address)
     pricing_rule = _get_active_pricing_rule(db, payload.material_category_id, source_city)
     weight_kg = round(float(pickup.assignment.weight_kg or 0), 2)
-    unit_price = _to_decimal(pricing_rule.unit_price_per_kg)
-    total_amount = _to_decimal(Decimal(str(weight_kg)) * unit_price)
+    unit_price = to_decimal(pricing_rule.unit_price_per_kg)
+    total_amount = to_decimal(Decimal(str(weight_kg)) * unit_price)
 
     lot = InventoryLot(
         lot_number=_build_lot_number_placeholder(pickup.id),
@@ -670,11 +669,11 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
         updated_by=admin.id,
     )
     try:
-        with _commit_or_rollback(db):
+        with commit_or_rollback(db):
             db.add(lot)
             db.flush()
             lot.lot_number = _generate_lot_number(lot.id)
-            _create_lot_event(
+            create_lot_event(
                 db,
                 lot,
                 event_type=InventoryLotEventType.created,
@@ -688,6 +687,7 @@ def create_inventory_lot(db: Session, admin: User, payload: InventoryLotCreate) 
                     "lot_number": lot.lot_number,
                 },
             )
+            _dispatcher.notify_inventory_created(db, lot)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -840,9 +840,9 @@ def update_inventory_lot(
     if not changed_fields:
         return _serialize_inventory_lot(lot)
 
-    with _commit_or_rollback(db):
+    with commit_or_rollback(db):
         lot.updated_by = admin.id
-        _create_lot_event(
+        create_lot_event(
             db,
             lot,
             event_type=InventoryLotEventType.updated,
@@ -866,13 +866,13 @@ def archive_inventory_lot(
     _ensure_admin(admin)
     lot = _get_lot_or_404(db, lot_id)
     if lot.archived_at is None:
-        with _commit_or_rollback(db):
+        with commit_or_rollback(db):
             archive_reason = _normalize_optional_text(payload.archive_reason)
-            lot.archived_at = _utc_now()
+            lot.archived_at = utc_now()
             lot.archive_reason = archive_reason
             lot.visibility = InventoryLotVisibility.hidden
             lot.updated_by = admin.id
-            _create_lot_event(
+            create_lot_event(
                 db,
                 lot,
                 event_type=InventoryLotEventType.archived,
@@ -891,13 +891,13 @@ def restore_inventory_lot(db: Session, admin: User, lot_id: int) -> InventoryLot
     _ensure_admin(admin)
     lot = _get_lot_or_404(db, lot_id)
     if lot.archived_at is not None:
-        with _commit_or_rollback(db):
+        with commit_or_rollback(db):
             previous_archive_reason = lot.archive_reason
             lot.archived_at = None
             lot.archive_reason = None
             lot.visibility = InventoryLotVisibility.visible
             lot.updated_by = admin.id
-            _create_lot_event(
+            create_lot_event(
                 db,
                 lot,
                 event_type=InventoryLotEventType.restored,
@@ -918,7 +918,7 @@ def list_inventory_lot_events(db: Session, lot_id: int) -> list[InventoryLotEven
 
 
 def release_expired_reservations(db: Session) -> int:
-    now = _utc_now()
+    now = utc_now()
     expired_lots = (
         db.execute(
             select(InventoryLot).where(
@@ -933,7 +933,7 @@ def release_expired_reservations(db: Session) -> int:
     if not expired_lots:
         return 0
 
-    with _commit_or_rollback(db):
+    with commit_or_rollback(db):
         for lot in expired_lots:
             previous_dealer_id = lot.reserved_by_dealer_id
             previous_reserved_at = lot.reserved_at
@@ -942,7 +942,7 @@ def release_expired_reservations(db: Session) -> int:
             lot.reserved_by_dealer_id = None
             lot.reserved_at = None
             lot.reservation_expires_at = None
-            _create_lot_event(
+            create_lot_event(
                 db,
                 lot,
                 event_type=InventoryLotEventType.reservation_expired,
@@ -962,6 +962,22 @@ def release_expired_reservations(db: Session) -> int:
                     ),
                 },
             )
+            if previous_dealer_id is not None:
+                create_marketplace_transaction(
+                    db,
+                    dealer_id=previous_dealer_id,
+                    inventory_lot_id=lot.id,
+                    order_id=None,
+                    transaction_type=MarketplaceTransactionType.reservation_expired,
+                    status=MarketplaceTransactionStatus.expired,
+                    quantity_kg=round(float(lot.weight_kg), 2),
+                    unit_price_per_kg_snapshot=to_decimal(lot.unit_price_per_kg_snapshot),
+                    total_amount=to_decimal(lot.total_listed_amount),
+                    currency_code=(
+                        lot.pricing_rule.currency_code if lot.pricing_rule is not None else "INR"
+                    ),
+                )
+                _dispatcher.notify_reservation_expired(db, lot, previous_dealer_id)
 
     return len(expired_lots)
 
@@ -1043,15 +1059,20 @@ def get_inventory_lot_for_dealer(
     return _serialize_dealer_lot_detail(lot)
 
 
-def reserve_inventory_lot_for_dealer(
-    db: Session, dealer: User, lot_id: int
-) -> DealerMarketplaceLotDetailRead:
+def reserve_inventory_lot(db: Session, dealer: User, lot_id: int) -> InventoryLot:
+    """Reserve a lot for an approved dealer under a 24-hour hold.
+
+    Shared by the `/dealer/inventory-lots/{id}/reserve` and
+    `/marketplace/inventory/{id}/reserve` endpoints so the reservation
+    business rules live in exactly one place. The row lock plus the
+    status guards prevent double reservations and race conditions.
+    """
     _ensure_approved_dealer(db, dealer)
     release_expired_reservations(db)
-    now = _utc_now()
+    now = utc_now()
     expires_at = now + timedelta(hours=RESERVATION_TTL_HOURS)
 
-    with _commit_or_rollback(db):
+    with commit_or_rollback(db):
         lot = db.execute(
             _dealer_lot_detail_statement().where(InventoryLot.id == lot_id).with_for_update()
         ).scalar_one_or_none()
@@ -1082,7 +1103,7 @@ def reserve_inventory_lot_for_dealer(
         lot.reserved_at = now
         lot.reservation_expires_at = expires_at
         lot.updated_by = dealer.id
-        _create_lot_event(
+        create_lot_event(
             db,
             lot,
             event_type=InventoryLotEventType.reserved,
@@ -1096,6 +1117,25 @@ def reserve_inventory_lot_for_dealer(
                 "reservation_expires_at": expires_at.isoformat(),
             },
         )
+        create_marketplace_transaction(
+            db,
+            dealer_id=dealer.id,
+            inventory_lot_id=lot.id,
+            order_id=None,
+            transaction_type=MarketplaceTransactionType.reservation,
+            status=MarketplaceTransactionStatus.completed,
+            quantity_kg=round(float(lot.weight_kg), 2),
+            unit_price_per_kg_snapshot=to_decimal(lot.unit_price_per_kg_snapshot),
+            total_amount=to_decimal(lot.total_listed_amount),
+            currency_code=lot.pricing_rule.currency_code if lot.pricing_rule is not None else "INR",
+        )
+        _dispatcher.notify_inventory_reserved(db, lot, dealer)
 
     lot = db.execute(_dealer_lot_detail_statement().where(InventoryLot.id == lot_id)).scalar_one()
-    return _serialize_dealer_lot_detail(lot)
+    return lot
+
+
+def reserve_inventory_lot_for_dealer(
+    db: Session, dealer: User, lot_id: int
+) -> DealerMarketplaceLotDetailRead:
+    return _serialize_dealer_lot_detail(reserve_inventory_lot(db, dealer, lot_id))

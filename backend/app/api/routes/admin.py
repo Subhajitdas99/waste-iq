@@ -10,13 +10,19 @@ from app.schemas.dealer import (
     DealerApprovalActionRead,
     DealerRejectRequest,
 )
+from app.schemas.notification import (
+    NotificationBroadcastRead,
+    NotificationBroadcastRequest,
+)
 from app.schemas.user import UserRead
 from app.services.admin import get_analytics, list_users
 from app.services.dealer_approval import AdminDealerApprovalService
+from app.services.notifications import NotificationBroadcaster
 
 router = APIRouter()
 
 _admin_dealer_approval_service = AdminDealerApprovalService()
+_notification_broadcaster = NotificationBroadcaster()
 
 
 @router.get("/users", response_model=list[UserRead])
@@ -98,3 +104,12 @@ def admin_reject_dealer(
     return _admin_dealer_approval_service.reject_dealer(
         db, current_user, dealer_user_id, payload.reason
     )
+
+
+@router.post("/notifications/broadcast", response_model=NotificationBroadcastRead)
+def admin_broadcast_notification(
+    payload: NotificationBroadcastRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> NotificationBroadcastRead:
+    return _notification_broadcaster.broadcast(db, payload=payload, broadcast_type=payload.type)

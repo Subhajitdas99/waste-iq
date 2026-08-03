@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  Bell,
   Leaf,
   LogOut,
   Menu,
@@ -11,6 +10,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { Button } from "@/components/ui/button";
+import { NotificationDropdown } from "@/components/dashboard/notifications/NotificationDropdown";
 import { getPortalConfig } from "@/lib/portal";
 import { cn } from "@/lib/utils";
 
@@ -140,10 +140,9 @@ export function DashboardLayout() {
                 )}
               </Button>
 
-              <div className="hidden rounded-full border bg-card/70 px-3 py-2 text-sm md:flex md:items-center md:gap-2">
-                <Bell className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Notifications unavailable</span>
-              </div>
+              <NotificationDropdown
+                notificationsPath={`${getPortalConfig(user?.role ?? "citizen").routePrefix}/notifications`}
+              />
 
               <div className="hidden rounded-full border bg-card/70 px-4 py-2 text-sm md:block">
                 <span className="font-medium">{user?.name ?? user?.email}</span>

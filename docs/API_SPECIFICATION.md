@@ -17,6 +17,7 @@
 5. [Collector Endpoints](#5-collector-endpoints)
 6. [Dealer Profile Endpoints](#6-dealer-profile-endpoints)
 7. [Dealer Inventory Marketplace](#7-dealer-inventory-marketplace)
+7a. [Notification Endpoints](#7a-notification-endpoints)
 8. [Admin Endpoints](#8-admin-endpoints)
 9. [Admin Inventory Management](#9-admin-inventory-management)
 10. [Health Endpoints](#10-health-endpoints)
@@ -557,6 +558,131 @@ Complete a pickup by recording the waste weight. Transitions status to `complete
 
 ---
 
+### Collector Live Map & Route Tracking (Issue #13)
+
+All map endpoints require `Authorization: Bearer <token>` with `role = collector`.
+
+The collector's position is stored in a dedicated `collector_locations` table (latest position per collector) and every report is appended to `collector_location_history`. When a collector has not reported a position yet, `GET /collector/location` returns `404`.
+
+#### `GET /collector/map`
+
+Returns a single combined payload for the live-map page: the collector's current position, in-range pickup markers, the ordered route over the collector's accepted/assigned pickups, and nearby pickup request summaries.
+
+**Query Parameters:**
+
+| Field | Type | Default | Constraints |
+|-------|------|---------|-------------|
+| `latitude` | float | collector's stored value | `-90` – `90` |
+| `longitude` | float | collector's stored value | `-180` – `180` |
+| `radius_km` | float | `5` | `0` – `200` |
+
+**Response `200 OK`:**
+
+```json
+{
+  "collector": { "latitude": 22.5726, "longitude": 88.3639, "accuracy": 12.0, "updated_at": "2026-08-01T10:00:00Z" },
+  "pickups": [
+    { "id": 3, "status": "pending", "waste_type": "Cardboard", "address": "12 Green Street, Kolkata", "latitude": 22.5738, "longitude": 88.3651, "distance_km": 1.2, "eta_minutes": 6 }
+  ],
+  "route": {
+    "stops": [
+      { "pickup_id": 3, "order": 1, "status": "pending", "address": "12 Green Street, Kolkata", "waste_type": "Cardboard", "latitude": 22.5738, "longitude": 88.3651, "distance_from_previous_km": 1.2, "eta_minutes": 6 }
+    ],
+    "total_distance_km": 1.2,
+    "total_duration_minutes": 6,
+    "origin_latitude": 22.5726,
+    "origin_longitude": 88.3639
+  },
+  "nearby_pickups": [],
+  "radius_km": 5
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Live-map payload returned |
+| `403` | Not a collector |
+
+#### `GET /collector/location`
+
+Returns the collector's most recently reported position.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Position returned as `CollectorLocationRead` |
+| `403` | Not a collector |
+| `404` | Collector has not reported a location yet |
+
+#### `POST /collector/location`
+
+Upserts the collector's current position. Every call also appends a row to `collector_location_history`.
+
+**Request Body:**
+
+```json
+{ "latitude": 22.5212, "longitude": 88.3513, "accuracy": 9 }
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `latitude` | float | ✅ | `-90` – `90` |
+| `longitude` | float | ✅ | `-180` – `180` |
+| `accuracy` | float | ❌ | `>= 0`, meters |
+
+**Response `200 OK`:** Updated `CollectorLocationRead` with a fresh `updated_at`.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Location recorded |
+| `403` | Not a collector |
+| `422` | Coordinates outside valid ranges |
+
+#### `GET /collector/route`
+
+Returns the ordered, distance/travel-time-weighted route over the collector's assigned pickups (nearest-neighbour heuristic), starting from the collector's current position.
+
+| Field | Type | Default |
+|-------|------|---------|
+| `latitude` / `longitude` | float | collector's stored position |
+
+**Response `200 OK`:** `RouteSummaryRead` — `stops[]`, `total_distance_km`, `total_duration_minutes`, `origin_latitude`, `origin_longitude`. When the collector has no assigned pickups, `stops` is empty.
+
+#### `GET /collector/nearby-pickups`
+
+Pending pickup requests within the search radius of the collector, ordered by distance (ascending).
+
+| Field | Type | Default | Constraints |
+|-------|------|---------|-------------|
+| `latitude`/`longitude` | float | collector's position | valid lat/lon ranges |
+| `radius_km` | float | `5` | `0` – `200` |
+
+**Response `200 OK`:** `NearbyPickupRequestRead[]` with computed `distance_km`.
+
+#### `GET /collector/navigation/{pickup_id}`
+
+Step-by-step navigation between the collector's position and a specific pickup. Returns a route geometry line together with the pickup record.
+
+**Response `200 OK`:**
+
+```json
+{
+  "pickup": { },
+  "distance_km": 2.1,
+  "duration_minutes": 11,
+  "origin_latitude": 22.5726,
+  "origin_longitude": 88.3639,
+  "geometry": [ { "latitude": 22.5726, "longitude": 88.3639 }, { "latitude": 22.5738, "longitude": 88.3651 } ]
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Navigation route returned |
+| `403` | Not a collector |
+| `404` | Pickup not found |
+
+---
+
 ## 6. Dealer Profile Endpoints
 
 All dealer profile endpoints require `Authorization: Bearer <token>` with `role = dealer`.
@@ -726,62 +852,74 @@ Retrieve the approval timeline for the authenticated dealer's profile
 
 > 🔒 All marketplace endpoints require `role = dealer` AND `approval_status = approved`.
 
-### `GET /dealer/inventory/lots`
+### `GET /marketplace/inventory`
 
-Browse available inventory lots on the marketplace.
+Browse available inventory lots on the marketplace with pagination, filtering, and search.
 
 | Query Param | Type | Required | Description |
 |-------------|------|----------|-------------|
-| `city` | string | ❌ | Filter by source city |
+| `page` | integer | ❌ | Page number (default `1`) |
+| `page_size` | integer | ❌ | Items per page (default `20`, max `50`) |
+| `sort_by` | string | ❌ | Sort field (default `created_at`) |
+| `sort_order` | string | ❌ | `asc` \| `desc` (default `desc`) |
 | `material_category_id` | integer | ❌ | Filter by material category |
-| `quality_grade` | string | ❌ | Filter by quality grade (e.g., `Grade A`) |
-| `min_weight_kg` | float | ❌ | Minimum lot weight |
-| `max_weight_kg` | float | ❌ | Maximum lot weight |
-
-**Response `200 OK`:**
-
-```json
-[
-  {
-    "id": 5,
-    "lot_number": "WIQ-202606-00005",
-    "material_category": {"id": 2, "code": "PAPER", "name": "Newspaper & Cardboard"},
-    "weight_kg": 45.2,
-    "unit_price_per_kg_snapshot": "3.50",
-    "total_listed_amount": "158.20",
-    "source_city": "Mumbai",
-    "quality_grade": "Grade A",
-    "status": "available",
-    "created_at": "2026-06-10T14:00:00Z"
-  }
-]
-```
-
----
-
-### `GET /dealer/inventory/lots/{lot_id}`
-
-Get full details of a specific inventory lot.
-
-**Response `200 OK`:** Full `InventoryLotRead` including `material_description`, `source_address_snapshot`, reservation info.
-
----
-
-### `POST /dealer/inventory/lots/{lot_id}/reserve`
-
-Reserve a lot for 24 hours. Only available lots can be reserved.
+| `city` | string | ❌ | Filter by source city |
+| `search` | string | ❌ | Free-text search on lot number, material description/category, seller, city |
 
 **Response `200 OK`:**
 
 ```json
 {
-  "id": 5,
-  "lot_number": "WIQ-202606-00005",
-  "status": "reserved",
-  "reserved_at": "2026-06-15T10:00:00Z",
-  "reservation_expires_at": "2026-06-16T10:00:00Z"
+  "items": [
+    {
+      "id": 5,
+      "lot_number": "WIQ-202606-00005",
+      "material_category_id": 2,
+      "material_category_name": "Newspaper & Cardboard",
+      "material_description": null,
+      "weight_kg": 45.2,
+      "unit_price_per_kg_snapshot": 3.5,
+      "total_listed_amount": 158.2,
+      "currency_code": "INR",
+      "source_city": "Mumbai",
+      "quality_grade": "Grade A",
+      "status": "available",
+      "seller_name": "Green Scrap Co",
+      "reserved_at": null,
+      "reservation_expires_at": null,
+      "is_reserved_by_me": false,
+      "created_at": "2026-06-10T14:00:00Z"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total_items": 1,
+  "total_pages": 1
 }
 ```
+
+Sold lots and lots reserved by other dealers are hidden. Lots reserved by the caller are shown with `status = "reserved"` and `is_reserved_by_me = true`.
+
+---
+
+### `GET /marketplace/inventory/{lot_id}`
+
+Get full details of a specific inventory lot.
+
+**Response `200 OK`:** A `MarketplaceInventoryRead` (same shape as the list items above).
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Lot found |
+| `404` | Lot not found, sold, or reserved by another dealer |
+
+---
+
+### `POST /marketplace/inventory/{lot_id}/reserve`
+
+Reserve a lot for 24 hours. Only available lots can be reserved.
+
+**Response `200 OK`:** `MarketplaceInventoryRead` with `status = "reserved"`, `reserved_at`, `reservation_expires_at`, and `is_reserved_by_me = true`.
 
 | Status | Scenario |
 |--------|----------|
@@ -791,26 +929,178 @@ Reserve a lot for 24 hours. Only available lots can be reserved.
 
 ---
 
-### `POST /dealer/inventory/lots/{lot_id}/purchase`
+### `POST /marketplace/inventory/{lot_id}/cancel-reservation`
 
-Confirm purchase of a reserved lot. Must be the dealer who holds the reservation.
+Release a reservation held by the calling dealer.
 
-**Response `200 OK`:**
-
-```json
-{
-  "id": 5,
-  "lot_number": "WIQ-202606-00005",
-  "status": "sold",
-  "total_listed_amount": "158.20"
-}
-```
+**Response `200 OK`:** `MarketplaceInventoryRead` with `status = "available"` again.
 
 | Status | Scenario |
 |--------|----------|
-| `200` | Purchase confirmed |
+| `200` | Reservation cancelled |
+| `404` | Lot not found |
+| `409` | Lot is not reserved, or is reserved by another dealer |
+
+---
+
+### `POST /marketplace/inventory/{lot_id}/purchase`
+
+Confirm purchase of a reserved lot. Must be the dealer who holds the reservation.
+
+**Response `201 Created`:** `MarketplaceOrderDetailRead` — the order with an auto-generated `order_number`, the lot now `sold`, and its `transactions` (the original `reservation` transaction plus the new `purchase` transaction).
+
+| Status | Scenario |
+|--------|----------|
+| `201` | Purchase confirmed |
 | `404` | Lot not found |
 | `409` | Reservation expired or held by another dealer |
+
+---
+
+### `GET /marketplace/orders`
+
+List the calling dealer's purchase orders.
+
+| Query Param | Type | Required | Description |
+|-------------|------|----------|-------------|
+| `page` | integer | ❌ | Page number (default `1`) |
+| `page_size` | integer | ❌ | Items per page (default `20`, max `50`) |
+
+**Response `200 OK`:** `MarketplaceOrderPageRead` — `{ items: [MarketplaceOrderRead], page, page_size, total_items, total_pages }`, ordered newest-first.
+
+---
+
+### `GET /marketplace/orders/{order_id}`
+
+Get a single order with its full transaction history.
+
+**Response `200 OK`:** `MarketplaceOrderDetailRead`.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Order found |
+| `404` | Order not found or belongs to another dealer |
+
+---
+
+### `GET /marketplace/transactions`
+
+List the calling dealer's marketplace transactions (reservations, cancellations, expiries, purchases).
+
+| Query Param | Type | Required | Description |
+|-------------|------|----------|-------------|
+| `page` | integer | ❌ | Page number (default `1`) |
+| `page_size` | integer | ❌ | Items per page (default `20`, max `50`) |
+| `transaction_type` | string | ❌ | `reservation` \| `cancellation` \| `reservation_expired` \| `purchase` |
+
+**Response `200 OK`:** `MarketplaceTransactionPageRead` — `{ items: [MarketplaceTransactionRead], page, page_size, total_items, total_pages }`, ordered newest-first.
+
+---
+
+> ℹ️ Legacy browse/reserve endpoints remain available for backward compatibility at `GET /dealer/inventory-lots`, `GET /dealer/inventory-lots/{lot_id}`, and `POST /dealer/inventory-lots/{lot_id}/reserve`.
+
+---
+
+## 7a. Notification Endpoints
+
+Central in-app notification inbox (Issue #14). All notification endpoints accept any authenticated role (`citizen`, `collector`, `dealer`, `admin`); every response is **scoped to the calling user** — a user can never read, mark, or delete another user's notifications (404 on ownership mismatch). Notifications are also auto-generated by the platform: pickup lifecycle events, dealer profile submit/approve/reject, inventory create/reserve/cancel/purchase/expire, plus `system` and `admin_announcement` types.
+
+### `GET /notifications`
+
+List the calling user's notifications, newest-first.
+
+| Query Param | Type | Required | Description |
+|-------------|------|----------|-------------|
+| `page` | integer | ❌ | Page number (default `1`) |
+| `page_size` | integer | ❌ | Items per page (default `20`, max `50`) |
+| `status` | string | ❌ | `unread` \| `read`; omitting returns all |
+
+**Response `200 OK`:** `NotificationPageRead` — `{ items: [NotificationRead], page, page_size, total_items, total_pages }`.
+
+**Errors:** `400` invalid `status` value.
+
+### `GET /notifications/unread/count`
+
+Unread count for the calling user (used by the header bell badge).
+
+**Response `200 OK`:** `NotificationUnreadCountRead` — `{ unread_count: number }`.
+
+### `GET /notifications/unread`
+
+List the calling user's unread notifications, newest-first.
+
+| Query Param | Type | Required | Description |
+|-------------|------|----------|-------------|
+| `limit` | integer | ❌ | Max items (default `50`, max `100`) |
+
+**Response `200 OK`:** array of `NotificationRead`.
+
+### `GET /notifications/{notification_id}`
+
+Fetch a single notification (ownership-scoped).
+
+**Response `200 OK`:** `NotificationRead`. **Errors:** `404` not found / not owned by the caller.
+
+### `POST /notifications/{notification_id}/read`
+
+Mark one notification as read. Idempotent — marking an already-read notification is a no-op.
+
+**Response `200 OK`:** the updated `NotificationRead` (now `status: "read"` with `read_at` set).
+
+**Errors:** `404` not found / not owned by the caller.
+
+### `POST /notifications/read-all`
+
+Mark **all** of the calling user's notifications as read.
+
+**Response `200 OK`:** `NotificationBulkActionRead` — `{ affected: number }`.
+
+### `DELETE /notifications/{notification_id}`
+
+Delete a single notification (ownership-scoped).
+
+**Response `204 No Content`.** **Errors:** `404` not found / not owned by the caller.
+
+### `DELETE /notifications/read`
+
+Delete all of the calling user's read notifications ("clear read").
+
+**Response `200 OK`:** `NotificationBulkActionRead` — `{ affected: number }`.
+
+### `NotificationRead` schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | integer | Notification ID |
+| `user_id` | integer | Recipient user ID |
+| `type` | string | One of: `pickup_created`, `pickup_accepted`, `pickup_started`, `pickup_collected`, `pickup_completed`, `dealer_profile_submitted`, `dealer_profile_approved`, `dealer_profile_rejected`, `inventory_created`, `inventory_reserved`, `reservation_cancelled`, `reservation_expired`, `inventory_purchased`, `admin_announcement`, `system` |
+| `title` | string | Short title (e.g., "Pickup request created") |
+| `message` | string | Full message copy |
+| `link` | string \| null | Deep link (frontend route, e.g., `/dashboard/pickups/3`) |
+| `metadata_json` | object \| null | Structured metadata (e.g., `{ "pickup_request_id": 3 }`) |
+| `status` | string | `unread` \| `read` |
+| `read_at` | string \| null | ISO timestamp when read |
+| `created_at` | string | ISO timestamp |
+
+### Admin broadcast
+
+### `POST /admin/notifications/broadcast`
+
+Broadcast an announcement to one or more roles. Admin-only.
+
+**Request body:** `NotificationBroadcastRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | ✅ | Announcement title |
+| `message` | string | ✅ | Announcement body |
+| `link` | string \| null | ❌ | Optional deep link |
+| `type` | string | ❌ | `admin_announcement` (default) or any `system`-class value |
+| `recipient_roles` | string[] | ❌ | `citizen` \| `collector` \| `dealer` \| `admin`; omitting targets **all** users |
+
+**Response `200 OK`:** `NotificationBroadcastRead` — `{ type, title, message, link, recipients_count }` where `recipients_count` is the number of users notified.
+
+**Errors:** `400` invalid role in `recipient_roles`; `403` non-admin caller.
 
 ---
 

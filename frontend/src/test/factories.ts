@@ -21,8 +21,31 @@ import type {
   MonthlyStat,
 } from "@/types/analytics";
 import type { DealerInventoryLot, DealerInventoryLotPage } from "@/types/inventory";
+import type {
+  MarketplaceInventoryLot,
+  MarketplaceInventoryPage,
+  MarketplaceOrder,
+  MarketplaceOrderDetail,
+  MarketplaceOrderPage,
+  MarketplaceTransaction,
+  MarketplaceTransactionPage,
+  MarketplaceTransactionType,
+} from "@/types/marketplace";
 import type { CitizenRequestSummary, PickupRequest, PickupRequestDetail, PickupStatus, PickupTimelineEvent } from "@/types/pickup";
 import type { CollectorSummary } from "@/types/collector";
+import type {
+  AppNotification,
+  NotificationPage,
+} from "@/types/notification";
+import type {
+  CollectorLocation,
+  CollectorMapPayload,
+  Navigation,
+  NearbyPickup,
+  PickupMarker,
+  RouteStop,
+  RouteSummary,
+} from "@/types/map";
 
 export interface TestTokenOptions {
   sub?: string;
@@ -169,6 +192,127 @@ export function createCollectorSummary(overrides: Partial<CollectorSummary> = {}
   };
 }
 
+export function createCollectorLocation(
+  overrides: Partial<CollectorLocation> = {},
+): CollectorLocation {
+  return {
+    latitude: 22.5726,
+    longitude: 88.3639,
+    accuracy: 12,
+    updated_at: "2026-08-01T10:00:00Z",
+    ...overrides,
+  };
+}
+
+export function createPickupMarker(overrides: Partial<PickupMarker> = {}): PickupMarker {
+  return {
+    id: 3,
+    status: "pending",
+    waste_type: "Cardboard",
+    address: "12 Green Street, Kolkata",
+    latitude: 22.5738,
+    longitude: 88.3651,
+    distance_km: 1.2,
+    eta_minutes: 6,
+    ...overrides,
+  };
+}
+
+export function createRouteStop(overrides: Partial<RouteStop> = {}): RouteStop {
+  return {
+    pickup_id: 3,
+    order: 1,
+    status: "pending",
+    address: "12 Green Street, Kolkata",
+    waste_type: "Cardboard",
+    latitude: 22.5738,
+    longitude: 88.3651,
+    distance_from_previous_km: 1.2,
+    eta_minutes: 6,
+    ...overrides,
+  };
+}
+
+export function createRouteSummary(overrides: Partial<RouteSummary> = {}): RouteSummary {
+  return {
+    stops: [
+      createRouteStop(),
+      createRouteStop({
+        pickup_id: 5,
+        order: 2,
+        status: "accepted",
+        address: "5 Paper Lane, Kolkata",
+        waste_type: "Paper",
+        latitude: 22.5777,
+        longitude: 88.3719,
+        distance_from_previous_km: 2.1,
+        eta_minutes: 9,
+      }),
+    ],
+    total_distance_km: 3.3,
+    total_duration_minutes: 15,
+    origin_latitude: 22.5726,
+    origin_longitude: 88.3639,
+    ...overrides,
+  };
+}
+
+export function createNearbyPickup(overrides: Partial<NearbyPickup> = {}): NearbyPickup {
+  return {
+    ...createPickupRequest({ id: 3, waste_type: "Cardboard" }),
+    distance_km: 0.8,
+    ...overrides,
+  };
+}
+
+export function createCollectorMapPayload(
+  overrides: Partial<CollectorMapPayload> = {},
+): CollectorMapPayload {
+  return {
+    collector: createCollectorLocation(),
+    pickups: [
+      createPickupMarker(),
+      createPickupMarker({
+        id: 5,
+        status: "accepted",
+        waste_type: "Paper",
+        latitude: 22.5777,
+        longitude: 88.3719,
+        distance_km: 0.6,
+        eta_minutes: 4,
+      }),
+    ],
+    route: createRouteSummary(),
+    nearby_pickups: [
+      createNearbyPickup(),
+      createNearbyPickup({
+        id: 4,
+        waste_type: "Glass bottles",
+        address: "88 Park Avenue, Kolkata",
+        distance_km: 2.3,
+      }),
+    ],
+    radius_km: 5,
+    ...overrides,
+  };
+}
+
+export function createNavigation(overrides: Partial<Navigation> = {}): Navigation {
+  return {
+    pickup: createPickupRequest({ id: 3, waste_type: "Cardboard" }),
+    distance_km: 2.1,
+    duration_minutes: 11,
+    origin_latitude: 22.5726,
+    origin_longitude: 88.3639,
+    geometry: [
+      { latitude: 22.5726, longitude: 88.3639 },
+      { latitude: 22.5732, longitude: 88.3644 },
+      { latitude: 22.5738, longitude: 88.3651 },
+    ],
+    ...overrides,
+  };
+}
+
 export function createDealerLot(overrides: Partial<DealerInventoryLot> = {}): DealerInventoryLot {
   return {
     id: 101,
@@ -190,6 +334,134 @@ export function createDealerLotPage(overrides: Partial<DealerInventoryLotPage> =
     items: [createDealerLot()],
     page: 1,
     page_size: 12,
+    total_items: 1,
+    total_pages: 1,
+    ...overrides,
+  };
+}
+
+const MARKETPLACE_LOT_DEFAULTS: MarketplaceInventoryLot = {
+  id: 201,
+  lot_number: "LOT-2026-000201",
+  material_category_id: 1,
+  material_category_name: "PET Plastic",
+  material_description: "Mixed PET bottles",
+  weight_kg: 42.5,
+  unit_price_per_kg_snapshot: 18.0,
+  total_listed_amount: 765.0,
+  currency_code: "INR",
+  source_city: "Kolkata",
+  quality_grade: null,
+  status: "available",
+  seller_name: "Test Citizen",
+  reserved_at: null,
+  reservation_expires_at: null,
+  is_reserved_by_me: false,
+  created_at: "2026-01-12T10:00:00Z",
+};
+
+export function createMarketplaceLot(
+  overrides: Partial<MarketplaceInventoryLot> = {},
+): MarketplaceInventoryLot {
+  return { ...MARKETPLACE_LOT_DEFAULTS, ...overrides };
+}
+
+export function createMarketplaceLotPage(
+  overrides: Partial<MarketplaceInventoryPage> = {},
+): MarketplaceInventoryPage {
+  return {
+    items: [createMarketplaceLot()],
+    page: 1,
+    page_size: 12,
+    total_items: 1,
+    total_pages: 1,
+    ...overrides,
+  };
+}
+
+export function createMarketplaceTransaction(
+  overrides: Partial<MarketplaceTransaction> = {},
+): MarketplaceTransaction {
+  return {
+    id: 501,
+    order_id: null,
+    inventory_lot_id: 201,
+    lot_number: "LOT-2026-000201",
+    material_category_name: "PET Plastic",
+    dealer_id: 3,
+    dealer_name: "Test Dealer",
+    transaction_type: "reservation" as MarketplaceTransactionType,
+    status: "completed",
+    quantity_kg: 42.5,
+    unit_price_per_kg_snapshot: 18.0,
+    total_amount: 765.0,
+    currency_code: "INR",
+    created_at: "2026-01-12T10:05:00Z",
+    ...overrides,
+  };
+}
+
+export function createMarketplaceTransactionPage(
+  overrides: Partial<MarketplaceTransactionPage> = {},
+): MarketplaceTransactionPage {
+  return {
+    items: [createMarketplaceTransaction()],
+    page: 1,
+    page_size: 20,
+    total_items: 1,
+    total_pages: 1,
+    ...overrides,
+  };
+}
+
+export function createMarketplaceOrder(
+  overrides: Partial<MarketplaceOrder> = {},
+): MarketplaceOrder {
+  return {
+    id: 301,
+    order_number: "ORD-2026-000301",
+    inventory_lot_id: 201,
+    lot_number: "LOT-2026-000201",
+    material_category_id: 1,
+    material_category_name: "PET Plastic",
+    material_description: "Mixed PET bottles",
+    dealer_id: 3,
+    dealer_name: "Test Dealer",
+    quantity_kg: 42.5,
+    unit_price_per_kg_snapshot: 18.0,
+    total_amount: 765.0,
+    currency_code: "INR",
+    status: "completed",
+    created_at: "2026-01-12T10:05:00Z",
+    updated_at: "2026-01-12T10:05:00Z",
+    ...overrides,
+  };
+}
+
+export function createMarketplaceOrderDetail(
+  overrides: Partial<MarketplaceOrderDetail> = {},
+): MarketplaceOrderDetail {
+  return {
+    ...createMarketplaceOrder(),
+    transactions: [
+      createMarketplaceTransaction({ transaction_type: "reservation" }),
+      createMarketplaceTransaction({
+        id: 502,
+        order_id: 301,
+        transaction_type: "purchase",
+      }),
+    ],
+    ...overrides,
+  };
+}
+
+export function createMarketplaceOrderPage(
+  overrides: Partial<MarketplaceOrderPage> = {},
+): MarketplaceOrderPage {
+  return {
+    items: [createMarketplaceOrder()],
+    page: 1,
+    page_size: 20,
     total_items: 1,
     total_pages: 1,
     ...overrides,
@@ -466,4 +738,37 @@ export function createAnalyticsInsights(
     },
   ];
   return insights.map((insight, index) => ({ ...insight, ...overrides[index] }));
+}
+
+export function createNotification(
+  overrides: Partial<AppNotification> = {},
+): AppNotification {
+  return {
+    id: 701,
+    user_id: 1,
+    title: "Pickup request created",
+    message: "Your pickup request has been created successfully.",
+    type: "pickup_created",
+    status: "unread",
+    link: "/dashboard/pickups/1",
+    metadata_json: { pickup_request_id: 1 },
+    read_at: null,
+    created_at: "2026-01-05T09:00:00Z",
+    ...overrides,
+  };
+}
+
+export function createNotificationPage(
+  items: AppNotification[],
+  overrides: Partial<NotificationPage> = {},
+): NotificationPage {
+  const pageSize = overrides.page_size ?? 20;
+  return {
+    items,
+    page: 1,
+    page_size: pageSize,
+    total_items: items.length,
+    total_pages: Math.max(1, Math.ceil(items.length / pageSize)),
+    ...overrides,
+  };
 }
