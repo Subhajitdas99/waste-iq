@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.dealer_inventory import DealerInventory, DealerInventoryStatus
 from app.models.pickup_request import PickupRequest, PickupStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.repositories import dealer_inventory as repo
 from app.schemas.dealer_inventory import (
     DealerInventoryCreate,

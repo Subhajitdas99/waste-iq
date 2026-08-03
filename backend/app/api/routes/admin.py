@@ -18,9 +18,6 @@ from app.schemas.user import UserRead
 from app.services.admin import get_analytics, list_users
 from app.services.dealer_approval import AdminDealerApprovalService
 from app.services.notifications import NotificationBroadcaster
-from app.schemas.user import UserRead
-from app.services.admin import get_analytics, list_users
-from app.services.dealer_approval import AdminDealerApprovalService
 
 router = APIRouter()
 
