@@ -70,6 +70,7 @@ beforeAll(async () => {
     import("../pages/dashboard/MarketplacePage"),
     import("../pages/dashboard/MarketplaceDetailsPage"),
     import("../pages/dashboard/OrderHistoryPage"),
+    import("../pages/dashboard/DealerProfilePage"),
     import("../pages/dashboard/AdminOverviewPage"),
     import("../pages/dashboard/CitizenPickupsPage"),
     import("../pages/dashboard/NewPickupPage"),

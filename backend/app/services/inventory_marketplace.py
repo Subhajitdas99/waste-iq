@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.collector_assignment import CollectorAssignment
+from app.services.dealer_approval import is_dealer_approved
 from app.models.inventory_lot import InventoryLot, InventoryLotStatus, InventoryLotVisibility
 from app.models.inventory_lot_event import InventoryLotEvent, InventoryLotEventType
 from app.models.marketplace_transaction import (
@@ -286,6 +287,15 @@ def _ensure_admin(user: User) -> None:
 
 def _ensure_approved_dealer(db: Session, dealer: User) -> None:
     ensure_approved_dealer(db, dealer)
+    if dealer.role != UserRole.dealer:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only dealers can browse inventory"
+        )
+    if not is_dealer_approved(db, dealer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer approval is required to browse inventory",
+        )
 
 
 def _get_active_pricing_rule(db: Session, material_category_id: int, city: str) -> PricingRule:

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.dealer_profile import DealerApprovalStatus, DealerProfile
 from app.models.dealer_profile_event import DealerProfileEvent
 from app.models.user import User, UserRole
+from app.models.user import User
 from app.repositories.dealer_profiles import DealerProfileRepository
 from app.schemas.dealer import (
     AdminDealerDetailRead,

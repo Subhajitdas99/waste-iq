@@ -55,9 +55,9 @@ The system bridges the gap between informal waste collection practices and a mod
 | Role | Core Features |
 |------|--------------|
 | 🏘️ **Citizen** | Submit pickup requests with waste photo & GPS location · Track status in real-time · View pickup history · Cancel pending requests · Dashboard with personal metrics |
-| 🚛 **Collector** | View all available & nearby pickup requests · Accept, start, collect, and complete pickups · Record waste weight on completion · Live map & route tracking (`/collector/map`) with reported position, sequenced multi-stop route, navigation to individual pickups, and nearby pickup list · Personal earnings & completion dashboard |
-| 🏭 **Scrap Dealer** | Create & edit business profile · Submit for approval · Track approval timeline & rejection reasons · Browse & filter inventory marketplace (requires approval) · Reserve lots (24-hour hold) · Cancel reservations · Confirm purchases · View order history & transaction ledger |
-| 🛡️ **Admin** | Platform-wide analytics · User management · Dealer review queue (approve/reject with reason) · Create inventory lots from completed pickups · Manage material categories & pricing rules · Archive/restore lots · Broadcast announcements to roles |
+| 🚛 **Collector** | View all available & nearby pickup requests · Accept, start, collect, and complete pickups · Record waste weight on completion · Personal earnings & completion dashboard |
+| 🏭 **Scrap Dealer** | Register business profile · Wait for admin verification · Browse & filter inventory marketplace · Reserve lots (24-hour hold) · Confirm purchases |
+| 🛡️ **Admin** | Platform-wide analytics · User management · Dealer verification (approve/reject) · Create inventory lots from completed pickups · Manage material categories & pricing rules · Archive/restore lots |
 
 ### Platform-Wide
 

@@ -231,6 +231,7 @@ flowchart TB
 | `services/dealer_profiles.py` | `app/services/dealer_profiles.py` | Dealer profile lifecycle: create, update, submit, approval timeline |
 | `services/dealer_approval.py` | `app/services/dealer_approval.py` | Approval transition validation, `is_dealer_approved` guard, admin review/approve/reject |
 | `repositories/dealer_profiles.py` | `app/repositories/dealer_profiles.py` | Dealer profile & event data access, paginated listing with search/sort/filter |
+<<<<<<< HEAD
 | `routes/marketplace.py` | `app/api/routes/marketplace.py` | Marketplace endpoints: inventory browse/detail, reserve, cancel-reservation, purchase, orders, transactions |
 | `services/marketplace.py` | `app/services/marketplace.py` | Marketplace business logic: reservation TTL (24h), purchase under row lock, order + transaction creation, expiry release |
 | `repositories/marketplace.py` | `app/repositories/marketplace.py` | Marketplace data access: paginated inventory/orders/transactions queries |
@@ -454,10 +455,17 @@ sequenceDiagram
     BE-->>A: InventoryLot created (lot_number, total_listed_amount)
 
     Note over D,DB: Phase 2 — Dealer Browse & Reserve
+<<<<<<< HEAD
     D->>BE: GET /marketplace/inventory?city=Mumbai&material_category_id=3
     BE->>DB: SELECT lots WHERE status=available AND visibility=visible\n(page/sort/search applied)
     DB-->>BE: Paginated list of available lots
     BE-->>D: [{items, page, total_items, total_pages}]
+=======
+    D->>BE: GET /dealer/inventory-lots?city=Mumbai&material_category_id=3
+    BE->>DB: SELECT lots WHERE status=available AND visibility=visible
+    DB-->>BE: List of available lots
+    BE-->>D: [{lot_number, weight_kg, unit_price, source_city, quality_grade}]
+>>>>>>> origin/main
 
     D->>BE: POST /marketplace/inventory/{lot_id}/reserve
     BE->>DB: UPDATE lot SET status=reserved,\nreserved_by_dealer_id=?,\nreservation_expires_at=NOW()+24h
@@ -498,8 +506,11 @@ The API follows RESTful conventions with JSON request/response bodies (except mu
 | `/pickup-requests` | Pickup Requests | Yes | Full pickup lifecycle |
 | `/collector` | Collector | Yes (collector role) | Collector-specific operations |
 | `/dealer` | Dealer | Yes (dealer role) | Profile management, submit for approval, approval timeline |
+<<<<<<< HEAD
 | `/marketplace` | Marketplace | Yes (approved dealer) | Inventory browse/search/detail, reserve, cancel reservation, purchase, orders, transactions |
 | `/dealer` | Dealer Inventory | Yes (approved dealer) | Legacy marketplace browse/reserve (`/dealer/inventory-lots*`) |
+=======
+| `/dealer` | Dealer Inventory | Yes (approved dealer) | Marketplace browse, reserve, purchase |
 | `/admin` | Admin | Yes (admin role) | Users, analytics, dealer review queue (approve/reject) |
 | `/admin/analytics` | Admin Analytics | Yes (admin role) | Overview KPIs, material distribution, monthly trend, collector/dealer performance, carbon savings, rule-based insights |
 | `/admin` | Admin Inventory | Yes (admin role) | Lot management, pricing, categories |

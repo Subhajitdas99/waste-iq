@@ -797,11 +797,64 @@ and records a `draft` timeline event for re-review.
 | `404` | Profile does not exist yet |
 | `409` | GST or license number already registered to another dealer |
 
+<<<<<<< HEAD
+=======
 ---
 
 ### `POST /dealer/profile/submit`
 
 Move the profile from `draft` (or `rejected`) to `submitted` for admin review.
+
+**Response `200 OK`:** Updated `DealerProfileRead`.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Profile submitted for review |
+| `400` | Invalid transition from current status |
+| `404` | Profile does not exist yet |
+
+---
+
+### `GET /dealer/profile/timeline`
+
+Retrieve the approval timeline for the authenticated dealer's profile
+(newest first).
+
+**Response `200 OK`:**
+
+```json
+[
+  {
+    "id": 4,
+    "status": "submitted",
+    "note": "Profile submitted for review.",
+    "actor_name": "Priya Menon",
+    "actor_role": "dealer",
+    "created_at": "2026-05-16T09:00:00Z"
+  },
+  {
+    "id": 3,
+    "status": "draft",
+    "note": "Profile created.",
+    "actor_name": "Priya Menon",
+    "actor_role": "dealer",
+    "created_at": "2026-05-15T12:00:00Z"
+  }
+]
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Timeline returned |
+| `404` | Profile does not exist yet |
+
+>>>>>>> origin/main
+---
+
+### `POST /dealer/profile/submit`
+
+Move the profile from `draft` (or `rejected`) to `submitted` for admin review.
+> 🔒 All marketplace endpoints require `role = dealer` AND `approval_status = approved`.
 
 **Response `200 OK`:** Updated `DealerProfileRead`.
 
