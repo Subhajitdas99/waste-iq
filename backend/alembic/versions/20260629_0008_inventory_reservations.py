@@ -9,7 +9,15 @@ branch_labels = None
 depends_on = None
 
 
+def _cleanup_sqlite_batch_table(table_name: str) -> None:
+    if op.get_bind().dialect.name != "sqlite":
+        return
+
+    op.execute(sa.text(f'DROP TABLE IF EXISTS "_alembic_tmp_{table_name}"'))
+
+
 def upgrade() -> None:
+    _cleanup_sqlite_batch_table("inventory_lots")
     with op.batch_alter_table("inventory_lots") as batch_op:
         # Add new columns
         batch_op.add_column(
@@ -60,6 +68,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    _cleanup_sqlite_batch_table("inventory_lots")
     with op.batch_alter_table("inventory_lots") as batch_op:
         batch_op.drop_index("ix_inventory_lots_reservation_expires_at")
         batch_op.drop_index("ix_inventory_lots_reserved_by_dealer_id")

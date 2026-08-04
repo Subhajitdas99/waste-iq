@@ -51,7 +51,12 @@ def upgrade() -> None:
         sa.Column("link", sa.String(length=255), nullable=True),
         sa.Column("metadata_json", sa.JSON(), nullable=True),
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
     op.create_index("ix_notifications_id", "notifications", ["id"], unique=False)

@@ -9,6 +9,13 @@ branch_labels = None
 depends_on = None
 
 
+def _cleanup_sqlite_batch_table(table_name: str) -> None:
+    if op.get_bind().dialect.name != "sqlite":
+        return
+
+    op.execute(sa.text(f'DROP TABLE IF EXISTS "_alembic_tmp_{table_name}"'))
+
+
 def upgrade() -> None:
     old_pickup_status = sa.Enum(
         "pending", "accepted", "completed", "cancelled", name="pickupstatus", native_enum=False
@@ -24,6 +31,7 @@ def upgrade() -> None:
         native_enum=False,
     )
 
+    _cleanup_sqlite_batch_table("pickup_requests")
     with op.batch_alter_table("pickup_requests") as batch_op:
         batch_op.alter_column(
             "status",
@@ -125,6 +133,7 @@ def downgrade() -> None:
         "UPDATE pickup_requests SET status = 'accepted' WHERE status IN ('on_the_way', 'collected')"
     )
 
+    _cleanup_sqlite_batch_table("pickup_requests")
     with op.batch_alter_table("pickup_requests") as batch_op:
         batch_op.alter_column(
             "status",
