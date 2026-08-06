@@ -268,3 +268,66 @@ def test_source_type_filter_still_applies(indexed_container):
 def test_empty_query_returns_nothing(indexed_container):
     response = indexed_container.search_service().hybrid_search(SearchRequest(query="", limit=5))
     assert response.total == 0
+
+
+def test_plural_query_matches_singular_content(tmp_path, clean_context_db):
+    """Query-side expansion: 'notifications' must retrieve files whose
+    content only uses the singular 'notification'.
+
+    Regression for the plural gap: without expansion the query token
+    'notifications' never matched content tokens like 'notification',
+    so the backend notification service was unreachable via search.
+    """
+    from app.db.session import SessionLocal
+
+    rel = "backend/app/services/notifications.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                '"""Notification service."""',
+                "",
+                "",
+                "class NotificationService:",
+                "    \"\"\"Sends notifications to users.\"\"\"",
+                "",
+                "    def send_notification(self, db, user_id, message):",
+                "        \"\"\"Deliver a notification to one user.\"\"\"",
+                "        return True",
+                "",
+                "    def send_bulk_notification(self, db, user_ids, message):",
+                "        \"\"\"Deliver one notification to many users.\"\"\"",
+                "        return True",
+                "",
+                "    def list_user_notifications(self, db, user_id):",
+                "        \"\"\"Return notifications for a user.\"\"\"",
+                "        return []",
+                "",
+                "",
+                "def mark_notification_read(db, notification_id):",
+                "    \"\"\"Mark a single notification as read.\"\"\"",
+                "    return True",
+                "",
+                "",
+                "def count_unread_notifications(db, user_id):",
+                "    \"\"\"Count unread notification rows.\"\"\"",
+                "    return 0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    container = Container(
+        SessionLocal,
+        repository_root=tmp_path,
+        min_tokens=50,
+        max_tokens=500,
+    )
+    container.pipeline().run()
+
+    response = container.search_service().hybrid_search(
+        SearchRequest(query="notifications", limit=5)
+    )
+    assert response.total >= 1
+    assert rel in _paths(response)[:5]

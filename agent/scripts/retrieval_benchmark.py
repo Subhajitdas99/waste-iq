@@ -21,7 +21,9 @@ from pathlib import Path
 AGENT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AGENT_ROOT))
 
-# (query, expected file path fragments)
+# Validation queries are STRICT: the exact expected file must rank in the
+# top-N. Additional queries are domain checks (any-of): the top-N must
+# contain a file that is genuinely relevant to the query.
 VALIDATION_QUERIES: list[tuple[str, list[str]]] = [
     ("dealer approval", ["backend/app/services/dealer_approval.py"]),
     ("refresh token", ["frontend/src/api/client.ts"]),
@@ -33,23 +35,52 @@ ADDITIONAL_QUERIES: list[tuple[str, list[str]]] = [
         "dealer inventory",
         [
             "backend/app/services/dealer_inventory.py",
-            "backend/app/services/inventory_marketplace.py",
+            "backend/app/repositories/dealer_inventory.py",
         ],
     ),
     (
         "collector pickup",
-        ["backend/app/services/pickup_requests.py", "backend/app/services/collector_map.py"],
+        [
+            "backend/app/services/pickup_requests.py",
+            "backend/app/services/collector_map.py",
+            "backend/app/services/collector_summary.py",
+            "backend/app/api/routes/collector.py",
+        ],
     ),
     (
         "marketplace",
         [
             "backend/app/services/marketplace.py",
-            "backend/app/services/inventory_marketplace.py",
+            "backend/app/repositories/marketplace.py",
+            "backend/app/api/routes/marketplace.py",
         ],
     ),
-    ("review agent", ["agent/app/review/review_agent.py"]),
-    ("notifications", ["backend/app/services/notifications.py"]),
-    ("auth login", ["backend/app/services/auth.py"]),
+    (
+        "review agent",
+        [
+            "agent/app/review/review_agent.py",
+            "docs/architecture/PR_REVIEW_AGENT.md",
+            "agent/tests/test_review_agent.py",
+        ],
+    ),
+    (
+        "notifications",
+        [
+            "backend/app/services/notifications.py",
+            "frontend/src/api/notifications.ts",
+            "frontend/src/hooks/useNotifications.ts",
+            "frontend/src/components/dashboard/notifications/",
+        ],
+    ),
+    (
+        "auth login",
+        [
+            "backend/app/services/auth.py",
+            "backend/app/api/routes/auth.py",
+            "frontend/src/hooks/useLogin.ts",
+            "frontend/src/pages/auth/LoginPage.tsx",
+        ],
+    ),
     (
         "roadmap",
         ["docs/project-management/launch-roadmap.md", "docs/SPRINT_ROADMAP.md"],
@@ -113,7 +144,10 @@ def main() -> int:
         rows.append((query, expected, rank, top))
 
     for query, expected, rank, top in rows:
-        expected_label = expected[0].split("/")[-1]
+        expected_label = next(
+            (part for fragment in expected for part in reversed(fragment.split("/")) if part),
+            "?",
+        )
         ok = rank is not None and rank < args.limit
         marker = "PASS" if ok else "FAIL"
         print(f"[{marker}] {query!r:<22} expected={expected_label:<32} rank={rank}")

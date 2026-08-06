@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.context.interfaces import ChunkStore, EmbeddingProvider, VectorStore
 from app.context.models import SearchRequest, SearchResponse, ScoredChunk
-from app.context.tokenizer import unique_subword_tokens
+from app.context.tokenizer import expand_query_tokens
 
 # Fused-score blend: keyword scoring is the primary, high-precision signal
 # for code retrieval; the vector component adds semantic recall.
@@ -30,7 +30,7 @@ class SemanticSearchService:
 
     def hybrid_search(self, request: SearchRequest) -> SearchResponse:
         """Keyword (soft-BM25 + path bonus) fused with vector cosine."""
-        tokens = unique_subword_tokens(request.query)
+        tokens = expand_query_tokens(request.query)
         if not tokens:
             return SearchResponse(results=[], total=0)
 
@@ -64,7 +64,7 @@ class SemanticSearchService:
 
     def explain(self, request: SearchRequest) -> dict:
         """Full scoring breakdown for a query (debug/introspection)."""
-        tokens = unique_subword_tokens(request.query)
+        tokens = expand_query_tokens(request.query)
         filters = self._filters(request)
         vector = self._embedder.embed([request.query])[0]
         hits, stats = self._vector_store.keyword_search_explain(tokens, filters)

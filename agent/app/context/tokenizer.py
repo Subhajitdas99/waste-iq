@@ -44,6 +44,42 @@ def unique_subword_tokens(text: str) -> list[str]:
     return unique
 
 
+def singularize(token: str) -> str:
+    """Strip a trailing plural 's' ("notifications" -> "notification").
+
+    Conservative: skips tokens that already end in double-'s' or '-is'
+    ("class", "status"), and tokens too short to be safe.
+    """
+    if (
+        len(token) >= 4
+        and token.endswith("s")
+        and not token.endswith("ss")
+        and not token.endswith("is")
+        and not token.endswith("us")
+    ):
+        return token[:-1]
+    return token
+
+
+def expand_query_tokens(text: str) -> list[str]:
+    """Query tokens plus singular variants, deduplicated in first-seen order.
+
+    Query-side recall expansion only: a plural query ("notifications")
+    also matches content that uses the singular form ("notification").
+    The reverse direction (singular query -> plural content) is not
+    expanded, because added plural tokens can pull in unrelated dense
+    files ("token" -> "tokens") and regress precision.
+    """
+    expanded: list[str] = []
+    for token in unique_subword_tokens(text):
+        if token not in expanded:
+            expanded.append(token)
+        alt = singularize(token)
+        if alt != token and alt not in expanded:
+            expanded.append(alt)
+    return expanded
+
+
 def whole_identifier_tokens(text: str) -> list[str]:
     """Raw identifier tokens (no camel/snake splitting), lowercased."""
     return [m.lower() for m in _WORD_RE.findall(text) if len(m) >= _MIN_LEN]
