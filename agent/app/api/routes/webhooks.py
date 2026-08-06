@@ -65,9 +65,22 @@ async def github_webhook(request: Request) -> Response:
         except Exception:  # noqa: BLE001 - a triage failure must not fail the webhook ack
             logger.exception("issue dispatch failed delivery=%s", envelope.delivery_id)
 
+    docs_triggered: dict[str, object] | None = None
+    if settings.agent_docs_enabled and (
+        settings.agent_docs_auto_run or settings.agent_docs_patch_pr_enabled
+    ):
+        try:
+            from app.agents.doc_service import DocService
+
+            docs_triggered = await DocService().handle_event(envelope)
+        except Exception:  # noqa: BLE001 - a docs failure must not fail the webhook ack
+            logger.exception("docs dispatch failed delivery=%s", envelope.delivery_id)
+
     response_body: dict[str, object] = {"delivery_id": envelope.delivery_id, "status": "accepted"}
     if review_triggered is not None:
         response_body["review"] = review_triggered
     if issue_triggered is not None:
         response_body["issue"] = issue_triggered
+    if docs_triggered is not None:
+        response_body["docs"] = docs_triggered
     return JSONResponse(response_body, status_code=status.HTTP_202_ACCEPTED)

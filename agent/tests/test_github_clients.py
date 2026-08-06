@@ -149,3 +149,83 @@ async def test_create_issue_comment_raises_on_422():
         )
         with pytest.raises(GitHubAPIError):
             await _rest_client().create_issue_comment(7, "bad")
+
+
+# ----------------------------------------------------------------------
+# Documentation Agent write path (Phase 4)
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_file_contents():
+    with respx.mock:
+        route = respx.get(
+            f"{BASE}/repos/{OWNER}/{REPO}/contents/CHANGELOG.md?ref=agent/docs-1"
+        ).mock(return_value=httpx.Response(200, json={"content": "aGVsbG8=", "sha": "abc"}))
+        result = await _rest_client().get_file_contents("CHANGELOG.md", branch="agent/docs-1")
+    assert route.call_count == 1
+    assert result["sha"] == "abc"
+
+
+@pytest.mark.anyio
+async def test_create_or_update_file_base64_encodes_content():
+    with respx.mock:
+        route = respx.put(f"{BASE}/repos/{OWNER}/{REPO}/contents/CHANGELOG.md").mock(
+            return_value=httpx.Response(200, json={"content": {"sha": "new"}})
+        )
+        await _rest_client().create_or_update_file(
+            "CHANGELOG.md",
+            "line one\n",
+            "docs: update changelog",
+            "agent/docs-1",
+            sha="old-sha",
+        )
+    assert route.call_count == 1
+    payload = json.loads(route.calls[0].request.content)
+    assert payload["message"] == "docs: update changelog"
+    assert payload["branch"] == "agent/docs-1"
+    assert payload["sha"] == "old-sha"
+    assert payload["content"] == "bGluZSBvbmUK"
+
+
+@pytest.mark.anyio
+async def test_create_git_ref():
+    with respx.mock:
+        route = respx.post(f"{BASE}/repos/{OWNER}/{REPO}/git/refs").mock(
+            return_value=httpx.Response(201, json={"ref": "refs/heads/agent/docs-1"})
+        )
+        await _rest_client().create_git_ref("agent/docs-1", "deadbeef")
+    assert route.call_count == 1
+    payload = json.loads(route.calls[0].request.content)
+    assert payload == {"ref": "refs/heads/agent/docs-1", "sha": "deadbeef"}
+
+
+@pytest.mark.anyio
+async def test_create_pull_request():
+    with respx.mock:
+        route = respx.post(f"{BASE}/repos/{OWNER}/{REPO}/pulls").mock(
+            return_value=httpx.Response(201, json={"number": 101})
+        )
+        result = await _rest_client().create_pull_request(
+            "docs: changelog entry for PR #10",
+            "agent/docs-1",
+            "develop",
+            body="body text",
+        )
+    assert route.call_count == 1
+    assert result["number"] == 101
+    payload = json.loads(route.calls[0].request.content)
+    assert payload["head"] == "agent/docs-1"
+    assert payload["base"] == "develop"
+    assert payload["body"] == "body text"
+
+
+@pytest.mark.anyio
+async def test_list_pull_request_files():
+    with respx.mock:
+        route = respx.get(f"{BASE}/repos/{OWNER}/{REPO}/pulls/10/files?per_page=100").mock(
+            return_value=httpx.Response(200, json=[{"filename": "backend/app/api/routes/x.py"}])
+        )
+        result = await _rest_client().list_pull_request_files(10)
+    assert route.call_count == 1
+    assert result[0]["filename"] == "backend/app/api/routes/x.py"

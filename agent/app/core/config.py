@@ -110,6 +110,14 @@ class Settings(BaseSettings):
     agent_issue_duplicate_threshold: float = 0.35
     agent_issue_max_duplicates: int = 3
 
+    # --- Documentation Agent (Phase 4) ---
+    agent_docs_enabled: bool = True
+    agent_docs_auto_run: bool = False
+    agent_docs_comments_enabled: bool = False
+    agent_docs_patch_pr_enabled: bool = False
+    agent_docs_default_base: str = "develop"
+    agent_docs_changelog_path: str = "CHANGELOG.md"
+
     # --- LLM Intelligence Layer (Phase 2.5) ---
     agent_llm_enabled: bool = True
     agent_llm_provider: Literal["openai", "anthropic", "google", "ollama", "mock"] = "mock"

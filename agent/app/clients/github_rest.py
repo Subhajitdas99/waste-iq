@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from typing import Any, Awaitable, Callable
 
 import httpx
@@ -7,6 +8,10 @@ TokenProvider = Callable[[], Awaitable[str]]
 
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_RETRIES = 4
+
+
+def _b64encode(content: str) -> str:
+    return base64.b64encode(content.encode("utf-8")).decode("ascii")
 
 
 class GitHubAPIError(RuntimeError):
@@ -74,8 +79,9 @@ class GitHubRESTClient(_GitHubApiClient):
     """Typed GitHub REST client used by the agent.
 
     Reads cover repository/issue data (Phase 0+). Write methods are
-    intentionally few and explicit: comments only, and only via the
-    Issue Assistant's propose-only flow (see ``app/agents/issue_*``).
+    intentionally few and explicit: comments (Issue Assistant, propose-only),
+    and — only via the Documentation Agent's approval-gated patch-PR flow —
+    scoped contents writes (``agent/*`` branches only, see ``doc_*``).
     """
 
     def __init__(
@@ -92,6 +98,15 @@ class GitHubRESTClient(_GitHubApiClient):
 
     async def get_repository(self) -> dict:
         return await self.request("GET", f"/repos/{self.owner}/{self.repo}")
+
+    async def get_pull_request(self, pr_number: int) -> dict:
+        return await self.request("GET", f"/repos/{self.owner}/{self.repo}/pulls/{pr_number}")
+
+    async def list_pull_request_files(self, pr_number: int, per_page: int = 100) -> list[dict]:
+        return await self.request(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/pulls/{pr_number}/files?per_page={per_page}",
+        )
 
     async def get_issue(self, issue_number: int) -> dict:
         return await self.request("GET", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")
@@ -113,9 +128,57 @@ class GitHubRESTClient(_GitHubApiClient):
         )
 
     async def create_issue_comment(self, issue_number: int, body: str) -> dict:
-        """Post a comment on an issue (the agent's only GitHub write action)."""
+        """Post a comment on an issue (propose-only assistant flow)."""
         return await self.request(
             "POST",
             f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments",
             json={"body": body},
+        )
+
+    # ------------------------------------------------------------------
+    # Documentation Agent write path (approval-gated, agent/* branches only)
+    # ------------------------------------------------------------------
+
+    async def get_file_contents(self, path: str, *, branch: str | None = None) -> dict:
+        """Read a file's contents metadata via the contents API (base64 blob)."""
+        query = f"?ref={branch}" if branch else ""
+        return await self.request("GET", f"/repos/{self.owner}/{self.repo}/contents/{path}{query}")
+
+    async def create_or_update_file(
+        self,
+        path: str,
+        content: str,
+        message: str,
+        branch: str,
+        *,
+        sha: str | None = None,
+    ) -> dict:
+        """Create or update a file on ``branch`` (contents API; sha required to update)."""
+        payload: dict[str, object] = {
+            "message": message,
+            "content": _b64encode(content),
+            "branch": branch,
+        }
+        if sha:
+            payload["sha"] = sha
+        return await self.request(
+            "PUT", f"/repos/{self.owner}/{self.repo}/contents/{path}", json=payload
+        )
+
+    async def create_git_ref(self, branch: str, sha: str) -> dict:
+        """Create a branch pointing at ``sha`` (git refs API)."""
+        return await self.request(
+            "POST",
+            f"/repos/{self.owner}/{self.repo}/git/refs",
+            json={"ref": f"refs/heads/{branch}", "sha": sha},
+        )
+
+    async def create_pull_request(
+        self, title: str, head: str, base: str, *, body: str = ""
+    ) -> dict:
+        """Open a pull request from ``head`` into ``base``."""
+        return await self.request(
+            "POST",
+            f"/repos/{self.owner}/{self.repo}/pulls",
+            json={"title": title, "head": head, "base": base, "body": body},
         )

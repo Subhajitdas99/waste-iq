@@ -279,6 +279,30 @@ Comment posting is gated twice: `AGENT_ISSUE_COMMENTS_ENABLED` plus the anchor
 idempotency check. LLM-assisted triage prose is deferred (deterministic first slice,
 same pattern as Phase 2).
 
+#### Phase 4 implementation status (2026-08)
+
+**Documentation Agent** implemented in `agent/app/agents/doc_agent.py` +
+`doc_service.py` — changelog + doc-drift proposals on merged PRs, and the first
+approval-gated repository write: an `agent/docs-*` patch PR. See
+`docs/architecture/PHASE4_VERIFICATION_REPORT.md`.
+
+| Piece | Implementation |
+|---|---|
+| Analysis | `doc_agent.py` — deterministic: conventional-commit type → Keep a Changelog section (`feat`→Added, `fix`→Fixed, `perf`/`refactor`/`ci`→Changed, `security`→Security, `docs`→Documented, …); changelog entry `**subject (#PR)** — summary`; doc-drift mapping of changed subtrees to tracked docs (`docs/API_SPECIFICATION.md`, `docs/DATABASE_SCHEMA.md`, `docs/SYSTEM_ARCHITECTURE.md`, `README.md`, `docs/SPRINT_ROADMAP.md`) |
+| Proposal comment | anchored `<!-- waste-iq-agent:doc-proposal v1 -->`, propose-only, lists changelog entry + doc-update suggestions, ends with the apply command hint |
+| Changelog insertion | `apply_changelog_insertion()` — inserts under `### {section}` within `## [Unreleased]`; missing sections are created in canonical Keep-a-Changelog order |
+| Patch PR flow | `issue_comment` `/agent docs apply` on a PR carrying the proposal anchor → `agent/docs-{pr}-{yyyyMMdd}` branch (git refs API) → contents-API file update → patch PR back to the PR's base branch. **Refused without the proposal anchor.** |
+| GitHub REST | added `get_file_contents`, `create_or_update_file` (base64 contents API), `create_git_ref`, `create_pull_request`, `list_pull_request_files`, `get_pull_request` |
+| Config | `AGENT_DOCS_ENABLED` (default true), `AGENT_DOCS_AUTO_RUN` (default false), `AGENT_DOCS_COMMENTS_ENABLED` (default false), `AGENT_DOCS_PATCH_PR_ENABLED` (default false — the only repo-write gate), base branch + changelog path |
+| Webhook | `POST /api/webhooks/github` dispatches `pull_request` (merged) proposals and `issue_comment` apply commands; failures never fail the webhook ack |
+| Ledger | runs recorded with `assistant="docs"`, `outcome` JSON; audit `docs.propose` / `docs.apply` (including refusals) |
+
+Behavior notes: the write path is minimal and deliberate — it only ever inserts the
+changelog entry; doc-update suggestions are listed in the patch PR description for
+manual follow-up (LLM-generated doc diffs are deferred to the LLM layer). Writes are
+scoped to `agent/docs-*` branches per §5.3. LLM-assisted prose is deferred (deterministic
+first slice, same pattern as Phases 2/3).
+
 ---
 
 ## 4. Folder Structure
