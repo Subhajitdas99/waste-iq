@@ -48,6 +48,7 @@ class Settings(BaseSettings):
         "uploads",
         "media",
         "secrets",
+        "evaluation",
     ]
     agent_ignored_files: list[str] = [
         ".env",
@@ -117,6 +118,10 @@ class Settings(BaseSettings):
     agent_docs_patch_pr_enabled: bool = False
     agent_docs_default_base: str = "develop"
     agent_docs_changelog_path: str = "CHANGELOG.md"
+
+    # --- Evaluation & Benchmark Framework (Phase 4.5) ---
+    agent_benchmark_version: str = "1.0.0"
+    agent_evaluation_state_path: str = str(BASE_DIR / "evaluation_state.json")
 
     # --- LLM Intelligence Layer (Phase 2.5) ---
     agent_llm_enabled: bool = True

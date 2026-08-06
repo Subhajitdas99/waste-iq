@@ -120,3 +120,6 @@ media/
 secrets/
 credentials.json
 service-account.json
+
+# Evaluation runtime state
+agent/evaluation_state.json

@@ -303,6 +303,29 @@ manual follow-up (LLM-generated doc diffs are deferred to the LLM layer). Writes
 scoped to `agent/docs-*` branches per §5.3. LLM-assisted prose is deferred (deterministic
 first slice, same pattern as Phases 2/3).
 
+#### Phase 4.5 implementation status (2026-08)
+
+**Evaluation & Benchmark Framework** — deterministic, offline quality gate over the
+six agent capabilities. See `docs/evaluation/AI_AGENT_BENCHMARK.md` and
+`docs/architecture/PHASE4_5_EVALUATION_REPORT.md`.
+
+| Piece | Implementation |
+|---|---|
+| Registry | `app/evaluation/cases.py` — 34 cases (6 repository search, 4 architecture, 6 issue assistant, 6 PR review, 5 documentation, 7 LLM layer); `ia-05`/`ia-06` are manual (LLM prose deferred) |
+| Scoring | `app/evaluation/scoring.py` — five sub-scores (repo accuracy, grounding, helpfulness, completeness, hallucination resistance) weighted 0.30/0.25/0.15/0.15/0.15 → final 0-100; a case passes at ≥ 90 |
+| Runner | `app/evaluation/runner.py` — executes cases against the live container (real search, real issue assistant, real review engine, deterministic LLM-layer checks); a failure never crashes the run |
+| Quality gates | Repository Search ≥ 90 · Grounding = 100 · Hallucinations = 0 · Overall ≥ 90; `scripts/run_evaluation.py` exits non-zero unless every gate passes |
+| Regression | `app/evaluation/regression.py` + `--baseline` — flags cases regressing > 1 point or flipping pass→fail |
+| Status API | `GET /api/evaluation/status` — last run's score, gates, weakest/strongest category from `agent/evaluation_state.json` |
+| Tests | `tests/test_evaluation_{scoring,parsing,report,regression,runner}.py` — 79 tests |
+| Config | `AGENT_BENCHMARK_VERSION` (1.0.0), `AGENT_EVALUATION_STATE_PATH`; the indexer ignores `evaluation/` dirs so the harness never measures itself |
+
+Baseline (2026-08-06, benchmark v1.0.0): **overall 98.11, all four gates PASS** —
+search 94.0, architecture 95.4, issue assistant 100.0, PR review 100.0, documentation
+98.8, LLM layer 100.0, hallucinations 0. Known retrieval bias (token-dense test files
+outranking class definitions) is measured honestly at rs-03/rs-04 (88) rather than
+hidden; see `docs/evaluation/KNOWN_LIMITATIONS.md`.
+
 ---
 
 ## 4. Folder Structure
