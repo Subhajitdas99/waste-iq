@@ -61,6 +61,42 @@ are unchanged.
 | `POST /api/chat` rejects a hallucinated (unreferenced) answer with 422 | ✅ |
 | Status endpoint telemetry reflects the OpenRouter call (`calls=1`, `total_prompt_tokens=64`) | ✅ |
 
+## 4.1 Verification — Live Smoke Test (real OpenRouter API, real `.env`)
+
+One real Chat Completions call was made with the configured `AGENT_OPENROUTER_API_KEY`
+after all mocked verification completed:
+
+```
+provider from .env:      'openrouter'
+model from .env:         'openai/gpt-4o-mini'
+openrouter configured:   True
+GET /api/llm/status -> 200
+  provider:   'openrouter'
+  configured: True
+  model:      'openai/gpt-4o-mini'
+resolved provider class: OpenRouterProvider
+POST https://openrouter.ai/api/v1/chat/completions -> HTTP/1.1 200 OK
+live call -> content='ok' | finish_reason='stop' | prompt_tokens=19 | completion_tokens=2
+```
+
+The provider selection, auth header, request serialization, and response/usage
+parsing all work against the real endpoint. No live calls are made by the test
+suite itself (respx-mocked only).
+
+## 4.2 Env-File Fixes Discovered During Live Verification
+
+Booting the agent with the documented `.env`/`.env.example` exposed two
+pydantic-settings parsing gaps, both fixed at the source:
+
+| Issue | Fix |
+|---|---|
+| `AGENT_CONTEXT_ROOTS=backend,frontend,docs,.github` (comma-separated, as documented) failed JSON decode for `list[str]` | `NoDecode` annotation + before-validator accepting comma-separated and JSON forms (`app/core/config.py`) |
+| Empty `AGENT_GITHUB_INSTALLATION_ID=` in the documented env file failed `int` parsing | before-validator mapping `""` → `0` |
+
+The test suite is now hermetic: `tests/conftest.py` pins every LLM/embedding
+provider env var (including `AGENT_LLM_PROVIDER=mock` and empty keys) so a
+developer's real `.env` can never leak credentials or provider choice into tests.
+
 ## 5. Tool Verification
 
 ```
@@ -78,13 +114,14 @@ Success: no issues found in 12 source files
 
 ```
 $ pytest -q --cov=app/llm --cov-report=term
-720 passed, 2 warnings in 80.30s
+722 passed, 2 warnings in 62.21s
 
 app/llm/providers/openrouter.py   27    0  100%
 TOTAL (app/llm)                  935    0  100%
 ```
 
-- Full suite: **720 passed** (685 pre-Phase-5.1 + 35 new OpenRouter tests).
+- Full suite: **722 passed** (685 pre-Phase-5.1 + 35 new OpenRouter tests + 2 new
+  config-parsing tests).
 - `app/llm` total coverage: **100 %** (requirement ≥ 95 % ✅).
 - No internet access in any test: all HTTP interactions go through `respx`.
 

@@ -230,5 +230,7 @@ def load_state(path: str | Path) -> dict | None:
 
 def save_state(report: EvaluationReport, path: str | Path) -> dict:
     payload = status_payload(report)
-    Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return payload
