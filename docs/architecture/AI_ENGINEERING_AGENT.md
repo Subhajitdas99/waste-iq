@@ -349,6 +349,24 @@ LLM layer with deterministic mock fallback, Issue Assistant, Documentation Agent
 PR Review Agent with the fixture provider), including the no-evidence rejection
 path and secret-shape input rejection.
 
+#### Phase 5.1 implementation status (2026-08)
+
+**OpenRouter provider** added to the LLM Intelligence Layer (`agent/app/llm/providers/`)
+without touching the provider architecture: `OpenRouterProvider` speaks the
+OpenAI-compatible Chat Completions API, uses `Authorization: Bearer <key>` plus
+optional `HTTP-Referer`/`X-Title` attribution headers, and reuses the shared HTTP
+client helpers, so timeout/retry/telemetry/cache/rate-limit semantics are identical
+to the existing providers. Unknown provider names now fail with a clear
+`LLMNotConfigured` error. See `docs/architecture/PHASE5_1_OPENROUTER_VERIFICATION_REPORT.md`.
+
+| Piece | Implementation |
+|---|---|
+| Client | `app/llm/providers/openrouter.py` — Chat Completions POST, usage parsing with token-estimation fallback, error mapping via `client._send_single` |
+| Registry | `provider.py` — `build_provider`, `provider_for_name`, `resolve_provider`, `providers_info`, `is_configured`, unknown-name guard |
+| Config | `AGENT_OPENROUTER_API_KEY`, `AGENT_OPENROUTER_BASE_URL`, `AGENT_OPENROUTER_HTTP_REFERER`, `AGENT_OPENROUTER_APP_NAME`; default model `openai/gpt-4o-mini` |
+| Tests | `tests/test_llm_openrouter.py` — 35 tests (selection, serialization, headers, parsing, errors, timeout, retries, telemetry, cache, redaction, grounding rejection, chat API); `app/llm` coverage = 100 % |
+| Live verification | Real OpenRouter call succeeded (`200 OK`, `finish_reason=stop`); live benchmark **PASS** 97.45 overall, 0 hallucinations, grounding 100 |
+
 ---
 
 ## 4. Folder Structure

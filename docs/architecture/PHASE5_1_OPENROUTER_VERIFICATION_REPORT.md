@@ -120,7 +120,7 @@ app/llm/providers/openrouter.py   27    0  100%
 TOTAL (app/llm)                  935    0  100%
 ```
 
-- Full suite: **722 passed** (685 pre-Phase-5.1 + 35 new OpenRouter tests + 2 new
+- Full suite: **723 passed** (685 pre-Phase-5.1 + 35 new OpenRouter tests + 3 new
   config-parsing tests).
 - `app/llm` total coverage: **100 %** (requirement ≥ 95 % ✅).
 - No internet access in any test: all HTTP interactions go through `respx`.

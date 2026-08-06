@@ -143,8 +143,8 @@ P8. **Event-driven, idempotent automation.** Automation reacts to GitHub webhook
   Context Service output. Responses containing unverifiable references are **rejected**
   before the caller sees them. When no provider is configured, a deterministic `MockProvider`
   runs in-process so the system degrades gracefully with zero LLM dependency. The layer
-  supports five providers (`openai`, `anthropic`, `google`, `ollama`, `mock`) selectable via
-  `AGENT_LLM_PROVIDER`. Caching (memory/SQLite/Redis), telemetry (latency/cost/tokens/
+  supports six providers (`openai`, `anthropic`, `google`, `ollama`, `openrouter`, `mock`)
+  selectable via `AGENT_LLM_PROVIDER` (OpenRouter added in Phase 5.1). Caching (memory/SQLite/Redis), telemetry (latency/cost/tokens/
   retries/Prometheus), timeout, retry-with-backoff, and in-process rate limiting are built in.
   The LLM layer **never** posts comments, approves PRs, merges, or generates code.
 - Consequences: LLM prose reasoning is now available to any assistant without relaxing the

@@ -98,4 +98,4 @@ existing `llm._consider` (429/502/503/504) · anything else 502.
 
 `app/chat/` is covered by 100 tests (intent, planner, memory, context builder,
 response assembly, orchestrator integration against real services, service,
-API). Coverage on `app/chat/`: **100 %** (pytest-cov). Full suite: 685 passing.
+API). Coverage on `app/chat/`: **100 %** (pytest-cov). Full suite: 723 passing.
