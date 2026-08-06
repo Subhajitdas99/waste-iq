@@ -255,6 +255,30 @@ the service silently falls back to `MockProvider` (`deterministic_fallback=true`
 Grounding violation (`GroundingViolationError`) surfaces as `HTTP 422`. The LLM layer
 holds **no write path** and performs **no GitHub API calls**.
 
+#### Phase 3 implementation status (2026-08)
+
+**Issue Assistant** implemented in `agent/app/agents/` — deterministic triage suggestions
+for new issues, propose-only (labels/milestones/state are never touched). See
+`docs/architecture/PHASE3_VERIFICATION_REPORT.md`.
+
+| Piece | Implementation |
+|---|---|
+| Assistant registry | `base.py` — `AssistantRegistry`; adding a new assistant does not touch existing agents |
+| Triage | `issue_agent.py` — deterministic: label suggestions (keyword rules filtered to the repo's actual labels), priority (critical/high/medium/low heuristics), milestone detection from roadmap evidence (`WIQ-V1-###` / `M#`), duplicate detection (Jaccard + embedding cosine over open issues, `similarity >= 0.35`), evidence citations (`path:line`) via the Phase 1 hybrid search |
+| Comment format | `format_comment()` — propose-only markdown with `<!-- waste-iq-agent:issue-triage v1 -->` anchor; evidence-cited, nothing modified disclaimer |
+| Service | `issue_service.py` — webhook dispatch (`issues` + `opened`/`reopened`), offline degradation when GitHub is unconfigured, idempotent anchored comments, run ledger |
+| GitHub REST | `github_rest.py` — added `list_labels`, `list_issue_comments`, `create_issue_comment` (the agent's only write action, comment-only) |
+| Ledger | migration `0003_issue_assistant`: `agent_runs.assistant`, `agent_runs.outcome`; audit log entries (`issue.triage`) |
+| Config | `AGENT_ISSUE_ENABLED` (default true), `AGENT_ISSUE_AUTO_RUN` (default false — opt-in dispatch), `AGENT_ISSUE_COMMENTS_ENABLED` (default false — opt-in commenting), duplicate threshold/limit |
+| Webhook | `POST /api/webhooks/github` dispatches issues events to the assistant; failures never fail the webhook ack |
+| Admin | `GET /api/admin/runs` now includes `assistant` and `outcome` |
+
+Behavior notes: the assistant is fully deterministic and offline-capable (evidence and
+triage work without GitHub; only duplicate enrichment and commenting need the API).
+Comment posting is gated twice: `AGENT_ISSUE_COMMENTS_ENABLED` plus the anchor
+idempotency check. LLM-assisted triage prose is deferred (deterministic first slice,
+same pattern as Phase 2).
+
 ---
 
 ## 4. Folder Structure

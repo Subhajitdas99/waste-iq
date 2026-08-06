@@ -56,7 +56,18 @@ async def github_webhook(request: Request) -> Response:
         except Exception:  # noqa: BLE001 - a review failure must not fail the webhook ack
             logger.exception("review dispatch failed delivery=%s", envelope.delivery_id)
 
+    issue_triggered: dict[str, object] | None = None
+    if settings.agent_issue_enabled and settings.agent_issue_auto_run:
+        try:
+            from app.agents.issue_service import IssueService
+
+            issue_triggered = await IssueService().handle_event(envelope)
+        except Exception:  # noqa: BLE001 - a triage failure must not fail the webhook ack
+            logger.exception("issue dispatch failed delivery=%s", envelope.delivery_id)
+
     response_body: dict[str, object] = {"delivery_id": envelope.delivery_id, "status": "accepted"}
     if review_triggered is not None:
         response_body["review"] = review_triggered
+    if issue_triggered is not None:
+        response_body["issue"] = issue_triggered
     return JSONResponse(response_body, status_code=status.HTTP_202_ACCEPTED)

@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -103,3 +105,47 @@ async def test_graphql_raises_on_errors():
 
         with pytest.raises(GitHubAPIError):
             await GitHubGraphQLClient(_token).run("{ missing }")
+
+
+@pytest.mark.anyio
+async def test_list_labels():
+    with respx.mock:
+        route = respx.get(f"{BASE}/repos/{OWNER}/{REPO}/labels?per_page=100").mock(
+            return_value=httpx.Response(200, json=[{"name": "bug"}, {"name": "backend"}])
+        )
+        result = await _rest_client().list_labels()
+    assert route.call_count == 1
+    assert [label["name"] for label in result] == ["bug", "backend"]
+
+
+@pytest.mark.anyio
+async def test_list_issue_comments():
+    with respx.mock:
+        route = respx.get(f"{BASE}/repos/{OWNER}/{REPO}/issues/7/comments?per_page=100").mock(
+            return_value=httpx.Response(200, json=[{"id": 1, "body": "hello"}])
+        )
+        result = await _rest_client().list_issue_comments(7)
+    assert route.call_count == 1
+    assert result[0]["body"] == "hello"
+
+
+@pytest.mark.anyio
+async def test_create_issue_comment():
+    with respx.mock:
+        route = respx.post(f"{BASE}/repos/{OWNER}/{REPO}/issues/7/comments").mock(
+            return_value=httpx.Response(201, json={"id": 99})
+        )
+        result = await _rest_client().create_issue_comment(7, "proposal body")
+    assert route.call_count == 1
+    assert result["id"] == 99
+    assert json.loads(route.calls[0].request.content) == {"body": "proposal body"}
+
+
+@pytest.mark.anyio
+async def test_create_issue_comment_raises_on_422():
+    with respx.mock:
+        respx.post(f"{BASE}/repos/{OWNER}/{REPO}/issues/7/comments").mock(
+            return_value=httpx.Response(422, json={"message": "Validation Failed"})
+        )
+        with pytest.raises(GitHubAPIError):
+            await _rest_client().create_issue_comment(7, "bad")

@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     agent_review_find_pull_request: bool = True
     agent_github_api_base_url: str = "https://api.github.com"
 
+    # --- Issue Assistant (Phase 3) ---
+    agent_issue_enabled: bool = True
+    agent_issue_auto_run: bool = False
+    agent_issue_comments_enabled: bool = False
+    agent_issue_duplicate_threshold: float = 0.35
+    agent_issue_max_duplicates: int = 3
+
     # --- LLM Intelligence Layer (Phase 2.5) ---
     agent_llm_enabled: bool = True
     agent_llm_provider: Literal["openai", "anthropic", "google", "ollama", "mock"] = "mock"

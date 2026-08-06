@@ -71,7 +71,12 @@ class _GitHubApiClient:
 
 
 class GitHubRESTClient(_GitHubApiClient):
-    """Typed REST reads used by the agent. Phase 0 covers repository/issue reads."""
+    """Typed GitHub REST client used by the agent.
+
+    Reads cover repository/issue data (Phase 0+). Write methods are
+    intentionally few and explicit: comments only, and only via the
+    Issue Assistant's propose-only flow (see ``app/agents/issue_*``).
+    """
 
     def __init__(
         self,
@@ -94,4 +99,23 @@ class GitHubRESTClient(_GitHubApiClient):
     async def list_open_issues(self, per_page: int = 30) -> list[dict]:
         return await self.request(
             "GET", f"/repos/{self.owner}/{self.repo}/issues?state=open&per_page={per_page}"
+        )
+
+    async def list_labels(self, per_page: int = 100) -> list[dict]:
+        return await self.request(
+            "GET", f"/repos/{self.owner}/{self.repo}/labels?per_page={per_page}"
+        )
+
+    async def list_issue_comments(self, issue_number: int, per_page: int = 100) -> list[dict]:
+        return await self.request(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments?per_page={per_page}",
+        )
+
+    async def create_issue_comment(self, issue_number: int, body: str) -> dict:
+        """Post a comment on an issue (the agent's only GitHub write action)."""
+        return await self.request(
+            "POST",
+            f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments",
+            json={"body": body},
         )

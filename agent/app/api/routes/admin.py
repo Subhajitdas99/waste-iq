@@ -29,7 +29,9 @@ async def list_runs(
                 "delivery_id": run.delivery_id,
                 "event_type": run.event_type,
                 "event_action": run.event_action,
+                "assistant": run.assistant,
                 "status": run.status,
+                "outcome": run.outcome,
                 "created_at": run.created_at.isoformat(),
             }
             for run in rows
