@@ -1,9 +1,10 @@
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 REPOSITORY_ROOT_DEFAULT = Path(__file__).resolve().parents[3]
@@ -23,6 +24,15 @@ class Settings(BaseSettings):
     agent_github_app_private_key: str = ""
     agent_github_app_private_key_path: str | None = None
     agent_github_installation_id: int = 0
+
+    @field_validator("agent_github_installation_id", mode="before")
+    @classmethod
+    def _empty_installation_id_means_unset(cls, value: object) -> object:
+        """Treat the documented empty ``AGENT_GITHUB_INSTALLATION_ID=`` as 0."""
+        if value == "":
+            return 0
+        return value
+
     agent_webhook_secret: str = ""
 
     agent_database_url: str = f"sqlite:///{BASE_DIR / 'agent.db'}"
@@ -30,7 +40,26 @@ class Settings(BaseSettings):
 
     # --- Repository Context Service (Phase 1) ---
     agent_repository_root: Path = REPOSITORY_ROOT_DEFAULT
-    agent_context_roots: list[str] = ["backend", "frontend", "docs", ".github"]
+    # NoDecode: env/dotenv values arrive as raw strings so both the documented
+    # comma-separated format and JSON arrays can be parsed by the validator below.
+    agent_context_roots: Annotated[list[str], NoDecode] = [
+        "backend",
+        "frontend",
+        "docs",
+        ".github",
+    ]
+
+    @field_validator("agent_context_roots", mode="before")
+    @classmethod
+    def _parse_context_roots(cls, value: object) -> object:
+        """Accept ``backend,frontend,docs`` (dotenv) or JSON arrays."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
+
     agent_ignored_dirs: list[str] = [
         ".git",
         "node_modules",
@@ -119,13 +148,22 @@ class Settings(BaseSettings):
     agent_docs_default_base: str = "develop"
     agent_docs_changelog_path: str = "CHANGELOG.md"
 
+    # --- Developer Chat Assistant (Phase 5) ---
+    agent_chat_enabled: bool = True
+    agent_chat_max_turns: int = 10
+    agent_chat_retrieval_limit: int = 6
+    agent_chat_max_question_chars: int = 4000
+    agent_chat_repository: str = "waste-iq"
+
     # --- Evaluation & Benchmark Framework (Phase 4.5) ---
     agent_benchmark_version: str = "1.0.0"
     agent_evaluation_state_path: str = str(BASE_DIR / "evaluation_state.json")
 
     # --- LLM Intelligence Layer (Phase 2.5) ---
     agent_llm_enabled: bool = True
-    agent_llm_provider: Literal["openai", "anthropic", "google", "ollama", "mock"] = "mock"
+    agent_llm_provider: Literal["openai", "anthropic", "google", "ollama", "openrouter", "mock"] = (
+        "mock"
+    )
     agent_llm_model: str = ""
     agent_llm_api_key: str | None = None
     agent_anthropic_api_key: str | None = None
@@ -145,6 +183,12 @@ class Settings(BaseSettings):
     agent_llm_rate_limit_per_minute: int = 120
     agent_llm_cost_input_per_1m: float = 2.5
     agent_llm_cost_output_per_1m: float = 10.0
+
+    # --- OpenRouter provider (Phase 5.1) ---
+    agent_openrouter_api_key: str | None = None
+    agent_openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    agent_openrouter_http_referer: str | None = None
+    agent_openrouter_app_name: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

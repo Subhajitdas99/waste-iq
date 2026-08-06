@@ -326,6 +326,29 @@ search 94.0, architecture 95.4, issue assistant 100.0, PR review 100.0, document
 outranking class definitions) is measured honestly at rs-03/rs-04 (88) rather than
 hidden; see `docs/evaluation/KNOWN_LIMITATIONS.md`.
 
+#### Phase 5 implementation status (2026-08)
+
+**Developer Chat Assistant** implemented in `agent/app/chat/` — a deterministic
+orchestration facade over the existing services with mandatory grounding and
+bounded conversation memory. See `docs/architecture/DEVELOPER_CHAT_ASSISTANT.md`
+and ADR-010.
+
+| Piece | Implementation |
+|---|---|
+| Intent detection | `intent.py` — ordered keyword rules (review_pr, generate_issue, generate_documentation, summarize_changes, explain_architecture, find_implementation, explain_code, repository_search), **no LLM classification**; confidence `min(0.99, base + 0.02×matches)` |
+| Planner | `planner.py` — intent → retrieval plan (query, source types, limit) + one agent (llm_explain, llm_summarize, issue_assistant, doc_assistant, review_agent); follow-ups reuse the previous turn's search query |
+| Context builder | `context_builder.py` — retrieved chunks → `RepositoryContext` buckets (files/docs/ADRs/roadmap) and evidence ids in the exact grounding formats |
+| Orchestrator | `orchestrator.py` — detect → retrieve → dispatch to the existing services; raises `ChatNoEvidenceError` when an evidence-requiring answer has zero references |
+| Service + memory | `service.py`, `memory.py`, `conversation.py` — sanitization (length cap + `Redactor` secret scan), thread-safe in-process memory, max 10 turns (`AGENT_CHAT_MAX_TURNS`), intent statistics |
+| API | `POST /api/chat`, `POST /api/chat/followup`, `GET /api/chat/status`; errors mapped via `llm._consider` for LLM-layer failures |
+| Config | `AGENT_CHAT_ENABLED`, `AGENT_CHAT_MAX_TURNS`, `AGENT_CHAT_RETRIEVAL_LIMIT`, `AGENT_CHAT_MAX_QUESTION_CHARS`, `AGENT_CHAT_REPOSITORY` |
+| Tests | `tests/test_chat_{intent,planner,memory,context_builder,response,orchestrator,service,api}.py` — 100 tests, coverage on `app/chat/` = 100 % |
+
+All eight intents are exercised end-to-end against real services (hybrid search,
+LLM layer with deterministic mock fallback, Issue Assistant, Documentation Agent,
+PR Review Agent with the fixture provider), including the no-evidence rejection
+path and secret-shape input rejection.
+
 ---
 
 ## 4. Folder Structure
