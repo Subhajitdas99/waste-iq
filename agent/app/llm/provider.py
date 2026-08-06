@@ -16,6 +16,7 @@ from app.llm.models import (
     DEFAULT_MODELS,
     LLMNotConfigured,
     LLMProviderName,
+    PROVIDER_NAMES,
     PROVIDER_DESCRIPTIONS,
     ProviderInfo,
     ProviderRequest,
@@ -26,6 +27,7 @@ _OPENAI_BASE = "https://api.openai.com/v1"
 _ANTHROPIC_BASE = "https://api.anthropic.com"
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 _OLLAMA_BASE = "http://localhost:11434"
+_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 _EVIDENCE_LINE_RE = re.compile(
     r"\bevidence_id:\s*([^\s|]+).*?\bfile:\s*([^\s|]+).*?\blines:\s*(\d+)(?:-(\d+))?"
@@ -113,11 +115,12 @@ def provider_base_url(name: str) -> str:
         "anthropic": _ANTHROPIC_BASE,
         "google": _GEMINI_BASE,
         "ollama": _OLLAMA_BASE,
+        "openrouter": _OPENROUTER_BASE,
     }.get(name, "")
 
 
 def provider_requires_key(name: str) -> bool:
-    return name in {"openai", "anthropic", "google"}
+    return name in {"openai", "anthropic", "google", "openrouter"}
 
 
 def is_configured(name: str, settings) -> bool:
@@ -132,12 +135,18 @@ def is_configured(name: str, settings) -> bool:
         return bool(settings.agent_llm_api_key or settings.agent_anthropic_api_key)
     if name == "google":
         return bool(settings.agent_llm_api_key or settings.agent_google_api_key)
+    if name == "openrouter":
+        return bool(settings.agent_openrouter_api_key)
     return False
 
 
 def resolve_provider(settings) -> tuple[str, bool]:
     """Resolve (provider_name, configured) with deterministic mock fallback."""
     requested = settings.agent_llm_provider
+    if requested not in PROVIDER_NAMES:
+        raise LLMNotConfigured(
+            f"unknown LLM provider '{requested}'; expected one of {PROVIDER_NAMES}"
+        )
     if is_configured(requested, settings):
         return requested, True
     return "mock", False
@@ -151,6 +160,7 @@ def build_provider(settings) -> LLMProvider:
         OllamaProvider,
         OpenAIProvider,
     )
+    from app.llm.providers.openrouter import OpenRouterProvider
 
     name, configured = resolve_provider(settings)
     model = settings.agent_llm_model or provider_default_model(name)
@@ -180,13 +190,28 @@ def build_provider(settings) -> LLMProvider:
             base_url=settings.agent_llm_base_url or provider_base_url("ollama"),
             model=model,
         )
+    if name == "openrouter":
+        return OpenRouterProvider(
+            api_key=settings.agent_openrouter_api_key or "",
+            base_url=settings.agent_openrouter_base_url or provider_base_url("openrouter"),
+            model=model,
+            http_referer=settings.agent_openrouter_http_referer,
+            app_name=settings.agent_openrouter_app_name,
+        )
     return MockProvider(model=model)
 
 
 def providers_info(settings) -> list[ProviderInfo]:
     """Descriptions for every known provider (used by /api/llm/providers)."""
     info: list[ProviderInfo] = []
-    names: tuple[str, ...] = ("openai", "anthropic", "google", "ollama", "mock")
+    names: tuple[str, ...] = (
+        "openai",
+        "anthropic",
+        "google",
+        "ollama",
+        "openrouter",
+        "mock",
+    )
     for name in names:
         info.append(
             ProviderInfo(
@@ -205,6 +230,8 @@ def provider_for_name(name: LLMProviderName, settings, timeout: float) -> LLMPro
     """Explicit provider selection (used for per-request provider overrides)."""
     if name == "mock":
         return MockProvider(model=provider_default_model("mock"))
+    if name not in PROVIDER_NAMES:
+        raise LLMNotConfigured(f"unknown provider '{name}'; expected one of {PROVIDER_NAMES}")
     if not is_configured(name, settings):
         raise LLMNotConfigured(f"provider '{name}' is not configured")
     from app.llm.client import (
@@ -213,6 +240,7 @@ def provider_for_name(name: LLMProviderName, settings, timeout: float) -> LLMPro
         OllamaProvider,
         OpenAIProvider,
     )
+    from app.llm.providers.openrouter import OpenRouterProvider
 
     model = settings.agent_llm_model or provider_default_model(name)
     if name == "openai":
@@ -233,7 +261,15 @@ def provider_for_name(name: LLMProviderName, settings, timeout: float) -> LLMPro
             base_url=settings.agent_llm_base_url or provider_base_url("google"),
             model=model,
         )
-    return OllamaProvider(
-        base_url=settings.agent_llm_base_url or provider_base_url("ollama"),
+    if name == "ollama":
+        return OllamaProvider(
+            base_url=settings.agent_llm_base_url or provider_base_url("ollama"),
+            model=model,
+        )
+    return OpenRouterProvider(
+        api_key=settings.agent_openrouter_api_key or "",
+        base_url=settings.agent_openrouter_base_url or provider_base_url("openrouter"),
         model=model,
+        http_referer=settings.agent_openrouter_http_referer,
+        app_name=settings.agent_openrouter_app_name,
     )
