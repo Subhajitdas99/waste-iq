@@ -2,6 +2,7 @@
 
 import base64
 import json
+from datetime import datetime
 
 import httpx
 import pytest
@@ -167,6 +168,14 @@ def test_merged_pr_proposal_is_idempotent(client, clean_runs_db, monkeypatch):
 
 def test_apply_command_opens_patch_pr(client, clean_runs_db, monkeypatch):
     _enable_docs_flags(monkeypatch, comments=True, patch_pr=True)
+
+    class _FixedUtcDate(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 6, tzinfo=tz)
+
+    monkeypatch.setattr("app.agents.doc_agent.datetime", _FixedUtcDate)
+
     with respx.mock:
         respx.get(f"{BASE}/repos/{REPO}/issues/10/comments?per_page=100").mock(
             return_value=httpx.Response(200, json=[{"body": f"{ANCHOR}\nproposal"}])
