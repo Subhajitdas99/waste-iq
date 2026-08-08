@@ -129,11 +129,13 @@ def _gate_value(report: EvaluationReport, kind: str) -> str:
     if kind == "repository_search":
         return f"{report.category_average('repository_search'):.1f}"
     if kind == "grounding":
+        # Per-case grounding sub-scores are 0-10 internally; gates and the
+        # markdown table use the 0-100 scale, so convert at the boundary.
         executed = [c for c in report.cases if c.result.status == "executed"]
         if not executed:
             return "-"
         value = round(sum(c.grounding for c in executed) / len(executed), 2)
-        return f"{value:.1f}"
+        return f"{value * 10:.1f}"
     return str(getattr(report, kind))
 
 
@@ -230,5 +232,7 @@ def load_state(path: str | Path) -> dict | None:
 
 def save_state(report: EvaluationReport, path: str | Path) -> dict:
     payload = status_payload(report)
-    Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return payload

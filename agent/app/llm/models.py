@@ -12,15 +12,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.review.review_models import RepositoryContext, ReviewFinding
 
-LLMProviderName = Literal["openai", "anthropic", "google", "ollama", "mock"]
+LLMProviderName = Literal["openai", "anthropic", "google", "ollama", "openrouter", "mock"]
 LLMRole = Literal["analyze", "explain", "summarize"]
 
-PROVIDER_NAMES: tuple[str, ...] = ("openai", "anthropic", "google", "ollama", "mock")
+PROVIDER_NAMES: tuple[str, ...] = (
+    "openai",
+    "anthropic",
+    "google",
+    "ollama",
+    "openrouter",
+    "mock",
+)
 DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-5-haiku-latest",
     "google": "gemini-2.0-flash",
     "ollama": "llama3.2",
+    "openrouter": "openai/gpt-4o-mini",
     "mock": "mock-model",
 }
 PROVIDER_DESCRIPTIONS: dict[str, str] = {
@@ -28,6 +36,7 @@ PROVIDER_DESCRIPTIONS: dict[str, str] = {
     "anthropic": "Anthropic Messages API",
     "google": "Google Gemini generateContent API",
     "ollama": "Local Ollama chat API (no network)",
+    "openrouter": "OpenRouter unified Chat Completions API",
     "mock": "Deterministic in-process provider (no LLM calls)",
 }
 

@@ -17,6 +17,25 @@ os.environ["AGENT_INDEX_ON_STARTUP"] = "false"
 os.environ["AGENT_OTEL_ENABLED"] = "false"
 os.environ["AGENT_REPOSITORY_ROOT"] = _tmp_repo
 os.environ["AGENT_LLM_CACHE_BACKEND"] = "memory"
+# Pin AI settings so a developer's real .env can never leak into the suite
+# (env vars take precedence over the dotenv file in pydantic-settings).
+os.environ["AGENT_LLM_PROVIDER"] = "mock"
+os.environ["AGENT_LLM_MODEL"] = ""
+os.environ["AGENT_LLM_API_KEY"] = ""
+os.environ["AGENT_LLM_BASE_URL"] = ""
+os.environ["AGENT_OPENAI_API_KEY"] = ""
+os.environ["AGENT_ANTHROPIC_API_KEY"] = ""
+os.environ["AGENT_GOOGLE_API_KEY"] = ""
+os.environ["AGENT_OPENROUTER_API_KEY"] = ""
+os.environ["AGENT_OPENROUTER_HTTP_REFERER"] = ""
+os.environ["AGENT_OPENROUTER_APP_NAME"] = ""
+os.environ["AGENT_EMBEDDING_PROVIDER"] = "memory"
+os.environ["AGENT_CONTEXT_ROOTS"] = "backend,frontend,docs,.github"
+os.environ["AGENT_ISSUE_AUTO_RUN"] = "false"
+os.environ["AGENT_ISSUE_COMMENTS_ENABLED"] = "false"
+os.environ["AGENT_DOCS_AUTO_RUN"] = "false"
+os.environ["AGENT_DOCS_COMMENTS_ENABLED"] = "false"
+os.environ["AGENT_DOCS_PATCH_PR_ENABLED"] = "false"
 
 from pathlib import Path  # noqa: E402
 
@@ -45,6 +64,7 @@ def _reset_container():
     dependencies._container = None  # noqa: SLF001
     dependencies._review_service = None  # noqa: SLF001
     dependencies._llm_service = None  # noqa: SLF001
+    dependencies._chat_service = None  # noqa: SLF001
 
 
 @pytest.fixture

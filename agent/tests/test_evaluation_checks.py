@@ -45,6 +45,47 @@ def test_provider_selection_resolves_deterministically():
     assert "provider=" in result.actual_answer
 
 
+def test_provider_selection_is_hermetic_against_real_credentials(monkeypatch):
+    """A real OpenRouter key in the environment must not flip the case.
+
+    Regression for the benchmark failure: the case previously read the
+    app-global settings singleton, so a developer .env with a real
+    AGENT_OPENROUTER_API_KEY made the resolver choose openrouter and the
+    case FAIL. The check now builds a hermetic Settings object.
+    """
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("AGENT_OPENROUTER_API_KEY", "sk-real-key")
+    result = check_provider_selection()
+    assert result.behaviour_met is True
+    assert "provider='mock'" in result.actual_answer
+    assert "configured=False" in result.actual_answer
+
+
+def test_provider_selection_ignores_credentials_in_dotenv(tmp_path, monkeypatch):
+    """Even a .env file with real keys on disk cannot leak into the check."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AGENT_LLM_PROVIDER=openrouter\n"
+        "AGENT_OPENROUTER_API_KEY=sk-real-dotenv\n"
+        "AGENT_OPENAI_API_KEY=sk-real-openai\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("AGENT_OPENROUTER_API_KEY", "sk-real-env")
+    monkeypatch.chdir(tmp_path)
+
+    from app.llm.provider import MockProvider, build_provider, resolve_provider
+
+    from app.evaluation.checks import _no_cloud_credentials
+
+    settings = _no_cloud_credentials()
+    name, configured = resolve_provider(settings)
+    provider = build_provider(settings)
+    assert name == "mock"
+    assert configured is False
+    assert isinstance(provider, MockProvider)
+
+
 def test_hallucination_rejection_rejects_ghost_citation():
     result = check_hallucination_rejection()
     assert result.case_id == "ll-07-hallucination-rejection"

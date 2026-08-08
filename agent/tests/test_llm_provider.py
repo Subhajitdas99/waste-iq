@@ -96,14 +96,17 @@ def test_provider_for_name_unconfigured_raises(monkeypatch):
         provider_for_name("openai", settings, timeout=10.0)
 
 
-def test_providers_info_lists_all_five():
+def test_providers_info_lists_all_six():
     info = providers_info(settings)
     names = {entry.name for entry in info}
-    assert names == {"openai", "anthropic", "google", "ollama", "mock"}
+    assert names == {"openai", "anthropic", "google", "ollama", "openrouter", "mock"}
     mock = next(entry for entry in info if entry.name == "mock")
     assert mock.deterministic is True
     assert mock.configured is True
     assert mock.default_model == "mock-model"
+    openrouter = next(entry for entry in info if entry.name == "openrouter")
+    assert openrouter.deterministic is False
+    assert openrouter.base_url == "https://openrouter.ai/api/v1"
 
 
 def test_mock_provider_complete_returns_grounded_json():
@@ -140,6 +143,7 @@ def test_provider_requires_key_flags_cloud_providers():
     assert provider_requires_key("openai") is True
     assert provider_requires_key("anthropic") is True
     assert provider_requires_key("google") is True
+    assert provider_requires_key("openrouter") is True
     assert provider_requires_key("ollama") is False
     assert provider_requires_key("mock") is False
 
@@ -157,11 +161,14 @@ def test_is_configured_unknown_name_is_false():
 
 
 def test_build_provider_each_configured_provider(monkeypatch):
+    from app.llm.providers.openrouter import OpenRouterProvider
+
     cases = [
         ("openai", "sk-test", OpenAIProvider),
         ("anthropic", "sk-ant-test", AnthropicProvider),
         ("google", "AIza-test", GeminiProvider),
         ("ollama", None, OllamaProvider),
+        ("openrouter", "sk-or-test", OpenRouterProvider),
     ]
     for name, key, expected in cases:
         monkeypatch.setattr(settings, "agent_llm_provider", name)
@@ -169,6 +176,7 @@ def test_build_provider_each_configured_provider(monkeypatch):
         monkeypatch.setattr(settings, "agent_openai_api_key", "")
         monkeypatch.setattr(settings, "agent_anthropic_api_key", "")
         monkeypatch.setattr(settings, "agent_google_api_key", "")
+        monkeypatch.setattr(settings, "agent_openrouter_api_key", key or "")
         provider = build_provider(settings)
         assert isinstance(provider, expected), name
         assert provider.name == name
@@ -184,12 +192,16 @@ def test_build_provider_falls_back_when_unconfigured(monkeypatch):
 
 
 def test_provider_for_name_each_configured_provider(monkeypatch):
+    from app.llm.providers.openrouter import OpenRouterProvider
+
     monkeypatch.setattr(settings, "agent_llm_api_key", "sk-test")
+    monkeypatch.setattr(settings, "agent_openrouter_api_key", "sk-or-test")
     cases = [
         ("openai", OpenAIProvider),
         ("anthropic", AnthropicProvider),
         ("google", GeminiProvider),
         ("ollama", OllamaProvider),
+        ("openrouter", OpenRouterProvider),
     ]
     for name, expected in cases:
         provider = provider_for_name(name, settings, timeout=10.0)

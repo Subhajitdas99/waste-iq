@@ -18,6 +18,12 @@ DEALER_APPROVAL = "backend/app/services/dealer_approval.py"
 CLIENT_TS = "frontend/src/api/client.ts"
 REVIEW_ENGINE = "agent/app/review/review_engine.py"
 
+REVIEW_ENGINE_TEST = "agent/tests/test_review_engine.py"
+REPOSITORY_INDEXER = "agent/app/context/repository_indexer.py"
+REPOSITORY_INDEXER_TEST = "agent/tests/test_context_repository_indexer.py"
+DEALER_GATE = "frontend/src/components/dashboard/DealerApprovalGate.tsx"
+DEALER_GATE_TEST = "frontend/src/components/dashboard/DealerApprovalGate.test.tsx"
+
 DEALER_APPROVAL_CONTENT = '''"""Dealer approval workflow."""
 
 from dataclasses import dataclass
@@ -116,6 +122,114 @@ class ReviewEngine:
     def _rule_no_merge_conflicts(self, text):
         return []
 '''
+
+REVIEW_ENGINE_TEST_CONTENT = '''"""Tests for the review engine implementation in review_engine.py."""
+
+import pytest
+
+from agent.app.review.review_engine import ReviewEngine
+
+
+def test_review_engine_collects_findings():
+    engine = ReviewEngine()
+    assert engine.run([]) == []
+
+
+def test_review_engine_applies_debug_rule():
+    engine = ReviewEngine()
+    assert engine._rule_no_debug_print("print()") == []
+
+
+def test_review_engine_applies_conflict_rule():
+    engine = ReviewEngine()
+    assert engine._rule_no_merge_conflicts("<<<<<<<") == []
+
+
+def test_review_engine_handles_empty_diff():
+    engine = ReviewEngine()
+    assert engine.run(None) == []
+'''
+
+REPOSITORY_INDEXER_CONTENT = '''"""Repository indexer — builds the searchable index of repository files."""
+
+from __future__ import annotations
+
+
+class RepositoryIndexer:
+    """Walks the repository and indexes files into chunks."""
+
+    def __init__(self, root):
+        self.root = root
+        self.indexed_files = []
+
+    def walk(self):
+        """Enumerate files under the repository root."""
+        return []
+
+    def index(self, paths):
+        """Index the given file paths into chunks."""
+        return len(paths)
+'''
+
+REPOSITORY_INDEXER_TEST_CONTENT = '''"""Tests for the repository indexer in repository_indexer.py."""
+
+import pytest
+
+from agent.app.context.repository_indexer import RepositoryIndexer
+
+
+def test_repository_indexer_walks_tree():
+    indexer = RepositoryIndexer(".")
+    assert indexer.walk() == []
+
+
+def test_repository_indexer_indexes_files():
+    indexer = RepositoryIndexer(".")
+    assert indexer.index(["a.py", "b.py"]) == 2
+
+
+def test_repository_indexer_tracks_indexed_files():
+    indexer = RepositoryIndexer(".")
+    indexer.index([])
+    assert indexer.indexed_files == []
+
+
+def test_repository_indexer_detects_duplicates():
+    indexer = RepositoryIndexer(".")
+    assert indexer.index(["a.py", "a.py"]) == 2
+'''
+
+DEALER_GATE_CONTENT = """import { useState } from "react";
+
+export interface DealerApprovalGateProps {
+  dealerId: string;
+}
+
+export function DealerApprovalGate({ dealerId }: DealerApprovalGateProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="dealer-approval-gate">
+      <button onClick={() => setOpen(!open)}>Approve dealer</button>
+    </div>
+  );
+}
+"""
+
+DEALER_GATE_TEST_CONTENT = """import { render, screen } from "@testing-library/react";
+import { DealerApprovalGate } from "./DealerApprovalGate";
+
+describe("DealerApprovalGate", () => {
+  it("renders the gate", () => {
+    render(<DealerApprovalGate dealerId="d1" />);
+    expect(screen.getByText("Approve dealer")).toBeInTheDocument();
+  });
+
+  it("toggles on click", () => {
+    render(<DealerApprovalGate dealerId="d1" />);
+    screen.getByRole("button").click();
+  });
+});
+"""
 
 MARKETPLACE_DISTRACTOR = '''"""Marketplace service."""
 
@@ -331,3 +445,83 @@ def test_plural_query_matches_singular_content(tmp_path, clean_context_db):
     )
     assert response.total >= 1
     assert rel in _paths(response)[:5]
+
+
+@pytest.fixture
+def indexed_repo_with_tests(tmp_path, clean_context_db):
+    """Mini-repo where test files outrank implementations on symbol queries.
+
+    Each implementation/test pair uses the same symbol names, with the test
+    file carrying far more mentions — exactly the shape of the benchmark
+    failures (rs-03 review engine, rs-04 repository indexer, DealerApprovalGate).
+    """
+    from app.db.session import SessionLocal
+
+    def write(rel: str, content: str) -> None:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    write(REVIEW_ENGINE, REVIEW_ENGINE_CONTENT)
+    write(REVIEW_ENGINE_TEST, REVIEW_ENGINE_TEST_CONTENT)
+    write(REPOSITORY_INDEXER, REPOSITORY_INDEXER_CONTENT)
+    write(REPOSITORY_INDEXER_TEST, REPOSITORY_INDEXER_TEST_CONTENT)
+    write(DEALER_GATE, DEALER_GATE_CONTENT)
+    write(DEALER_GATE_TEST, DEALER_GATE_TEST_CONTENT)
+    write("backend/app/services/marketplace.py", MARKETPLACE_DISTRACTOR)
+
+    container = Container(
+        SessionLocal,
+        repository_root=tmp_path,
+        min_tokens=50,
+        max_tokens=500,
+    )
+    container.pipeline().run()
+    return container
+
+
+def test_exact_symbol_query_prefers_implementation_over_tests(indexed_repo_with_tests):
+    service = indexed_repo_with_tests.search_service()
+    response = service.hybrid_search(SearchRequest(query="review_engine", limit=5))
+    paths = _paths(response)
+    assert REVIEW_ENGINE in paths and REVIEW_ENGINE_TEST in paths
+    assert paths.index(REVIEW_ENGINE) < paths.index(REVIEW_ENGINE_TEST)
+
+
+def test_natural_language_query_prefers_implementation_over_tests(indexed_repo_with_tests):
+    service = indexed_repo_with_tests.search_service()
+    response = service.hybrid_search(SearchRequest(query="review engine implementation", limit=5))
+    paths = _paths(response)
+    assert REVIEW_ENGINE in paths and REVIEW_ENGINE_TEST in paths
+    assert paths.index(REVIEW_ENGINE) < paths.index(REVIEW_ENGINE_TEST)
+
+
+def test_repository_indexer_query_prefers_implementation(indexed_repo_with_tests):
+    service = indexed_repo_with_tests.search_service()
+    response = service.hybrid_search(SearchRequest(query="repository indexer", limit=5))
+    paths = _paths(response)
+    assert REPOSITORY_INDEXER in paths and REPOSITORY_INDEXER_TEST in paths
+    assert paths.index(REPOSITORY_INDEXER) < paths.index(REPOSITORY_INDEXER_TEST)
+
+
+def test_dealer_approval_gate_query_prefers_component(indexed_repo_with_tests):
+    service = indexed_repo_with_tests.search_service()
+    response = service.hybrid_search(SearchRequest(query="DealerApprovalGate", limit=5))
+    paths = _paths(response)
+    assert DEALER_GATE in paths and DEALER_GATE_TEST in paths
+    assert paths.index(DEALER_GATE) < paths.index(DEALER_GATE_TEST)
+
+
+def test_test_files_remain_retrievable_for_symbol_queries(indexed_repo_with_tests):
+    service = indexed_repo_with_tests.search_service()
+    response = service.hybrid_search(SearchRequest(query="review_engine", limit=5))
+    paths = _paths(response)
+    assert REVIEW_ENGINE_TEST in paths
+
+
+def test_broad_concept_query_unaffected_by_test_penalty(indexed_repo_with_tests):
+    """A conceptual query with no exact symbol run must not flip ordering."""
+    service = indexed_repo_with_tests.search_service()
+    response = service.hybrid_search(SearchRequest(query="marketplace listings", limit=5))
+    paths = _paths(response)
+    assert "backend/app/services/marketplace.py" in paths[:5]

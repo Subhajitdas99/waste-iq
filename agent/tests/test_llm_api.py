@@ -89,7 +89,7 @@ def test_providers_endpoint(client):
     response = client.get("/api/llm/providers")
     assert response.status_code == 200
     names = {entry["name"] for entry in response.json()}
-    assert names == {"openai", "anthropic", "google", "ollama", "mock"}
+    assert names == {"openai", "anthropic", "google", "ollama", "openrouter", "mock"}
 
 
 def test_status_endpoint(client):

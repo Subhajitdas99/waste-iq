@@ -143,14 +143,35 @@ P8. **Event-driven, idempotent automation.** Automation reacts to GitHub webhook
   Context Service output. Responses containing unverifiable references are **rejected**
   before the caller sees them. When no provider is configured, a deterministic `MockProvider`
   runs in-process so the system degrades gracefully with zero LLM dependency. The layer
-  supports five providers (`openai`, `anthropic`, `google`, `ollama`, `mock`) selectable via
-  `AGENT_LLM_PROVIDER`. Caching (memory/SQLite/Redis), telemetry (latency/cost/tokens/
+  supports six providers (`openai`, `anthropic`, `google`, `ollama`, `openrouter`, `mock`)
+  selectable via `AGENT_LLM_PROVIDER` (OpenRouter added in Phase 5.1). Caching (memory/SQLite/Redis), telemetry (latency/cost/tokens/
   retries/Prometheus), timeout, retry-with-backoff, and in-process rate limiting are built in.
   The LLM layer **never** posts comments, approves PRs, merges, or generates code.
 - Consequences: LLM prose reasoning is now available to any assistant without relaxing the
   evidence discipline established in Phases 1–2. Adding a new provider requires implementing
   one `complete()` method. Coverage ≥ 99 % (895 statements) enforced in CI.
   See `docs/architecture/LLM_INTELLIGENCE_LAYER.md` for full design.
+
+### ADR-010 — Chat is a deterministic orchestrator, not another assistant
+**Status:** Accepted · **Date:** 2026-08 · **Scope:** AI Engineering Agent (Phase 5)
+
+- Context: Engineers want natural-language access to the repository ("where is
+  NotificationService?", "review PR #1", "generate an issue draft") without a new
+  intelligence stack or a second opinion that can contradict the reviewed agents.
+- Decision: The Developer Chat Assistant (`agent/app/chat/`) is a thin,
+  deterministic orchestration facade over the existing services. Intent detection
+  is keyword/pattern based (no LLM classification); the planner maps intent to a
+  retrieval plan (query, source types, limit) and exactly one existing agent
+  (LLM explain/summarize, Issue Assistant, Documentation Agent, PR Review Agent).
+  Every evidence-requiring answer must carry repository references — answers
+  without evidence are rejected before the caller sees them, and the existing
+  Grounding Validator (ADR-009) still rejects unsupported LLM responses.
+  Conversation memory is in-process, bounded to 10 turns, with no vector memory
+  and no re-indexing. Inputs are length-limited and redaction-scanned.
+- Consequences: Chat inherits the evidence discipline of Phases 1–4.5 unchanged;
+  new capabilities require only a new intent rule + planner row, never a new
+  assistant. Deterministic detection keeps tests fast and offline (mock provider).
+  See `docs/architecture/DEVELOPER_CHAT_ASSISTANT.md` for the full design.
 
 ---
 
