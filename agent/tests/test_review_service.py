@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 
 import pytest
+import respx
+from httpx import Response
 
 from app.coordinator.event_handler import EventEnvelope
 from app.review.pr_provider import FixturePullRequestProvider
@@ -193,25 +195,90 @@ def test_provider_for_requires_github_config(noop_probe, monkeypatch):
         service._provider_for("other/org")
 
 
-def test_installation_token_issued_and_cached(noop_probe, monkeypatch):
+def test_provider_receives_fresh_installation_token(noop_probe, monkeypatch):
+    """The provider gets a fresh installation token, never a stale cache."""
     from app.clients import github_app
+    from app.review.pr_provider import GitHubPullRequestProvider
     from app.review.review_service import ReviewService
 
     issued = {"count": 0}
 
     def fake_token(app_id, private_key, installation_id):
         issued["count"] += 1
-        return "inst-token-9"
+        return f"inst-token-{issued['count']}"
 
     monkeypatch.setattr(github_app, "request_installation_token_sync", fake_token)
     service = ReviewService(probe=noop_probe, engine=ReviewEngine(noop_probe))
     provider = service._provider_for("other/org")
-    from app.review.pr_provider import GitHubPullRequestProvider
 
     assert isinstance(provider, GitHubPullRequestProvider)
-    assert issued["count"] == 1
-    assert service._installation_token() == "inst-token-9"
-    assert issued["count"] == 1
+    assert provider._token == "inst-token-1"
+    assert service._installation_token() == "inst-token-2"
+    second = service._provider_for("other/org")
+    assert isinstance(second, GitHubPullRequestProvider)
+    assert second._token == "inst-token-3"
+    assert issued["count"] == 3
+
+
+@respx.mock
+def test_github_review_uses_installation_token_for_pr_69(noop_probe, clean_review_db, monkeypatch):
+    """End-to-end: GitHub App credentials -> installation token -> PR fetch.
+
+    Asserts the mocked GitHub API received the installation token and that
+    PR #69 metadata was fetched (no real GitHub credentials involved).
+    """
+    from app.clients import github_app
+    from app.core.config import settings
+    from app.review.pr_provider import GitHubPullRequestProvider
+    from app.review.review_models import ReviewRequest
+    from app.review.review_service import ReviewService
+
+    _API = "https://api.github.test"
+
+    monkeypatch.setattr(
+        github_app, "request_installation_token_sync", lambda *args: "inst-token-69"
+    )
+    monkeypatch.setattr(settings, "agent_github_api_base_url", _API)
+
+    diff = "diff --git a/a.py b/a.py\n@@ -0,0 +1,1 @@\n+x\n"
+    respx.get(
+        f"{_API}/repos/Subhajitdas99/waste-iq/pulls/69",
+        headers={"Accept": "application/vnd.github.v3.diff"},
+    ).mock(return_value=Response(200, text=diff))
+    respx.get(
+        f"{_API}/repos/Subhajitdas99/waste-iq/pulls/69",
+        headers={"Accept": "application/vnd.github+json"},
+    ).mock(
+        return_value=Response(
+            200,
+            json={
+                "number": 69,
+                "title": "Add grounded engineering CLI",
+                "state": "open",
+                "user": {"login": "alice"},
+                "head": {"ref": "feature/cli", "sha": "sha-69"},
+                "base": {"ref": "develop"},
+            },
+        )
+    )
+    respx.get(f"{_API}/repos/Subhajitdas99/waste-iq/pulls/69/files", params={"per_page": 100}).mock(
+        return_value=Response(200, json=[])
+    )
+
+    service = ReviewService(probe=noop_probe, engine=ReviewEngine(noop_probe))
+    review = service.submit(
+        ReviewRequest(repository="Subhajitdas99/waste-iq", pr_number=69, source="manual")
+    )
+
+    assert review.title == "Add grounded engineering CLI"
+    assert review.commit_sha == "sha-69"
+    for call in respx.calls:
+        if "/repos/Subhajitdas99/waste-iq/pulls/69" in str(call.request.url):
+            assert call.request.headers["Authorization"] == "Bearer inst-token-69"
+
+    provider = service._provider_for("Subhajitdas99/waste-iq")
+    assert isinstance(provider, GitHubPullRequestProvider)
+    assert provider._token == "inst-token-69"
 
 
 def test_installation_token_failure_raises_unavailable(noop_probe, monkeypatch):
