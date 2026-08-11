@@ -1,12 +1,24 @@
 """Integration tests for the chat orchestrator against real services (Phase 5)."""
 
+import base64
+
 import pytest
+import respx
+from httpx import Response
 
 from app.chat.models import ChatNoEvidenceError, ChatReference
-from app.chat.orchestrator import ChatOrchestrator, _parse_issue_subject, _parse_pr_number
+from app.chat.orchestrator import (
+    ChatOrchestrator,
+    _parse_issue_subject,
+    _parse_pr_number,
+    _parse_repository,
+)
 from app.context.di import Container
+from app.core.config import settings
 from app.llm.models import GroundingViolationError
 from app.llm.service import LLMService
+from app.review.review_models import ReviewRequest
+from app.review.review_service import ReviewService
 
 AUTH_ROUTE = """\
 from fastapi import APIRouter
@@ -63,6 +75,29 @@ def empty_container(tmp_path, clean_context_db):
 
 def _orchestrator(container, **kwargs) -> ChatOrchestrator:
     return ChatOrchestrator(container, LLMService(), **kwargs)
+
+
+class _RecordingReviewService(ReviewService):
+    """ReviewService that records each submit request and provider selection."""
+
+    def __init__(self, container):
+        super().__init__(container=container)
+        self.requests: list[ReviewRequest] = []
+        self.providers: list[tuple[str, str]] = []
+
+    def _provider_for(self, repo_full_name: str):
+        provider = super()._provider_for(repo_full_name)
+        self.providers.append((repo_full_name, provider.__class__.__name__))
+        return provider
+
+    def submit(self, request, *, delivery_id=None, correlation_id=None):
+        self.requests.append(request)
+        return super().submit(request, delivery_id=delivery_id, correlation_id=correlation_id)
+
+
+def _recording_orchestrator(container):
+    service = _RecordingReviewService(container)
+    return _orchestrator(container, review_service=service), service
 
 
 def test_explain_code_returns_grounded_answer(container):
@@ -205,3 +240,116 @@ def test_review_pr_fallback_number_when_missing(container):
     outcome = _orchestrator(container).handle("review this pull request")
     assert outcome.intent == "review_pr"
     assert "Findings:" in outcome.answer
+
+
+def test_parse_pr_number_with_repository():
+    assert _parse_pr_number("Review PR #69 for Subhajitdas99/waste-iq") == 69
+    assert _parse_pr_number("Review Subhajitdas99/waste-iq#69") == 69
+    assert _parse_pr_number("Review PR #1 for waste-iq/demo") == 1
+
+
+def test_parse_repository_variants():
+    assert _parse_repository("Review PR #69 for Subhajitdas99/waste-iq") == "Subhajitdas99/waste-iq"
+    assert (
+        _parse_repository("Review PR #69 for Subhajitdas99/waste-iq.") == "Subhajitdas99/waste-iq"
+    )
+    assert _parse_repository("Review PR #1 for waste-iq/demo") == "waste-iq/demo"
+    assert _parse_repository("Review PR #12 in octo-org/octo_repo") == "octo-org/octo_repo"
+    assert _parse_repository("Review Subhajitdas99/waste-iq#69") == "Subhajitdas99/waste-iq"
+    assert _parse_repository("Review PR #1") is None
+    assert _parse_repository("review this pull request") is None
+
+
+@respx.mock
+def test_review_of_real_repo_uses_github_provider_and_token(
+    container, clean_review_db, monkeypatch
+):
+    """Chat review of a real repository runs through GitHubPullRequestProvider.
+
+    'Review PR #69 for Subhajitdas99/waste-iq' must keep the full repository
+    name and PR number 69, select the GitHub provider, and authenticate with a
+    fresh installation token — not the fixture provider.
+    """
+    from app.clients import github_app
+
+    _API = "https://api.github.test"
+
+    monkeypatch.setattr(
+        github_app, "request_installation_token_sync", lambda *args: "inst-token-chat"
+    )
+    monkeypatch.setattr(settings, "agent_github_api_base_url", _API)
+
+    diff = "diff --git a/a.py b/a.py\n@@ -0,0 +1,1 @@\n+x\n"
+    respx.get(
+        f"{_API}/repos/Subhajitdas99/waste-iq/pulls/69",
+        headers={"Accept": "application/vnd.github.v3.diff"},
+    ).mock(return_value=Response(200, text=diff))
+    respx.get(
+        f"{_API}/repos/Subhajitdas99/waste-iq/pulls/69",
+        headers={"Accept": "application/vnd.github+json"},
+    ).mock(
+        return_value=Response(
+            200,
+            json={
+                "number": 69,
+                "title": "Add grounded engineering CLI",
+                "state": "open",
+                "user": {"login": "alice"},
+                "head": {"ref": "feature/cli", "sha": "sha-69"},
+                "base": {"ref": "develop"},
+            },
+        )
+    )
+    respx.get(f"{_API}/repos/Subhajitdas99/waste-iq/pulls/69/files", params={"per_page": 100}).mock(
+        return_value=Response(200, json=[])
+    )
+    respx.get(f"{_API}/repos/Subhajitdas99/waste-iq/contents/a.py", params={"ref": "sha-69"}).mock(
+        return_value=Response(
+            200,
+            json={
+                "encoding": "base64",
+                "content": base64.b64encode(b"x\n").decode("ascii"),
+            },
+        )
+    )
+
+    orch, service = _recording_orchestrator(container)
+    outcome = orch.handle("Review PR #69 for Subhajitdas99/waste-iq")
+
+    assert outcome.intent == "review_pr"
+    assert outcome.grounded
+    assert outcome.answer
+    assert service.requests == [
+        ReviewRequest(repository="Subhajitdas99/waste-iq", pr_number=69, source="chat")
+    ]
+    assert ("Subhajitdas99/waste-iq", "GitHubPullRequestProvider") in service.providers
+    assert ("waste-iq/demo", "FixturePullRequestProvider") not in service.providers
+    for call in respx.calls:
+        if "/repos/Subhajitdas99/waste-iq/pulls/69" in str(call.request.url):
+            assert call.request.headers["Authorization"] == "Bearer inst-token-chat"
+
+
+def test_review_of_configured_fixture_repo_uses_fixture_provider(
+    container, clean_review_db, monkeypatch
+):
+    monkeypatch.setattr(settings, "agent_review_fixture_repo", "demo-owner/demo-repo")
+    orch, service = _recording_orchestrator(container)
+    outcome = orch.handle("Review PR #1 for demo-owner/demo-repo")
+    assert outcome.intent == "review_pr"
+    assert outcome.grounded
+    assert "Findings:" in outcome.answer
+    assert service.requests == [
+        ReviewRequest(repository="demo-owner/demo-repo", pr_number=1, source="chat")
+    ]
+    assert ("demo-owner/demo-repo", "FixturePullRequestProvider") in service.providers
+
+
+def test_review_without_repository_still_uses_fixture_provider(container, clean_review_db):
+    orch, service = _recording_orchestrator(container)
+    outcome = orch.handle("Review PR #1")
+    assert outcome.intent == "review_pr"
+    assert outcome.grounded
+    assert service.requests == [
+        ReviewRequest(repository=settings.agent_review_fixture_repo, pr_number=1, source="chat")
+    ]
+    assert (settings.agent_review_fixture_repo, "FixturePullRequestProvider") in service.providers

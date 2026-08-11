@@ -41,6 +41,7 @@ from app.llm.service import LLMService
 logger = logging.getLogger(__name__)
 
 _PR_NUMBER_RE = re.compile(r"(?:#|pr\s+)(\d+)", re.IGNORECASE)
+_REPOSITORY_RE = re.compile(r"\b([A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*)\b")
 _ISSUE_LEAD_RE = re.compile(
     r"^(?:please\s+)?(?:generate|create|write)\s+(?:an\s+)?issue\s+(?:draft\s+)?"
     r"(?:for|about|on|:)?\s*",
@@ -86,7 +87,7 @@ class ChatOrchestrator:
         repository: str | None = None,
         issue_assistant=None,
         doc_assistant=None,
-        review_agent=None,
+        review_service=None,
     ) -> None:
         self._container = container
         self._llm = llm_service
@@ -101,17 +102,11 @@ class ChatOrchestrator:
 
         from app.agents.doc_agent import DocAssistant
         from app.agents.issue_agent import IssueAssistant
-        from app.review.pr_provider import FixturePullRequestProvider
-        from app.review.review_agent import ReviewAgent
-        from app.review.review_context import RepositoryProbe
-        from app.review.review_engine import ReviewEngine
+        from app.review.review_service import ReviewService
 
         self._issue_assistant = issue_assistant or IssueAssistant(container)
         self._doc_assistant = doc_assistant or DocAssistant()
-        if review_agent is None:
-            probe = RepositoryProbe(container)
-            review_agent = ReviewAgent(FixturePullRequestProvider(), probe, ReviewEngine(probe))
-        self._review_agent: ReviewAgent = review_agent
+        self._review_service = review_service or ReviewService(container=container)
 
     # ------------------------------------------------------------------
     def handle(
@@ -315,15 +310,30 @@ class ChatOrchestrator:
         )
 
     def _review(self, question: str, correlation_id: str | None) -> ChatOutcome:
+        from app.review.review_models import ReviewRequest
+
         pr_number = _parse_pr_number(question)
-        review = self._review_agent.review(_review_request(self._repository, pr_number))
+        repository = _parse_repository(question)
+        if repository is None:
+            # Unqualified review questions keep the built-in demo behavior:
+            # the configured fixture repository, unless the chat default is
+            # already a full "owner/repo" identifier.
+            repository = (
+                self._repository
+                if "/" in (self._repository or "")
+                else settings.agent_review_fixture_repo
+            )
+        review = self._review_service.submit(
+            ReviewRequest(repository=repository, pr_number=pr_number, source="chat"),
+            correlation_id=correlation_id,
+        )
         references = [
             context_reference_to_chat_reference(ref)
             for ref in review.repository_context.related_files
         ]
         response = self._llm.analyze(
             AnalyzeRequest(
-                repository=self._repository,
+                repository=repository,
                 question=f"Summarize the review findings for PR #{pr_number}.",
                 focus=f"PR #{pr_number} review findings",
                 findings=review.findings,
@@ -350,15 +360,15 @@ class ChatOrchestrator:
         )
 
 
-def _review_request(repository: str | None, pr_number: int):
-    from app.review.review_models import ReviewRequest
-
-    return ReviewRequest(repository=repository or "waste-iq/demo", pr_number=pr_number)
-
-
 def _parse_pr_number(question: str) -> int:
     match = _PR_NUMBER_RE.search(question)
     return int(match.group(1)) if match else 1
+
+
+def _parse_repository(question: str) -> str | None:
+    """Extract a full ``owner/repo`` identifier, e.g. ``Subhajitdas99/waste-iq``."""
+    match = _REPOSITORY_RE.search(question)
+    return match.group(1) if match else None
 
 
 def _parse_issue_subject(question: str) -> tuple[int, str]:
