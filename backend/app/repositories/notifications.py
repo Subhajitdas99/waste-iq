@@ -1,7 +1,7 @@
 from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.notification import Notification, NotificationStatus
+from app.models.notification import Notification, NotificationStatus, NotificationType
 
 PAGE_SIZE_MAX = 50
 
@@ -12,11 +12,43 @@ class NotificationRepository:
         db.flush()
         return notification
 
-    def get_for_user(self, db: Session, user_id: int, notification_id: int) -> Notification | None:
+    def exists_by_metadata(
+        self,
+        db: Session,
+        *,
+        notification_type: NotificationType,
+        metadata_key: str,
+        metadata_value: str,
+    ) -> bool:
+        notifications = (
+            db.execute(
+                select(Notification).where(
+                    Notification.type == notification_type,
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        return any(
+            notification.metadata_json
+            and str(notification.metadata_json.get(metadata_key)) == metadata_value
+            for notification in notifications
+        )
+
+    def get_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        notification_id: int,
+    ) -> Notification | None:
         statement = self.base_query_for_user(user_id).where(Notification.id == notification_id)
         return db.execute(statement).scalar_one_or_none()
 
-    def base_query_for_user(self, user_id: int) -> Select[tuple[Notification]]:
+    def base_query_for_user(
+        self,
+        user_id: int,
+    ) -> Select[tuple[Notification]]:
         return select(Notification).where(Notification.user_id == user_id)
 
     def list_for_user(
@@ -27,6 +59,7 @@ class NotificationRepository:
         page: int = 1,
         page_size: int = 20,
         status_value: NotificationStatus | None = None,
+        type_value: NotificationType | None = None,
     ) -> tuple[list[Notification], int, int]:
         statement = self.base_query_for_user(user_id)
         if status_value is not None:

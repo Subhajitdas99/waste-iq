@@ -41,6 +41,33 @@ class Settings(BaseSettings):
     cloudinary_api_key: str | None = Field(default=None, alias="CLOUDINARY_API_KEY")
     cloudinary_api_secret: str | None = Field(default=None, alias="CLOUDINARY_API_SECRET")
 
+    # ------------------------------------------------------------------
+    # Background Jobs (WIQ-V1-021)
+    # ------------------------------------------------------------------
+
+    enable_background_jobs: bool = Field(
+        default=True,
+        alias="ENABLE_BACKGROUND_JOBS",
+    )
+
+    reservation_sweep_interval_minutes: int = Field(
+        default=1,
+        alias="RESERVATION_SWEEP_INTERVAL_MINUTES",
+        gt=0,
+    )
+
+    aging_pickup_interval_minutes: int = Field(
+        default=5,
+        alias="AGING_PICKUP_INTERVAL_MINUTES",
+        gt=0,
+    )
+
+    aging_pickup_threshold_days: int = Field(
+        default=2,
+        alias="AGING_PICKUP_THRESHOLD_DAYS",
+        gt=0,
+    )
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
