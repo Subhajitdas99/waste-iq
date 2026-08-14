@@ -27,3 +27,16 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserRead
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=64)
+
+    model_config = ConfigDict(str_strip_whitespace=True)

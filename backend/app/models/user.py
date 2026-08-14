@@ -27,6 +27,7 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, native_enum=False), nullable=False, index=True
     )
+    token_version: Mapped[int] = mapped_column(default=1, nullable=False, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -227,6 +227,56 @@ Get the currently authenticated user's profile.
 
 ---
 
+### `POST /auth/forgot-password`
+
+Request a password reset email. If the email exists, a reset link is generated and sent to the user.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "email": "riya@example.com"
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Request processed successfully |
+| `422` | Malformed request body |
+
+---
+
+### `POST /auth/reset-password`
+
+Reset a password using a valid token received via email.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "token": "jwt_reset_token_string",
+  "new_password": "NewSecurePassword123!"
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Password updated successfully |
+| `400` | Invalid or expired token |
+| `422` | Malformed request body |
+
+---
+
 ## 4. Pickup Request Endpoints
 
 ### `POST /pickup-requests`

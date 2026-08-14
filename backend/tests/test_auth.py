@@ -148,3 +148,67 @@ def test_auth_me_without_token_fails(client):
 def test_auth_me_with_garbage_token_fails(client):
     response = client.get("/auth/me", headers={"Authorization": "Bearer not-a-real-token"})
     assert response.status_code == 401
+
+
+def test_forgot_password_success(client):
+    client.post(
+        "/auth/register",
+        json={
+            "name": "Forgot User",
+            "email": "forgot@example.com",
+            "password": "Test@1234",
+            "phone": "9876543220",
+            "role": "citizen",
+        },
+    )
+    response = client.post("/auth/forgot-password", json={"email": "forgot@example.com"})
+    assert response.status_code == 200
+    assert "If that email exists" in response.json()["message"]
+
+
+def test_forgot_password_nonexistent_email_returns_200(client):
+    response = client.post("/auth/forgot-password", json={"email": "nobody_forgot@example.com"})
+    assert response.status_code == 200
+    assert "If that email exists" in response.json()["message"]
+
+
+def test_reset_password_success(client, db_session):
+    client.post(
+        "/auth/register",
+        json={
+            "name": "Reset User",
+            "email": "reset@example.com",
+            "password": "Test@1234",
+            "phone": "9876543221",
+            "role": "citizen",
+        },
+    )
+
+    from app.services.auth import normalize_email
+    from sqlalchemy import select
+    from app.models.user import User
+    from app.core.security import create_password_reset_token
+
+    user = db_session.execute(
+        select(User).where(User.email == normalize_email("reset@example.com"))
+    ).scalar_one()
+    token = create_password_reset_token(str(user.id), user.token_version)
+
+    response = client.post(
+        "/auth/reset-password",
+        json={"token": token, "new_password": "NewPassword@123"},
+    )
+    assert response.status_code == 200
+
+    login_response = client.post(
+        "/auth/login",
+        json={"email": "reset@example.com", "password": "NewPassword@123"},
+    )
+    assert login_response.status_code == 200
+
+    second_reset = client.post(
+        "/auth/reset-password",
+        json={"token": token, "new_password": "AnotherPassword@123"},
+    )
+    assert second_reset.status_code == 400
+

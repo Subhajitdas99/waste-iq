@@ -164,13 +164,12 @@ export function LoginPage() {
               Remember me
             </label>
           </div>
-          <a
-            href="#"
+          <Link
+            to="/forgot-password"
             className="text-sm font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-ring rounded"
-            onClick={(e) => e.preventDefault()}
           >
             Forgot password?
-          </a>
+          </Link>
         </div>
 
         <Button

@@ -9,6 +9,7 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ## [Unreleased]
 
 ### Added
+- **Forgot Password Flow** — Added `/auth/forgot-password` and `/auth/reset-password` endpoints allowing users to securely reset their passwords via email links with expiring tokens.
 - **AI Waste Classification v2** — improved classification confidence scores using updated Cloudinary AI transformations; `confidence` and `category` fields now populated automatically on image upload
 - **Municipality Dashboard** — new municipality-scoped admin role with city-level analytics, waste volume trends, and collector performance metrics
 - **Push Notification System** — in-app and browser push notifications for pickup status changes (pending → accepted, on_the_way, completed)
@@ -23,7 +24,7 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **Token Expiry UX** — frontend now shows a non-dismissible session expiry banner 5 minutes before JWT expiry, prompting re-login
 
 ### Fixed
-- *(No fixes yet — coming with the next release)*
+- **Linting & Type Checking** — Resolved Ruff whitespace and line-length errors, fixed MyPy/Pyright type narrowing issues in the email service, and silenced React Fast Refresh warnings for context exports.
 
 ---
 

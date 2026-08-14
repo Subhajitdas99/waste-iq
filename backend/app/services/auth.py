@@ -3,8 +3,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
+from fastapi import BackgroundTasks
+
 from app.core.config import settings
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    create_password_reset_token,
+    hash_password,
+    verify_password,
+    verify_password_reset_token,
+)
+from app.services.email import send_password_reset_email
 from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, RegisterRequest
@@ -61,8 +70,34 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
 def issue_token_for_user(user: User) -> AuthResponse:
     return AuthResponse(
-        access_token=create_access_token(str(user.id)), user=UserRead.model_validate(user)
+        access_token=create_access_token(str(user.id), user.token_version),
+        user=UserRead.model_validate(user),
     )
+
+
+def forgot_password(db: Session, email: str, background_tasks: BackgroundTasks) -> None:
+    statement = select(User).where(User.email == normalize_email(email))
+    user = db.execute(statement).scalar_one_or_none()
+    if user:
+        token = create_password_reset_token(str(user.id), user.token_version)
+        background_tasks.add_task(send_password_reset_email, user.email, token)
+
+
+def reset_password(db: Session, token: str, new_password: str) -> None:
+    try:
+        payload = verify_password_reset_token(token)
+        user_id = int(payload["sub"])
+        token_ver = payload["ver"]
+    except ValueError as exc:
+        raise ValueError("Invalid or expired reset token") from exc
+
+    user = db.get(User, user_id)
+    if not user or user.token_version != token_ver:
+        raise ValueError("Invalid or expired reset token")
+
+    user.password_hash = hash_password(new_password)
+    user.token_version += 1
+    db.commit()
 
 
 def bootstrap_admin_user() -> None:
