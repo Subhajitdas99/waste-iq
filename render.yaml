@@ -5,6 +5,7 @@ services:
     plan: starter
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -25,8 +26,9 @@ services:
     plan: starter
     dockerContext: ./frontend
     dockerfilePath: ./frontend/Dockerfile
+    healthCheckPath: /health
     envVars:
-      - key: VITE_API_BASE_URL
+      - key: VITE_API_URL
         value: https://waste-iq-api.onrender.com
 
 databases:
