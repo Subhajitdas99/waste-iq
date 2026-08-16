@@ -209,5 +209,34 @@ def test_category_average_unknown_category_is_zero():
     assert _report().category_average("unknown") == 0.0
 
 
+def test_grounding_gate_renders_on_100_scale_when_passing():
+    """A perfect grounding (10.0 internally) must render 100.0 / PASS.
+
+    Regression for the report bug: the Grounding gate rendered the raw 0-10
+    sub-score against the 0-100 threshold, showing "10.0 | FAIL" while the
+    gate itself evaluated PASS.
+    """
+    markdown = render_markdown(_report())
+    assert "| Grounding | = 100 | 100.0 | PASS |" in markdown
+
+
+def test_grounding_gate_renders_on_100_scale_when_failing():
+    report = _report()
+    report.cases[0].grounding = 9.0
+    report.categories[0].grounding = 9.0
+    report.gates.grounding_eq_100 = False
+    markdown = render_markdown(report)
+    assert "| Grounding | = 100 | 90.0 | FAIL |" in markdown
+
+
+def test_grounding_gate_value_matches_gate_outcome():
+    """The rendered Grounding value must agree with the grounding_eq_100 gate."""
+    from app.evaluation.report import _gate_value
+
+    report = _report()
+    value = float(_gate_value(report, "grounding"))
+    assert (value == 100.0) is report.gates.grounding_eq_100
+
+
 def test_case_lookup_unknown_returns_none():
     assert _report().case("missing") is None

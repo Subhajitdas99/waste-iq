@@ -261,7 +261,7 @@ def test_telemetry_aggregates_cost_and_tokens(monkeypatch):
 def test_providers_list():
     service = LLMService(settings=settings)
     names = {entry.name for entry in service.providers()}
-    assert names == {"openai", "anthropic", "google", "ollama", "mock"}
+    assert names == {"openai", "anthropic", "google", "ollama", "openrouter", "mock"}
 
 
 def test_rate_limiter_purges_old_window_and_resets():

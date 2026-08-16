@@ -1,9 +1,9 @@
 # LLM Intelligence Layer — Architecture
 
-> **Status:** ✅ Implemented (Phase 2.5)
+> **Status:** ✅ Implemented (Phase 2.5, extended Phase 5.1 — OpenRouter provider)
 > **Owner:** Lead AI Engineer
-> **Phase:** 2.5 — LLM Intelligence Layer
-> **Related:** `agent/app/llm/`, `docs/architecture/ADR-009`, Phase 2 (PR Review Agent)
+> **Phase:** 2.5 — LLM Intelligence Layer · 5.1 — OpenRouter provider
+> **Related:** `agent/app/llm/`, `docs/architecture/ADR-009`, Phase 2 (PR Review Agent), Phase 5 (Developer Chat Assistant)
 
 ---
 
@@ -41,6 +41,9 @@ agent/app/llm/
 ├── models.py           — Pydantic schemas (requests, responses, errors, telemetry)
 ├── provider.py         — Provider abstraction + registry + MockProvider
 ├── client.py           — Concrete HTTP clients (OpenAI, Anthropic, Gemini, Ollama)
+├── providers/
+│   ├── __init__.py     — Provider sub-package
+│   └── openrouter.py   — OpenRouter client (Phase 5.1, OpenAI-compatible API)
 ├── prompt_builder.py   — Evidence-grounded, redacted prompt construction
 ├── response_parser.py  — Strict JSON extraction + Pydantic validation
 ├── grounding.py        — Evidence universe + grounding validation gate
@@ -62,8 +65,8 @@ class LLMProvider(Protocol):
 ```
 
 All concrete providers (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`,
-`OllamaProvider`) implement this protocol. The `MockProvider` is always available as the
-deterministic fallback.
+`OllamaProvider`, `OpenRouterProvider`) implement this protocol. The `MockProvider` is
+always available as the deterministic fallback.
 
 ### 4.2 Provider Matrix
 
@@ -73,7 +76,30 @@ deterministic fallback.
 | `anthropic` | `AGENT_LLM_API_KEY` / `AGENT_ANTHROPIC_API_KEY` | `claude-3-5-haiku-latest` | `https://api.anthropic.com` |
 | `google` | `AGENT_LLM_API_KEY` / `AGENT_GOOGLE_API_KEY` | `gemini-2.0-flash` | `https://generativelanguage.googleapis.com/v1beta` |
 | `ollama` | none (local) | `llama3.2` | `http://localhost:11434` |
+| `openrouter` | `AGENT_OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | `https://openrouter.ai/api/v1` |
 | `mock` | none | `mock-model` | in-process |
+
+### 4.2.1 OpenRouter (Phase 5.1)
+
+`OpenRouterProvider` (`app/llm/providers/openrouter.py`) speaks the OpenAI-compatible
+Chat Completions API (`POST /chat/completions`) and accepts any model id that OpenRouter
+routes, e.g. `openai/gpt-4o-mini`, `anthropic/claude-3.5-haiku`, `meta-llama/llama-3.3-70b-instruct`.
+
+- **Authentication:** `Authorization: Bearer <AGENT_OPENROUTER_API_KEY>`.
+- **Attribution headers (optional):** `HTTP-Referer` (site URL) and `X-Title` (app name)
+  from `AGENT_OPENROUTER_HTTP_REFERER` / `AGENT_OPENROUTER_APP_NAME` — required by the
+  OpenRouter free-tier policy and good practice for paid tiers.
+- **Endpoint override:** `AGENT_OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`),
+  useful for proxies or regional routing.
+- **Shared behavior:** the provider reuses the common HTTP client helpers in
+  `client.py` (`_send_single`, `_estimate_tokens`), so timeout/retryable/error
+  semantics, telemetry aggregation (`provider=openrouter`), caching
+  (`hash_request` already includes provider + model + prompt), and rate limiting
+  behave identically to the other providers — no special cases anywhere else.
+- **Selection:** `AGENT_LLM_PROVIDER=openrouter` + a set key resolves to
+  `OpenRouterProvider`; without the key the agent falls back to `MockProvider`.
+  Unknown provider names raise `LLMNotConfigured` with a clear message listing the
+  valid providers.
 
 ### 4.3 Selection Logic
 
@@ -300,12 +326,16 @@ All settings are read via `pydantic-settings` with `AGENT_LLM_*` env aliases:
 | Variable | Default | Purpose |
 |---|---|---|
 | `AGENT_LLM_ENABLED` | `true` | Master switch. Disabled → 503 on all calls. |
-| `AGENT_LLM_PROVIDER` | `mock` | Provider name (mock/openai/anthropic/google/ollama) |
+| `AGENT_LLM_PROVIDER` | `mock` | Provider name (mock/openai/anthropic/google/ollama/openrouter) |
 | `AGENT_LLM_MODEL` | `""` | Override model name (provider default used if empty) |
 | `AGENT_LLM_API_KEY` | `""` | Shared API key (used by whichever cloud provider is active) |
 | `AGENT_OPENAI_API_KEY` | `""` | OpenAI-specific key (preferred over shared) |
 | `AGENT_ANTHROPIC_API_KEY` | `""` | Anthropic-specific key |
 | `AGENT_GOOGLE_API_KEY` | `""` | Google Gemini-specific key |
+| `AGENT_OPENROUTER_API_KEY` | `""` | OpenRouter key (`sk-or-…`); presence enables the provider |
+| `AGENT_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter endpoint override |
+| `AGENT_OPENROUTER_HTTP_REFERER` | `""` | `HTTP-Referer` attribution header (site URL) |
+| `AGENT_OPENROUTER_APP_NAME` | `""` | `X-Title` attribution header (app name) |
 | `AGENT_LLM_BASE_URL` | provider default | Override base URL (e.g. Azure proxy) |
 | `AGENT_LLM_TIMEOUT_SECONDS` | `60.0` | Per-call HTTP timeout |
 | `AGENT_LLM_MAX_RETRIES` | `2` | Retryable failures before raising |
@@ -334,13 +364,18 @@ All settings are read via `pydantic-settings` with `AGENT_LLM_*` env aliases:
 | `models.py` | 100% |
 | `prompt_builder.py` | 100% |
 | `provider.py` | 100% |
+| `providers/openrouter.py` | 100% |
 | `service.py` | 100% |
 | `telemetry.py` | 100% |
-| `client.py` | 96% |
-| `response_parser.py` | 98% |
-| **TOTAL** | **99%** (895/895 statements, 4 missed) |
+| `client.py` | 100% |
+| `response_parser.py` | 100% |
+| **TOTAL** | **100%** (935/935 statements) |
 
-135 tests across 10 test modules. All pass. Requirements: coverage ≥ 95% ✅.
+720 tests pass across the full suite (35 dedicated to OpenRouter in
+`tests/test_llm_openrouter.py`, covering provider selection, client request
+serialization/headers, response parsing, error mapping, timeout, retries, telemetry,
+cache integration, redaction, grounding rejection, and the chat API over a mocked
+OpenRouter transport). Requirements: coverage ≥ 95% ✅.
 
 ---
 

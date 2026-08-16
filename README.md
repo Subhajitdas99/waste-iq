@@ -506,7 +506,7 @@ We welcome contributions from the community! Please read our:
 
 ```bash
 # Fork the repo, then clone your fork
-git clone https://github.com/<your-username>/waste-iq.git
+git clone https://github.com/Subhajitdas99/waste-iq.git
 
 # Create a feature branch
 git checkout -b feat/your-feature-name

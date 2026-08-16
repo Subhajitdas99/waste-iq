@@ -326,6 +326,47 @@ search 94.0, architecture 95.4, issue assistant 100.0, PR review 100.0, document
 outranking class definitions) is measured honestly at rs-03/rs-04 (88) rather than
 hidden; see `docs/evaluation/KNOWN_LIMITATIONS.md`.
 
+#### Phase 5 implementation status (2026-08)
+
+**Developer Chat Assistant** implemented in `agent/app/chat/` — a deterministic
+orchestration facade over the existing services with mandatory grounding and
+bounded conversation memory. See `docs/architecture/DEVELOPER_CHAT_ASSISTANT.md`
+and ADR-010.
+
+| Piece | Implementation |
+|---|---|
+| Intent detection | `intent.py` — ordered keyword rules (review_pr, generate_issue, generate_documentation, summarize_changes, explain_architecture, find_implementation, explain_code, repository_search), **no LLM classification**; confidence `min(0.99, base + 0.02×matches)` |
+| Planner | `planner.py` — intent → retrieval plan (query, source types, limit) + one agent (llm_explain, llm_summarize, issue_assistant, doc_assistant, review_agent); follow-ups reuse the previous turn's search query |
+| Context builder | `context_builder.py` — retrieved chunks → `RepositoryContext` buckets (files/docs/ADRs/roadmap) and evidence ids in the exact grounding formats |
+| Orchestrator | `orchestrator.py` — detect → retrieve → dispatch to the existing services; raises `ChatNoEvidenceError` when an evidence-requiring answer has zero references |
+| Service + memory | `service.py`, `memory.py`, `conversation.py` — sanitization (length cap + `Redactor` secret scan), thread-safe in-process memory, max 10 turns (`AGENT_CHAT_MAX_TURNS`), intent statistics |
+| API | `POST /api/chat`, `POST /api/chat/followup`, `GET /api/chat/status`; errors mapped via `llm._consider` for LLM-layer failures |
+| Config | `AGENT_CHAT_ENABLED`, `AGENT_CHAT_MAX_TURNS`, `AGENT_CHAT_RETRIEVAL_LIMIT`, `AGENT_CHAT_MAX_QUESTION_CHARS`, `AGENT_CHAT_REPOSITORY` |
+| Tests | `tests/test_chat_{intent,planner,memory,context_builder,response,orchestrator,service,api}.py` — 100 tests, coverage on `app/chat/` = 100 % |
+
+All eight intents are exercised end-to-end against real services (hybrid search,
+LLM layer with deterministic mock fallback, Issue Assistant, Documentation Agent,
+PR Review Agent with the fixture provider), including the no-evidence rejection
+path and secret-shape input rejection.
+
+#### Phase 5.1 implementation status (2026-08)
+
+**OpenRouter provider** added to the LLM Intelligence Layer (`agent/app/llm/providers/`)
+without touching the provider architecture: `OpenRouterProvider` speaks the
+OpenAI-compatible Chat Completions API, uses `Authorization: Bearer <key>` plus
+optional `HTTP-Referer`/`X-Title` attribution headers, and reuses the shared HTTP
+client helpers, so timeout/retry/telemetry/cache/rate-limit semantics are identical
+to the existing providers. Unknown provider names now fail with a clear
+`LLMNotConfigured` error. See `docs/architecture/PHASE5_1_OPENROUTER_VERIFICATION_REPORT.md`.
+
+| Piece | Implementation |
+|---|---|
+| Client | `app/llm/providers/openrouter.py` — Chat Completions POST, usage parsing with token-estimation fallback, error mapping via `client._send_single` |
+| Registry | `provider.py` — `build_provider`, `provider_for_name`, `resolve_provider`, `providers_info`, `is_configured`, unknown-name guard |
+| Config | `AGENT_OPENROUTER_API_KEY`, `AGENT_OPENROUTER_BASE_URL`, `AGENT_OPENROUTER_HTTP_REFERER`, `AGENT_OPENROUTER_APP_NAME`; default model `openai/gpt-4o-mini` |
+| Tests | `tests/test_llm_openrouter.py` — 35 tests (selection, serialization, headers, parsing, errors, timeout, retries, telemetry, cache, redaction, grounding rejection, chat API); `app/llm` coverage = 100 % |
+| Live verification | Real OpenRouter call succeeded (`200 OK`, `finish_reason=stop`); live benchmark **PASS** 97.45 overall, 0 hallucinations, grounding 100 |
+
 ---
 
 ## 4. Folder Structure

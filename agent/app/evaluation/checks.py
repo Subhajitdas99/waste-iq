@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.core.config import Settings
 from app.evaluation.schema import CaseResult
 
 CHECKED_SERVICES = {
@@ -204,13 +205,38 @@ def check_telemetry() -> CaseResult:
     )
 
 
+def _no_cloud_credentials() -> Settings:
+    """Settings with every cloud credential forced to ``None``.
+
+    The benchmark's provider-selection case must be deterministic and
+    hermetic: it must not depend on the ambient environment or on a local
+    developer ``.env`` (which may carry real keys). ``_env_file=None``
+    disables dotenv loading and explicit init kwargs take precedence over
+    environment variables, so a real key on the machine can never leak into
+    this case.
+    """
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        agent_llm_provider="openrouter",
+        agent_llm_model="",
+        agent_llm_api_key=None,
+        agent_llm_base_url=None,
+        agent_openai_api_key=None,
+        agent_anthropic_api_key=None,
+        agent_google_api_key=None,
+        agent_openrouter_api_key=None,
+        agent_openrouter_http_referer=None,
+        agent_openrouter_app_name=None,
+    )
+
+
 def check_provider_selection() -> CaseResult:
-    from app.core.config import settings
     from app.llm.provider import MockProvider, build_provider, resolve_provider
 
-    name, _configured = resolve_provider(settings)
-    provider = build_provider(settings)
-    ok = name == "mock" and isinstance(provider, MockProvider)
+    hermetic = _no_cloud_credentials()
+    name, _configured = resolve_provider(hermetic)
+    provider = build_provider(hermetic)
+    ok = name == "mock" and isinstance(provider, MockProvider) and _configured is False
     return CaseResult(
         case_id="ll-06-provider-selection",
         actual_answer=f"resolver chose provider={name!r} configured={_configured}",

@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from app.context.interfaces import ChunkStore, EmbeddingProvider, VectorStore
 from app.context.models import SearchRequest, SearchResponse, ScoredChunk
-from app.context.tokenizer import expand_query_tokens
+from app.context.tokenizer import expand_query_tokens, split_identifier
 
 # Fused-score blend: keyword scoring is the primary, high-precision signal
 # for code retrieval; the vector component adds semantic recall.
 _KEYWORD_WEIGHT = 0.75
 _VECTOR_WEIGHT = 0.25
+
+# Exact-symbol re-ranking: when a query names an implementation symbol and
+# an implementation candidate exists, its test files are demoted by this
+# factor so source ranks ahead of tests. Tests are never removed.
+_MIN_SYMBOL_RUN = 2
+_TEST_PATH_FACTOR = 0.6
 
 
 class SemanticSearchService:
@@ -59,8 +65,43 @@ class SemanticSearchService:
             for chunk_id, score in vector_hits.items():
                 scored[chunk_id] = score / max_vec
 
+        scored = self._prefer_implementation(scored, tokens)
         ranked = sorted(scored.items(), key=lambda item: item[1], reverse=True)[: request.limit]
         return self._to_response(ranked)
+
+    def _prefer_implementation(
+        self, scored: dict[str, float], query_tokens: list[str]
+    ) -> dict[str, float]:
+        """Demote test chunks when the query names an implementation symbol.
+
+        Applies only when the query token stream shares a contiguous symbol
+        run with a file stem (e.g. ``ReviewEngine`` / ``review_engine``) AND
+        at least one non-test implementation candidate exists in the result
+        set. Matching test chunks are scaled by ``_TEST_PATH_FACTOR`` so the
+        implementation ranks ahead of its tests; tests remain retrievable.
+        """
+        if len(query_tokens) < _MIN_SYMBOL_RUN:
+            return scored
+        chunks = self._chunk_store.get_existing(list(scored))
+        implementation: list[str] = []
+        tests: list[str] = []
+        for chunk_id in scored:
+            chunk = chunks.get(chunk_id)
+            if chunk is None:
+                continue
+            stem = split_identifier(_file_stem(chunk.file_path))
+            if _longest_common_run(stem, query_tokens) < _MIN_SYMBOL_RUN:
+                continue
+            if _is_test_path(chunk.file_path):
+                tests.append(chunk_id)
+            else:
+                implementation.append(chunk_id)
+        if not implementation:
+            return scored
+        adjusted = dict(scored)
+        for chunk_id in tests:
+            adjusted[chunk_id] = scored[chunk_id] * _TEST_PATH_FACTOR
+        return adjusted
 
     def explain(self, request: SearchRequest) -> dict:
         """Full scoring breakdown for a query (debug/introspection)."""
@@ -152,3 +193,39 @@ def _cosine(a: list[float], b: list[float]) -> float:
     if not norm_a or not norm_b:
         return 0.0
     return dot / (norm_a * norm_b)
+
+
+def _file_stem(path: str) -> str:
+    """File name without extension (path separator agnostic)."""
+    filename = path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return filename.rsplit(".", 1)[0]
+
+
+def _is_test_path(path: str) -> bool:
+    """True for conventional test files: test dirs, test_/test- prefixes,
+    _test suffixes, and .test. / -test. markers."""
+    lowered = path.lower().replace("\\", "/")
+    if any(marker in lowered for marker in ("/test/", "/tests/", "/__tests__/")):
+        return True
+    stem = lowered.rsplit("/", 1)[-1]
+    return (
+        stem.startswith("test_")
+        or stem.startswith("test-")
+        or stem.endswith("_test")
+        or ".test." in stem
+        or "-test." in stem
+    )
+
+
+def _longest_common_run(a: list[str], b: list[str]) -> int:
+    """Longest contiguous sequence of equal tokens between two token lists."""
+    best = 0
+    for i, token in enumerate(a):
+        for j, other in enumerate(b):
+            if token != other:
+                continue
+            run = 0
+            while i + run < len(a) and j + run < len(b) and a[i + run] == b[j + run]:
+                run += 1
+            best = max(best, run)
+    return best

@@ -142,6 +142,21 @@ def test_other_error_status_raises(provider):
 
 
 @respx.mock
+def test_unauthorized_status_raises_with_status(provider):
+    """A 401 (bad/expired credential) must surface, never be swallowed."""
+    respx.get(f"{_API}/repos/acme/app/pulls/12").mock(return_value=Response(401, json={}))
+    with pytest.raises(ReviewUnavailable, match="github api error status=401"):
+        provider._get_json("/repos/acme/app/pulls/12")
+
+
+@respx.mock
+def test_uses_bearer_installation_token_in_authorization(provider):
+    respx.get(f"{_API}/repos/acme/app/pulls/12").mock(return_value=Response(200, json={}))
+    provider._get_json("/repos/acme/app/pulls/12")
+    assert respx.calls.last.request.headers["Authorization"] == "Bearer test-token"
+
+
+@respx.mock
 def test_find_pull_request_for_head(provider, pr_metadata):
     respx.get(f"{_API}/repos/acme/app/pulls", params={"state": "open", "per_page": 100}).mock(
         return_value=Response(200, json=[pr_metadata])

@@ -1,4 +1,4 @@
-from app.core.config import settings
+from app.core.config import Settings, settings
 
 
 def test_settings_load_environment():
@@ -6,6 +6,21 @@ def test_settings_load_environment():
     assert settings.agent_github_app_id == "12345"
     assert settings.agent_github_installation_id == 999
     assert settings.environment == "test"
+
+
+def test_context_roots_accept_comma_separated_dotenv_value():
+    parsed = Settings(agent_context_roots="backend,frontend,docs,.github")
+    assert parsed.agent_context_roots == ["backend", "frontend", "docs", ".github"]
+
+
+def test_context_roots_accept_json_array():
+    parsed = Settings(agent_context_roots='["backend", "frontend"]')
+    assert parsed.agent_context_roots == ["backend", "frontend"]
+
+
+def test_empty_installation_id_means_unset():
+    parsed = Settings(agent_github_installation_id="")
+    assert parsed.agent_github_installation_id == 0
 
 
 def test_github_configured_with_valid_env():

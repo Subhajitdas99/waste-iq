@@ -48,7 +48,6 @@ class ReviewService:
         self._injected_provider = provider
         self._probe = probe or RepositoryProbe(self.container)
         self._engine = engine or ReviewEngine(self._probe)
-        self._token: str | None = None
 
     @property
     def container(self) -> Container:
@@ -226,16 +225,19 @@ class ReviewService:
         return GitHubPullRequestProvider(self._installation_token())
 
     def _installation_token(self) -> str:
-        if self._token:
-            return self._token
+        """Issue a fresh short-lived GitHub installation token.
+
+        Never cached: installation tokens expire after ~1 hour, and a stale
+        in-memory token made every review on long-running servers 401. The
+        issuance round-trip is cheap relative to the review itself.
+        """
         from app.clients.github_app import request_installation_token_sync
 
         try:
-            self._token = request_installation_token_sync(
+            return request_installation_token_sync(
                 settings.agent_github_app_id,
                 settings.github_private_key or "",
                 settings.agent_github_installation_id,
             )
         except Exception as exc:  # noqa: BLE001 - surface as unavailable
             raise ReviewUnavailable(f"could not issue github installation token: {exc}") from exc
-        return self._token
