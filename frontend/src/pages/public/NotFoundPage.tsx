@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { SeoHead } from "@/components/seo/SeoHead";
+import { useAuth } from "@/context/AuthContext";
+import { getRoleHomePath, getRolePortalLabel } from "@/lib/portal";
 
 export function NotFoundPage() {
   return (
@@ -28,6 +30,10 @@ export function NotFoundPage() {
 }
 
 export function UnauthorizedPage() {
+  const { user, isAuthenticated } = useAuth();
+  const roleHomePath = getRoleHomePath(user?.role);
+  const roleLabel = getRolePortalLabel(user?.role);
+
   return (
     <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-4">
       <SeoHead
@@ -65,11 +71,19 @@ export function UnauthorizedPage() {
             Return Home
           </Button>
         </Link>
-        <Link to="/dashboard">
-          <Button size="lg" className="rounded-full">
-            Go to Dashboard
-          </Button>
-        </Link>
+        {isAuthenticated ? (
+          <Link to={roleHomePath}>
+            <Button size="lg" className="rounded-full">
+              Open {roleLabel}
+            </Button>
+          </Link>
+        ) : (
+          <Link to="/login">
+            <Button size="lg" className="rounded-full">
+              Sign In
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   );

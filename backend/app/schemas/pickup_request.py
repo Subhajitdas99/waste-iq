@@ -18,6 +18,9 @@ class PickupRequestCreate(BaseModel):
     address: str = Field(min_length=8, max_length=500)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
+    estimated_weight_kg: float | None = Field(default=None, ge=0, le=10000)
+    preferred_time: datetime | None = None
+    notes: str | None = Field(default=None, max_length=2000)
     image_url: str | None = None
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -47,6 +50,9 @@ class PickupRequestRead(BaseModel):
     address: str
     latitude: float
     longitude: float
+    estimated_weight_kg: float | None
+    preferred_time: datetime | None
+    notes: str | None
     status: str
     created_at: datetime
     assigned_collector_name: str | None

@@ -1,32 +1,28 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  Bell,
-  ClipboardList,
-  History,
-  LayoutDashboard,
   Leaf,
   LogOut,
   Menu,
   Moon,
-  Settings,
   Sun,
-  UserCircle2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { Button } from "@/components/ui/button";
+import { NotificationDropdown } from "@/components/dashboard/notifications/NotificationDropdown";
+import { getPortalConfig } from "@/lib/portal";
 import { cn } from "@/lib/utils";
 
-const dashboardNavigation = [
-  { label: "Overview", to: "/dashboard/overview", icon: LayoutDashboard },
-  { label: "Pickups", to: "/dashboard/pickups", icon: ClipboardList },
-  { label: "History", to: "/dashboard/history", icon: History },
-  { label: "Profile", to: "/dashboard/profile", icon: UserCircle2 },
-  { label: "Settings", to: "/dashboard/settings", icon: Settings },
-];
-
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({
+  portalName,
+  navigation,
+  onNavigate,
+}: {
+  portalName: string;
+  navigation: ReturnType<typeof getPortalConfig>["navigation"];
+  onNavigate?: () => void;
+}) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center gap-3 border-b px-5">
@@ -36,13 +32,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <div>
           <p className="font-semibold">Waste-IQ</p>
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Citizen Portal
+            {portalName}
           </p>
         </div>
       </div>
 
       <nav className="flex-1 space-y-2 p-4" aria-label="Dashboard navigation">
-        {dashboardNavigation.map((item) => {
+        {navigation.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
@@ -73,19 +69,20 @@ export function DashboardLayout() {
   const { theme, setTheme } = useTheme();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const portal = getPortalConfig(user?.role ?? "citizen");
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
   const currentLabel =
-    dashboardNavigation.find((item) => location.pathname.startsWith(item.to))?.label ??
+    portal.navigation.find((item) => location.pathname.startsWith(item.to))?.label ??
     "Dashboard";
 
   return (
     <div className="min-h-screen bg-background">
       <div className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-white/20 bg-card/80 backdrop-blur md:block">
-        <SidebarContent />
+        <SidebarContent portalName={portal.portalName} navigation={portal.navigation} />
       </div>
 
       {isMobileMenuOpen ? (
@@ -97,7 +94,11 @@ export function DashboardLayout() {
             aria-label="Close navigation"
           />
           <aside className="relative z-10 h-full w-72 border-r bg-card shadow-xl">
-            <SidebarContent onNavigate={() => setIsMobileMenuOpen(false)} />
+            <SidebarContent
+              portalName={portal.portalName}
+              navigation={portal.navigation}
+              onNavigate={() => setIsMobileMenuOpen(false)}
+            />
           </aside>
         </div>
       ) : null}
@@ -118,7 +119,7 @@ export function DashboardLayout() {
               </Button>
               <div>
                 <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-                  Citizen Portal
+                  {portal.portalName}
                 </p>
                 <h1 className="text-lg font-semibold">{currentLabel}</h1>
               </div>
@@ -139,10 +140,9 @@ export function DashboardLayout() {
                 )}
               </Button>
 
-              <div className="hidden rounded-full border bg-card/70 px-3 py-2 text-sm md:flex md:items-center md:gap-2">
-                <Bell className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Notifications unavailable</span>
-              </div>
+              <NotificationDropdown
+                notificationsPath={`${getPortalConfig(user?.role ?? "citizen").routePrefix}/notifications`}
+              />
 
               <div className="hidden rounded-full border bg-card/70 px-4 py-2 text-sm md:block">
                 <span className="font-medium">{user?.name ?? user?.email}</span>

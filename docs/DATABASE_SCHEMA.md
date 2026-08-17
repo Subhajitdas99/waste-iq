@@ -13,11 +13,14 @@
 3. [Table: pickup\_requests](#3-table-pickup_requests)
 4. [Table: pickup\_request\_events](#4-table-pickup_request_events)
 5. [Table: collector\_assignments](#5-table-collector_assignments)
+5a. [Table: collector\_locations](#5a-table-collector_locations)
+5b. [Table: collector\_location\_history](#5b-table-collector_location_history)
 6. [Table: dealer\_profiles](#6-table-dealer_profiles)
 7. [Table: material\_categories](#7-table-material_categories)
 8. [Table: pricing\_rules](#8-table-pricing_rules)
 9. [Table: inventory\_lots](#9-table-inventory_lots)
 10. [Table: inventory\_lot\_events](#10-table-inventory_lot_events)
+10c. [Table: notifications](#10c-table-notifications)
 11. [Indexes](#11-indexes)
 12. [Key Constraints](#12-key-constraints)
 13. [Enum Types](#13-enum-types)
@@ -69,6 +72,24 @@ erDiagram
         datetime accepted_at
         datetime completed_at
         float weight_kg
+    }
+
+    collector_locations {
+        int id PK
+        int collector_id FK
+        float latitude
+        float longitude
+        float accuracy
+        datetime updated_at
+    }
+
+    collector_location_history {
+        int id PK
+        int collector_id FK
+        float latitude
+        float longitude
+        float accuracy
+        datetime recorded_at
     }
 
     dealer_profiles {
@@ -159,7 +180,10 @@ erDiagram
     users ||--o{ pickup_requests : "citizen creates"
     users ||--o| dealer_profiles : "has profile"
     users ||--o{ collector_assignments : "collector fulfills"
+    users ||--o| collector_locations : "latest position"
+    users ||--o{ collector_location_history : "position history"
     users ||--o{ pickup_request_events : "actor"
+    users ||--o{ notifications : "receives"
     pickup_requests ||--o| collector_assignments : "assigned to"
     pickup_requests ||--o{ pickup_request_events : "has events"
     pickup_requests ||--o| inventory_lots : "becomes lot"
@@ -252,9 +276,45 @@ Records which collector accepted a specific pickup request and tracks completion
 
 ---
 
+## 5a. Table: `collector_locations`
+
+Latest reported position for each collector (Issue #13). One row per collector; every `POST /collector/location` call replaces the row so reads stay O(1). Updates are also appended to `collector_location_history`.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `collector_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), UNIQUE, INDEX | The collector user |
+| `latitude` | `FLOAT` | No | — | NOT NULL | GPS latitude (−90 to 90) |
+| `longitude` | `FLOAT` | No | — | NOT NULL | GPS longitude (−180 to 180) |
+| `accuracy` | `FLOAT` | Yes | NULL | — | GPS accuracy in meters |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Timestamp of the latest report |
+
+**Relationships:**
+- One `users` (collector) → one `collector_locations` (uselist=False, back-populated as `collector_location`)
+
+---
+
+## 5b. Table: `collector_location_history`
+
+Append-only record of every collector location report, used for route tracking and auditing.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `collector_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), INDEX | The collector user |
+| `latitude` | `FLOAT` | No | — | NOT NULL | GPS latitude (−90 to 90) |
+| `longitude` | `FLOAT` | No | — | NOT NULL | GPS longitude (−180 to 180) |
+| `accuracy` | `FLOAT` | Yes | NULL | — | GPS accuracy in meters |
+| `recorded_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL, INDEX | When the position was recorded |
+
+**Relationships:**
+- One `user` (collector) → many `collector_location_history` (back-populated as `collector_location_history`)
+
+---
+
 ## 6. Table: `dealer_profiles`
 
-Business profile for users with the `dealer` role. Requires admin verification before marketplace access is granted.
+Business profile for users with the `dealer` role. Requires admin approval before marketplace access is granted.
 
 | Column | Type | Nullable | Default | Constraints | Description |
 |--------|------|----------|---------|-------------|-------------|
@@ -263,16 +323,44 @@ Business profile for users with the `dealer` role. Requires admin verification b
 | `business_name` | `VARCHAR(160)` | No | — | NOT NULL | Registered business name |
 | `owner_name` | `VARCHAR(120)` | No | — | NOT NULL | Full name of the business owner |
 | `phone` | `VARCHAR(20)` | No | — | NOT NULL | Business contact phone |
+| `email` | `VARCHAR(254)` | Yes | NULL | — | Business contact email (defaults to account email) |
 | `address` | `TEXT` | No | — | NOT NULL | Business address |
 | `city` | `VARCHAR(100)` | No | — | NOT NULL, INDEX | City of operation |
-| `pincode` | `VARCHAR(12)` | No | — | NOT NULL, INDEX | Postal code |
-| `gst_number` | `VARCHAR(30)` | Yes | NULL | — | GST registration number (optional) |
-| `license_number` | `VARCHAR(50)` | Yes | NULL | — | Scrap dealer license number (optional) |
+| `state` | `VARCHAR(100)` | Yes | NULL | — | State of operation |
+| `postal_code` | `VARCHAR(12)` | No | — | NOT NULL, INDEX | Postal code (renamed from `pincode`) |
+| `gst_number` | `VARCHAR(30)` | Yes | NULL | UNIQUE | GST registration number (optional, unique per dealer) |
+| `license_number` | `VARCHAR(50)` | Yes | NULL | UNIQUE | Scrap dealer license number (optional, unique per dealer) |
+| `business_type` | `VARCHAR(50)` | Yes | NULL | — | Business category (e.g. scrap dealer) |
+| `profile_image` | `VARCHAR(500)` | Yes | NULL | — | Profile image URL |
+| `description` | `TEXT` | Yes | NULL | — | Business description (max 2000 chars) |
 | `materials_accepted` | `JSON` | No | — | NOT NULL | Array of material category codes accepted |
-| `verification_status` | `VARCHAR` (Enum) | No | `pending` | NOT NULL, INDEX | `pending` / `approved` / `rejected` |
+| `approval_status` | `VARCHAR` (Enum) | No | `draft` | NOT NULL, INDEX | `draft` / `submitted` / `approved` / `rejected` |
+| `rejection_reason` | `TEXT` | Yes | NULL | — | Reason provided by admin when rejected |
+| `is_verified` | `BOOLEAN` | No | `false` | NOT NULL | True once approved |
 | `approved_at` | `TIMESTAMPTZ` | Yes | NULL | — | Timestamp of admin approval |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Profile creation timestamp |
 | `updated_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Last update timestamp (auto-updates) |
+
+### Approval transitions
+
+`draft → submitted → approved | rejected`, with `approved/rejected → draft`
+(when the dealer edits the profile) and `rejected → submitted` (resubmission).
+Every transition is recorded in `dealer_profile_events`.
+
+---
+
+## 6a. Table: `dealer_profile_events`
+
+Audit trail for every dealer profile approval-status transition.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `profile_id` | `INTEGER` | No | — | FK → `dealer_profiles.id` (CASCADE), INDEX | Related dealer profile |
+| `actor_user_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), INDEX | User who performed the transition |
+| `status` | `VARCHAR` (Enum) | No | — | NOT NULL | New approval status after the transition |
+| `note` | `TEXT` | Yes | NULL | — | Human-readable note describing the change |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Event timestamp |
 
 ---
 
@@ -374,6 +462,81 @@ Immutable event log for every state change on an inventory lot.
 
 ---
 
+## 10a. Table: `marketplace_orders`
+
+A confirmed purchase of an inventory lot by a dealer. Created when a dealer purchases a reserved lot.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `order_number` | `VARCHAR(40)` | No | — | NOT NULL, UNIQUE, INDEX | Human-readable identifier (e.g., `ORD-2026-000301`) |
+| `inventory_lot_id` | `INTEGER` | No | — | FK → `inventory_lots.id` (RESTRICT), UNIQUE, INDEX | Purchased lot (one order per lot) |
+| `dealer_id` | `INTEGER` | No | — | FK → `users.id` (RESTRICT), INDEX | Dealer who purchased the lot |
+| `quantity_kg` | `FLOAT` | No | — | NOT NULL, CHECK > 0 | Purchased weight in kilograms |
+| `unit_price_per_kg_snapshot` | `NUMERIC(10,2)` | No | — | NOT NULL, CHECK ≥ 0 | Price per kg at purchase time |
+| `total_amount` | `NUMERIC(12,2)` | No | — | NOT NULL, CHECK ≥ 0 | `quantity_kg × unit_price_per_kg_snapshot` |
+| `currency_code` | `VARCHAR(3)` | No | — | NOT NULL | ISO currency code (e.g., `INR`) |
+| `status` | `VARCHAR` (Enum) | No | `completed` | NOT NULL, INDEX | `completed` |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL, INDEX | Order creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Last update timestamp (auto-updates) |
+
+**Check Constraints:**
+- `ck_marketplace_orders_quantity_positive`: `quantity_kg > 0`
+- `ck_marketplace_orders_unit_price_non_negative`: `unit_price_per_kg_snapshot >= 0`
+- `ck_marketplace_orders_total_amount_non_negative`: `total_amount >= 0`
+
+---
+
+## 10b. Table: `marketplace_transactions`
+
+Financial ledger of every marketplace event for a dealer (reservations, cancellations, expiries, purchases).
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `dealer_id` | `INTEGER` | No | — | FK → `users.id` (RESTRICT), INDEX | Dealer involved in the transaction |
+| `inventory_lot_id` | `INTEGER` | No | — | FK → `inventory_lots.id` (RESTRICT), INDEX | Related inventory lot |
+| `order_id` | `INTEGER` | Yes | NULL | FK → `marketplace_orders.id` (SET NULL), INDEX | Related order (for purchases) |
+| `transaction_type` | `VARCHAR` (Enum) | No | — | NOT NULL, INDEX | `reservation`, `cancellation`, `purchase`, `reservation_expired` |
+| `status` | `VARCHAR` (Enum) | No | — | NOT NULL, INDEX | `completed`, `cancelled`, `expired` |
+| `quantity_kg` | `FLOAT` | No | — | NOT NULL, CHECK > 0 | Lot weight in kilograms |
+| `unit_price_per_kg_snapshot` | `NUMERIC(10,2)` | No | — | NOT NULL, CHECK ≥ 0 | Price per kg at transaction time |
+| `total_amount` | `NUMERIC(12,2)` | No | — | NOT NULL, CHECK ≥ 0 | `quantity_kg × unit_price_per_kg_snapshot` |
+| `currency_code` | `VARCHAR(3)` | No | — | NOT NULL | ISO currency code (e.g., `INR`) |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL, INDEX | Transaction timestamp |
+
+**Transaction Type → Status Mapping:** `reservation` → `completed`; `cancellation` → `cancelled`; `reservation_expired` → `expired`; `purchase` → `completed`.
+
+**Check Constraints:**
+- `ck_marketplace_transactions_quantity_positive`: `quantity_kg > 0`
+- `ck_marketplace_transactions_unit_price_non_negative`: `unit_price_per_kg_snapshot >= 0`
+- `ck_marketplace_transactions_total_amount_non_negative`: `total_amount >= 0`
+
+---
+
+## 10c. Table: `notifications`
+
+Central, database-backed in-app notification inbox shared by all four roles. One row per notification per recipient.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `user_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), INDEX | Recipient |
+| `type` | `VARCHAR` (Enum) | No | — | NOT NULL, INDEX | See `NotificationType` values below |
+| `title` | `VARCHAR(255)` | No | — | NOT NULL | Short human-readable title |
+| `message` | `TEXT` | No | — | NOT NULL | Full notification copy |
+| `link` | `VARCHAR(500)` | Yes | NULL | — | Deep link (frontend route, e.g., `/dashboard/pickups/3`) |
+| `status` | `VARCHAR` (Enum) | No | `unread` | NOT NULL, INDEX | `unread` or `read` |
+| `read_at` | `TIMESTAMPTZ` | Yes | NULL | — | When the recipient read it |
+| `metadata_json` | `JSON` | Yes | NULL | — | Structured payload (e.g., `pickup_request_id`, `lot_id`) |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL, INDEX | Notification timestamp |
+
+**`NotificationType` Enum:** `pickup_created`, `pickup_accepted`, `pickup_started`, `pickup_collected`, `pickup_completed`, `dealer_profile_submitted`, `dealer_profile_approved`, `dealer_profile_rejected`, `inventory_created`, `inventory_reserved`, `reservation_cancelled`, `reservation_expired`, `inventory_purchased`, `admin_announcement`, `system`
+
+**`NotificationStatus` Enum:** `unread`, `read`
+
+---
+
 ## 11. Indexes
 
 | Table | Index Name | Columns | Type | Purpose |
@@ -387,9 +550,16 @@ Immutable event log for every state change on an inventory lot.
 | `pickup_requests` | `ix_pickup_requests_status` | `status` | B-Tree | Filter by lifecycle status |
 | `collector_assignments` | `ix_collector_assignments_request_id` | `request_id` | B-Tree (UNIQUE) | One assignment per request |
 | `collector_assignments` | `ix_collector_assignments_collector_id` | `collector_id` | B-Tree | Collector's assignment list |
+| `collector_locations` | `ix_collector_locations_id` | `id` | B-Tree (PK) | Primary key lookup |
+| `collector_locations` | `ix_collector_locations_collector_id` | `collector_id` | B-Tree (UNIQUE) | One row per collector |
+| `collector_location_history` | `ix_collector_location_history_id` | `id` | B-Tree (PK) | Primary key lookup |
+| `collector_location_history` | `ix_collector_location_history_collector_id` | `collector_id` | B-Tree | A collector's position history |
+| `collector_location_history` | `ix_collector_location_history_recorded_at` | `recorded_at` | B-Tree | Chronological history queries |
 | `dealer_profiles` | `ix_dealer_profiles_user_id` | `user_id` | B-Tree (UNIQUE) | One profile per user |
 | `dealer_profiles` | `ix_dealer_profiles_city` | `city` | B-Tree | Filter dealers by city |
-| `dealer_profiles` | `ix_dealer_profiles_verification_status` | `verification_status` | B-Tree | Admin: list pending dealers |
+| `dealer_profiles` | `ix_dealer_profiles_approval_status` | `approval_status` | B-Tree | Admin: list pending dealers |
+| `dealer_profile_events` | `ix_dealer_profile_events_profile_id` | `profile_id` | B-Tree | Events per profile |
+| `dealer_profile_events` | `ix_dealer_profile_events_actor_user_id` | `actor_user_id` | B-Tree | Events per actor |
 | `material_categories` | `ix_material_categories_code` | `code` | B-Tree (UNIQUE) | Lookup by code |
 | `material_categories` | `ix_material_categories_is_active` | `is_active` | B-Tree | Active category filter |
 | `pricing_rules` | `ix_pricing_rules_material_category_id` | `material_category_id` | B-Tree | Rules per category |
@@ -403,6 +573,25 @@ Immutable event log for every state change on an inventory lot.
 | `inventory_lots` | `ix_inventory_lots_created_at` | `created_at` | B-Tree | Chronological ordering |
 | `inventory_lot_events` | `ix_inventory_lot_events_inventory_lot_id` | `inventory_lot_id` | B-Tree | Events per lot |
 | `inventory_lot_events` | `ix_inventory_lot_events_event_type` | `event_type` | B-Tree | Filter by event type |
+| `marketplace_orders` | `ix_marketplace_orders_order_number` | `order_number` | B-Tree (UNIQUE) | Lookup by order number |
+| `marketplace_orders` | `ix_marketplace_orders_inventory_lot_id` | `inventory_lot_id` | B-Tree (UNIQUE) | One order per lot |
+| `marketplace_orders` | `ix_marketplace_orders_dealer_id` | `dealer_id` | B-Tree | Dealer's order list |
+| `marketplace_orders` | `ix_marketplace_orders_status` | `status` | B-Tree | Filter by order status |
+| `marketplace_orders` | `ix_marketplace_orders_created_at` | `created_at` | B-Tree | Chronological ordering |
+| `marketplace_transactions` | `ix_marketplace_transactions_dealer_id` | `dealer_id` | B-Tree | Dealer's transaction history |
+| `marketplace_transactions` | `ix_marketplace_transactions_inventory_lot_id` | `inventory_lot_id` | B-Tree | Transactions per lot |
+| `marketplace_transactions` | `ix_marketplace_transactions_order_id` | `order_id` | B-Tree | Transactions per order |
+| `marketplace_transactions` | `ix_marketplace_transactions_transaction_type` | `transaction_type` | B-Tree | Filter by transaction type |
+| `marketplace_transactions` | `ix_marketplace_transactions_status` | `status` | B-Tree | Filter by status |
+| `marketplace_transactions` | `ix_marketplace_transactions_created_at` | `created_at` | B-Tree | Chronological ordering |
+| `notifications` | `ix_notifications_id` | `id` | B-Tree (PK) | Primary key lookup |
+| `notifications` | `ix_notifications_user_id` | `user_id` | B-Tree | Recipient's inbox |
+| `notifications` | `ix_notifications_type` | `type` | B-Tree | Filter by notification type |
+| `notifications` | `ix_notifications_status` | `status` | B-Tree | Filter by read status |
+| `notifications` | `ix_notifications_created_at` | `created_at` | B-Tree | Chronological ordering |
+| `notifications` | `ix_notifications_user_status` | `user_id`, `status` | B-Tree (composite) | Unread-count queries per user |
+| `notifications` | `ix_notifications_user_created` | `user_id`, `created_at` | B-Tree (composite) | Inbox pagination per user |
+| `notifications` | `ix_notifications_user_type` | `user_id`, `type` | B-Tree (composite) | Type filtering within a user's inbox |
 
 ---
 
@@ -417,6 +606,8 @@ Immutable event log for every state change on an inventory lot.
 | `pickup_request_events` | `actor_id` | `users.id` | SET NULL |
 | `collector_assignments` | `request_id` | `pickup_requests.id` | CASCADE |
 | `collector_assignments` | `collector_id` | `users.id` | CASCADE |
+| `collector_locations` | `collector_id` | `users.id` | CASCADE |
+| `collector_location_history` | `collector_id` | `users.id` | CASCADE |
 | `dealer_profiles` | `user_id` | `users.id` | CASCADE |
 | `pricing_rules` | `material_category_id` | `material_categories.id` | RESTRICT |
 | `pricing_rules` | `created_by` | `users.id` | SET NULL |
@@ -431,6 +622,12 @@ Immutable event log for every state change on an inventory lot.
 | `inventory_lots` | `updated_by` | `users.id` | SET NULL |
 | `inventory_lot_events` | `inventory_lot_id` | `inventory_lots.id` | CASCADE |
 | `inventory_lot_events` | `actor_user_id` | `users.id` | SET NULL |
+| `marketplace_orders` | `inventory_lot_id` | `inventory_lots.id` | RESTRICT |
+| `marketplace_orders` | `dealer_id` | `users.id` | RESTRICT |
+| `marketplace_transactions` | `dealer_id` | `users.id` | RESTRICT |
+| `marketplace_transactions` | `inventory_lot_id` | `inventory_lots.id` | RESTRICT |
+| `marketplace_transactions` | `order_id` | `marketplace_orders.id` | SET NULL |
+| `notifications` | `user_id` | `users.id` | CASCADE |
 
 ### Unique Constraints
 
@@ -440,9 +637,12 @@ Immutable event log for every state change on an inventory lot.
 | `users` | `phone` | No two users share a phone number |
 | `dealer_profiles` | `user_id` | One profile per dealer user |
 | `collector_assignments` | `request_id` | One assignment per pickup request |
+| `collector_locations` | `collector_id` | One row per collector (latest position) |
 | `inventory_lots` | `lot_number` | Globally unique lot identifier |
 | `inventory_lots` | `pickup_request_id` | One inventory lot per pickup |
 | `material_categories` | `code` | Unique category codes |
+| `marketplace_orders` | `order_number` | Globally unique order identifier |
+| `marketplace_orders` | `inventory_lot_id` | One order per purchased lot |
 
 ### Check Constraints
 
@@ -451,6 +651,12 @@ Immutable event log for every state change on an inventory lot.
 | `inventory_lots` | `ck_inventory_lots_weight_positive` | `weight_kg > 0` |
 | `inventory_lots` | `ck_inventory_lots_unit_price_non_negative` | `unit_price_per_kg_snapshot >= 0` |
 | `inventory_lots` | `ck_inventory_lots_total_amount_non_negative` | `total_listed_amount >= 0` |
+| `marketplace_orders` | `ck_marketplace_orders_quantity_positive` | `quantity_kg > 0` |
+| `marketplace_orders` | `ck_marketplace_orders_unit_price_non_negative` | `unit_price_per_kg_snapshot >= 0` |
+| `marketplace_orders` | `ck_marketplace_orders_total_amount_non_negative` | `total_amount >= 0` |
+| `marketplace_transactions` | `ck_marketplace_transactions_quantity_positive` | `quantity_kg > 0` |
+| `marketplace_transactions` | `ck_marketplace_transactions_unit_price_non_negative` | `unit_price_per_kg_snapshot >= 0` |
+| `marketplace_transactions` | `ck_marketplace_transactions_total_amount_non_negative` | `total_amount >= 0` |
 
 ---
 
@@ -462,10 +668,15 @@ Waste-IQ uses **string enums** (stored as `VARCHAR` with `native_enum=False` in 
 |------|--------|---------|
 | `UserRole` | `citizen`, `collector`, `dealer`, `admin` | `users.role` |
 | `PickupStatus` | `pending`, `accepted`, `on_the_way`, `collected`, `completed`, `cancelled` | `pickup_requests.status` |
-| `DealerVerificationStatus` | `pending`, `approved`, `rejected` | `dealer_profiles.verification_status` |
+| `DealerApprovalStatus` | `draft`, `submitted`, `approved`, `rejected` | `dealer_profiles.approval_status`, `dealer_profile_events.status` |
 | `InventoryLotStatus` | `available`, `reserved`, `sold` | `inventory_lots.status` |
 | `InventoryLotVisibility` | `visible`, `hidden` | `inventory_lots.visibility` |
 | `InventoryLotEventType` | `created`, `updated`, `status_changed`, `archived`, `restored`, `reserved`, `reservation_expired` | `inventory_lot_events.event_type` |
+| `MarketplaceOrderStatus` | `completed` | `marketplace_orders.status` |
+| `MarketplaceTransactionType` | `reservation`, `cancellation`, `reservation_expired`, `purchase` | `marketplace_transactions.transaction_type` |
+| `MarketplaceTransactionStatus` | `completed`, `cancelled`, `expired` | `marketplace_transactions.status` |
+| `NotificationType` | `pickup_created`, `pickup_accepted`, `pickup_started`, `pickup_collected`, `pickup_completed`, `dealer_profile_submitted`, `dealer_profile_approved`, `dealer_profile_rejected`, `inventory_created`, `inventory_reserved`, `reservation_cancelled`, `reservation_expired`, `inventory_purchased`, `admin_announcement`, `system` | `notifications.type` |
+| `NotificationStatus` | `unread`, `read` | `notifications.status` |
 
 ---
 

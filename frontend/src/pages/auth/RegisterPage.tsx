@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,21 +9,22 @@ import { FormField } from "@/components/FormField";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { SeoHead } from "@/components/seo/SeoHead";
-import api from "@/api/axios";
+import { useRegister } from "@/hooks/useRegister";
 import { getApiErrorMessage } from "@/lib/api-error";
 
 const registerSchema = z
   .object({
-    name: z.string().min(2, "Full name must be at least 2 characters"),
-    email: z.string().email("Please enter a valid email address"),
+    name: z.string().trim().min(2, "Full name must be at least 2 characters"),
+    email: z.string().trim().email("Please enter a valid email address"),
     phone: z
       .string()
+      .trim()
       .min(8, "Phone must be at least 8 characters")
       .max(20, "Phone must be at most 20 characters"),
     password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string(),
     role: z.enum(["citizen", "collector", "dealer", "admin"]),
-    admin_code: z.string().optional(),
+    admin_code: z.string().trim().optional(),
     termsAccepted: z.boolean().refine((val) => val === true, {
       message: "You must accept the terms and conditions",
     }),
@@ -46,11 +47,14 @@ export function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const registerMutation = useRegister();
 
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
+    clearErrors,
+    resetField,
     setValue,
     watch,
   } = useForm<RegisterValues>({
@@ -61,21 +65,31 @@ export function RegisterPage() {
   const termsAccepted = watch("termsAccepted");
   const selectedRole = watch("role");
 
+  useEffect(() => {
+    if (selectedRole !== "admin") {
+      resetField("admin_code");
+      clearErrors("admin_code");
+    }
+  }, [clearErrors, resetField, selectedRole]);
+
   const onSubmit = async (data: RegisterValues) => {
     setApiError(null);
     try {
-      await api.post("/auth/register", {
+      await registerMutation.mutateAsync({
         name: data.name,
         email: data.email,
         phone: data.phone,
         password: data.password,
         role: data.role,
         ...(data.role === "admin" && data.admin_code
-          ? { admin_code: data.admin_code }
+          ? { adminCode: data.admin_code }
           : {}),
       });
 
-      navigate("/login", { replace: true, state: { registered: true } });
+      navigate("/login", {
+        replace: true,
+        state: { registered: true, registeredEmail: data.email },
+      });
     } catch (error) {
       setApiError(getApiErrorMessage(error, "Registration failed. Please try again."));
     }
@@ -228,9 +242,9 @@ export function RegisterPage() {
         <Button
           type="submit"
           className="w-full h-11 text-base"
-          disabled={isSubmitting}
+          disabled={isSubmitting || registerMutation.isPending}
         >
-          {isSubmitting ? (
+          {isSubmitting || registerMutation.isPending ? (
             <span className="flex items-center gap-2">
               <Spinner size={18} /> Creating account...
             </span>

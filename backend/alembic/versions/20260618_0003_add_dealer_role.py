@@ -9,12 +9,20 @@ branch_labels = None
 depends_on = None
 
 
+def _cleanup_sqlite_batch_table(table_name: str) -> None:
+    if op.get_bind().dialect.name != "sqlite":
+        return
+
+    op.execute(sa.text(f'DROP TABLE IF EXISTS "_alembic_tmp_{table_name}"'))
+
+
 def upgrade() -> None:
     old_user_role = sa.Enum("citizen", "collector", "admin", name="userrole", native_enum=False)
     new_user_role = sa.Enum(
         "citizen", "collector", "dealer", "admin", name="userrole", native_enum=False
     )
 
+    _cleanup_sqlite_batch_table("users")
     with op.batch_alter_table("users") as batch_op:
         batch_op.alter_column(
             "role",
@@ -32,6 +40,7 @@ def downgrade() -> None:
 
     op.execute("DELETE FROM users WHERE role = 'dealer'")
 
+    _cleanup_sqlite_batch_table("users")
     with op.batch_alter_table("users") as batch_op:
         batch_op.alter_column(
             "role",

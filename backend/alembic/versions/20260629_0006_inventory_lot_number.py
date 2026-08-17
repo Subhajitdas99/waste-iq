@@ -12,6 +12,13 @@ branch_labels = None
 depends_on = None
 
 
+def _cleanup_sqlite_batch_table(table_name: str) -> None:
+    if op.get_bind().dialect.name != "sqlite":
+        return
+
+    op.execute(sa.text(f'DROP TABLE IF EXISTS "_alembic_tmp_{table_name}"'))
+
+
 inventory_lots = sa.table(
     "inventory_lots",
     sa.column("id", sa.Integer()),
@@ -80,6 +87,7 @@ def upgrade() -> None:
     # Make NOT NULL if possible
     # ------------------------------------------------------------------
 
+    _cleanup_sqlite_batch_table("inventory_lots")
     with op.batch_alter_table("inventory_lots") as batch_op:
         batch_op.alter_column(
             "lot_number",
@@ -116,5 +124,6 @@ def downgrade() -> None:
     columns = {column["name"] for column in inspector.get_columns("inventory_lots")}
 
     if "lot_number" in columns:
+        _cleanup_sqlite_batch_table("inventory_lots")
         with op.batch_alter_table("inventory_lots") as batch_op:
             batch_op.drop_column("lot_number")

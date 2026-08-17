@@ -2,13 +2,6 @@ from io import BytesIO
 
 from app.core.config import get_settings
 
-VALID_PICKUP_PAYLOAD = {
-    "waste_type": "Plastic bottles",
-    "address": "12 Lake Road, Kolkata, 700029",
-    "latitude": 22.5726,
-    "longitude": 88.3639,
-}
-
 
 def _override_settings(client, **updates):
     settings = get_settings().model_copy(update=updates)
@@ -26,8 +19,10 @@ def _pickup_image(filename: str = "waste.png") -> dict[str, tuple[str, BytesIO, 
     }
 
 
-def test_create_pickup_request_without_image_still_succeeds(client, citizen_headers):
-    response = client.post("/pickup-requests", data=VALID_PICKUP_PAYLOAD, headers=citizen_headers)
+def test_create_pickup_request_without_image_still_succeeds(
+    client, citizen_headers, valid_pickup_payload
+):
+    response = client.post("/pickup-requests", data=valid_pickup_payload, headers=citizen_headers)
 
     assert response.status_code == 201
     assert response.json()["image_url"] is None
@@ -36,6 +31,7 @@ def test_create_pickup_request_without_image_still_succeeds(client, citizen_head
 def test_create_pickup_request_with_image_skips_upload_when_cloudinary_missing_in_development(
     client,
     citizen_headers,
+    valid_pickup_payload,
 ):
     _override_settings(
         client,
@@ -47,7 +43,7 @@ def test_create_pickup_request_with_image_skips_upload_when_cloudinary_missing_i
 
     response = client.post(
         "/pickup-requests",
-        data=VALID_PICKUP_PAYLOAD,
+        data=valid_pickup_payload,
         files=_pickup_image(),
         headers=citizen_headers,
     )
@@ -62,6 +58,7 @@ def test_create_pickup_request_with_image_skips_upload_when_cloudinary_missing_i
 def test_create_pickup_request_with_image_returns_503_when_cloudinary_missing_in_production(
     client,
     citizen_headers,
+    valid_pickup_payload,
 ):
     _override_settings(
         client,
@@ -73,7 +70,7 @@ def test_create_pickup_request_with_image_returns_503_when_cloudinary_missing_in
 
     response = client.post(
         "/pickup-requests",
-        data=VALID_PICKUP_PAYLOAD,
+        data=valid_pickup_payload,
         files=_pickup_image(),
         headers=citizen_headers,
     )
@@ -86,6 +83,7 @@ def test_create_pickup_request_with_image_returns_502_when_cloudinary_upload_fai
     client,
     citizen_headers,
     monkeypatch,
+    valid_pickup_payload,
 ):
     _override_settings(
         client,
@@ -102,7 +100,7 @@ def test_create_pickup_request_with_image_returns_502_when_cloudinary_upload_fai
 
     response = client.post(
         "/pickup-requests",
-        data=VALID_PICKUP_PAYLOAD,
+        data=valid_pickup_payload,
         files=_pickup_image(),
         headers=citizen_headers,
     )
@@ -115,6 +113,7 @@ def test_create_pickup_request_with_image_uploads_successfully(
     client,
     citizen_headers,
     monkeypatch,
+    valid_pickup_payload,
 ):
     _override_settings(
         client,
@@ -134,7 +133,7 @@ def test_create_pickup_request_with_image_uploads_successfully(
 
     response = client.post(
         "/pickup-requests",
-        data=VALID_PICKUP_PAYLOAD,
+        data=valid_pickup_payload,
         files=_pickup_image(),
         headers=citizen_headers,
     )

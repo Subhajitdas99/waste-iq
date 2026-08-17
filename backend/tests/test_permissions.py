@@ -5,6 +5,13 @@ ADMIN_ROUTES = [
     ("GET", "/admin/pricing-rules"),
     ("GET", "/admin/eligible-pickups"),
     ("GET", "/admin/inventory-lots"),
+    ("GET", "/admin/analytics/overview"),
+    ("GET", "/admin/analytics/materials"),
+    ("GET", "/admin/analytics/monthly"),
+    ("GET", "/admin/analytics/collectors"),
+    ("GET", "/admin/analytics/dealers"),
+    ("GET", "/admin/analytics/carbon"),
+    ("GET", "/admin/analytics/insights"),
 ]
 
 DEALER_ROUTES = [
@@ -57,7 +64,7 @@ def test_collector_cannot_create_dealer_profile(client, collector_headers):
             "phone": "9000000000",
             "address": "Some address here",
             "city": "Kolkata",
-            "pincode": "700001",
+            "postal_code": "700001",
             "materials_accepted": ["PET"],
         },
         headers=collector_headers,

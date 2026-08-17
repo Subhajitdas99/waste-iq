@@ -1,0 +1,70 @@
+name: Agent CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-ci.yml"
+
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test:
+    name: Lint, Type-Check & Test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: agent
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            agent/requirements.txt
+            agent/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run Ruff linter
+        run: |
+          ruff check app tests
+
+      - name: Check Black formatting
+        run: |
+          black --check app tests
+
+      - name: Run MyPy type checker
+        run: |
+          mypy app
+
+      - name: Run Pytest with coverage
+        run: |
+          pytest tests \
+            -v \
+            --tb=short \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-fail-under=95

@@ -61,11 +61,12 @@ The system bridges the gap between informal waste collection practices and a mod
 
 ### Platform-Wide
 
+- 🔔 **Notification & Communication System** — centralized in-app inbox for every role: pickup lifecycle updates, dealer approval results, inventory reserve/purchase/expiry alerts, system messages, and admin broadcasts (`POST /admin/notifications/broadcast`); served by `GET /notifications` + unread count/list + mark-read / delete APIs, with a header bell (live unread badge + preview dropdown) and a full notifications page at `/{role}/notifications` with All/Unread/Read filters and pagination
 - 🔐 JWT-based authentication with role-based access control
 - 📸 Cloudinary image upload with graceful fallback in development
 - 🗄️ Alembic database migrations with PostgreSQL (SQLite for local dev)
 - 🐳 Docker Compose for one-command local development
-- ⚙️ GitHub Actions CI for backend (lint + type-check + test) and frontend (lint + build)
+- ⚙️ GitHub Actions CI for backend (lint + type-check + test) and frontend (lint + test + build)
 
 ---
 
@@ -181,6 +182,7 @@ waste-iq/
 │   │   │   │   ├── collector.py
 │   │   │   │   ├── dealer.py
 │   │   │   │   ├── admin.py
+│   │   │   │   ├── analytics.py      # Admin analytics suite
 │   │   │   │   └── inventory.py     # Admin + Dealer inventory marketplace
 │   │   │   └── router.py
 │   │   ├── core/
@@ -194,6 +196,7 @@ waste-iq/
 │   │   │   ├── pickup_request.py
 │   │   │   ├── collector_assignment.py
 │   │   │   ├── dealer_profile.py
+│   │   │   ├── dealer_profile_event.py
 │   │   │   ├── inventory_lot.py
 │   │   │   ├── inventory_lot_event.py
 │   │   │   ├── material_category.py
@@ -331,7 +334,7 @@ cp .env.example .env
 Edit `frontend/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 ```
 
 ```bash
@@ -365,7 +368,7 @@ The frontend will be available at **http://localhost:5173**.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `VITE_API_BASE_URL` | ✅ | `http://localhost:8000` | Backend API base URL |
+| `VITE_API_URL` | ✅ | `http://localhost:8000` | Backend API base URL |
 
 ---
 
@@ -405,6 +408,9 @@ npx tsc --noEmit
 
 # Lint
 npm run lint
+
+# Run tests
+npm test
 
 # Production build
 npm run build
@@ -467,7 +473,7 @@ Screenshots are located in [`docs/screenshots/`](docs/screenshots/).
 
 | Screen | Preview |
 |--------|---------|
-| Citizen Dashboard | `docs/screenshots/citizen-dashboard.png` |
+| Citizen Dashboard | `docs/screenshots/citizen-dashboard2.png` |
 | Pickup Request Form | `docs/screenshots/new-pickup.png` |
 | Collector Map View | `docs/screenshots/collector-nearby.png` |
 | Admin Analytics | `docs/screenshots/admin-analytics.png` |
