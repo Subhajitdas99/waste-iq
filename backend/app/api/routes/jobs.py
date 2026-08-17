@@ -1,5 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.dependencies import require_roles
+from app.models.user import User
 from app.services.jobs import last_runs
 
 router = APIRouter(
@@ -9,7 +11,9 @@ router = APIRouter(
 
 
 @router.get("/status")
-def job_status():
+def job_status(
+    current_user: User = Depends(require_roles("admin")),
+) -> dict[str, str | None]:
     return {
         "reservation_sweep": (
             last_runs["reservation_sweep"].isoformat() if last_runs["reservation_sweep"] else None

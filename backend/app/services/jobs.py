@@ -5,22 +5,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.inventory_lot import (
-    InventoryLot,
-    InventoryLotStatus,
-)
-from app.models.inventory_lot_event import (
-    InventoryLotEvent,
-    InventoryLotEventType,
-)
 from app.models.pickup_request import (
     PickupRequest,
     PickupStatus,
 )
 from app.models.notification import NotificationType
 from app.repositories.notifications import NotificationRepository
+from app.services.inventory_marketplace import release_expired_reservations
 from app.services.notifications import NotificationDispatcher
-
 
 logger = logging.getLogger(__name__)
 
@@ -44,56 +36,8 @@ def reservation_sweep_job() -> None:
     db = SessionLocal()
 
     try:
-        now = datetime.now(timezone.utc)
-
-        expired_lots = (
-            db.query(InventoryLot)
-            .filter(
-                InventoryLot.status == InventoryLotStatus.reserved,
-                InventoryLot.reservation_expires_at <= now,
-            )
-            .all()
-        )
-
-        logger.info("Found %d expired reservation(s)", len(expired_lots))
-
-        for lot in expired_lots:
-            previous_status = lot.status
-            dealer_id = lot.reserved_by_dealer_id
-
-            # Release reservation
-            lot.status = InventoryLotStatus.available
-            lot.reserved_by_dealer_id = None
-            lot.reserved_at = None
-            lot.reservation_expires_at = None
-            # Create audit event
-            db.add(
-                InventoryLotEvent(
-                    inventory_lot_id=lot.id,
-                    event_type=InventoryLotEventType.reservation_expired,
-                    previous_status=previous_status,
-                    new_status=InventoryLotStatus.available,
-                    actor_user_id=None,
-                    event_notes="Reservation expired automatically by scheduler.",
-                    metadata_json={},
-                )
-            )
-
-            # Notify dealer
-            if dealer_id is not None:
-                try:
-                    NotificationDispatcher().notify_reservation_expired(
-                        db,
-                        lot,
-                        dealer_id,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to notify dealer %s about expired reservation", dealer_id
-                    )
-
-            # persist changes for this lot
-            db.commit()
+        released = release_expired_reservations(db)
+        logger.info("Released %d expired reservation(s)", released)
 
         # Update last successful run
         last_runs["reservation_sweep"] = datetime.now(timezone.utc)
