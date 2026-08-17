@@ -48,9 +48,7 @@ def me(current_user: User = Depends(get_current_user)) -> UserRead:
 
 @router.post("/forgot-password", dependencies=[Depends(rate_limit(requests=5, window=60))])
 def forgot_password_route(
-    payload: ForgotPasswordRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    payload: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):
     forgot_password(db, payload.email, background_tasks)
     return {"message": "If that email exists, we sent a password reset link."}

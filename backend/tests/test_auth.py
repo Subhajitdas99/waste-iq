@@ -211,4 +211,3 @@ def test_reset_password_success(client, db_session):
         json={"token": token, "new_password": "AnotherPassword@123"},
     )
     assert second_reset.status_code == 400
-

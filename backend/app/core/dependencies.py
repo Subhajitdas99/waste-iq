@@ -105,6 +105,8 @@ def get_pickup_request_creation_service(
 
 def rate_limit(requests: int, window: int):
     """Stub for rate limiting dependency (WIQ-V1-017)"""
+
     def dependency():
         pass
+
     return dependency

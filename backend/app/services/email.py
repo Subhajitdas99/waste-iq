@@ -3,6 +3,7 @@ from email.message import EmailMessage
 
 from app.core.config import settings
 
+
 def send_password_reset_email(email: str, token: str) -> None:
     """
     Sends a password reset email using SMTP.
