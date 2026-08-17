@@ -1,5 +1,6 @@
-import { Component, ErrorInfo, ReactNode } from "react";
-import { Button } from "./ui/button";
+import { Component, type ErrorInfo, type ReactNode } from "react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   children?: ReactNode;
@@ -13,7 +14,7 @@ interface State {
 
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
-    hasError: false
+    hasError: false,
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -21,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
+    console.error("Unhandled render error:", error, errorInfo);
   }
 
   public render() {
@@ -31,20 +32,20 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] p-6 text-center">
-          <div className="w-16 h-16 text-destructive mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold mb-2">Something went wrong</h2>
-          <p className="text-muted-foreground mb-6 max-w-md">
-            An unexpected error occurred in this component. Our team has been notified.
+        <main
+          role="alert"
+          className="flex min-h-screen flex-col items-center justify-center p-6 text-center"
+        >
+          <AlertTriangle className="mb-4 h-14 w-14 text-destructive" aria-hidden="true" />
+          <h1 className="mb-2 text-2xl font-bold">Something went wrong</h1>
+          <p className="mb-6 max-w-md text-muted-foreground">
+            Waste-IQ could not render this page. Reload the application to start with a fresh session.
           </p>
-          <Button onClick={() => this.setState({ hasError: false })}>
-            Try again
+          <Button onClick={() => window.location.reload()} className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Reload application
           </Button>
-        </div>
+        </main>
       );
     }
 

@@ -3,14 +3,15 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, JSON, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
 
-class DealerVerificationStatus(str, enum.Enum):
-    pending = "pending"
+class DealerApprovalStatus(str, enum.Enum):
+    draft = "draft"
+    submitted = "submitted"
     approved = "approved"
     rejected = "rejected"
 
@@ -25,18 +26,27 @@ class DealerProfile(Base):
     business_name: Mapped[str] = mapped_column(String(160), nullable=False)
     owner_name: Mapped[str] = mapped_column(String(120), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address: Mapped[str] = mapped_column(Text, nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    pincode: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
-    gst_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    license_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    gst_number: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True)
+    license_number: Mapped[str | None] = mapped_column(String(50), nullable=True, unique=True)
+    business_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    profile_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     materials_accepted: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    verification_status: Mapped[DealerVerificationStatus] = mapped_column(
-        Enum(DealerVerificationStatus, native_enum=False),
+    approval_status: Mapped[DealerApprovalStatus] = mapped_column(
+        Enum(DealerApprovalStatus, native_enum=False),
         nullable=False,
-        default=DealerVerificationStatus.pending,
-        server_default=DealerVerificationStatus.pending.value,
+        default=DealerApprovalStatus.draft,
+        server_default=DealerApprovalStatus.draft.value,
         index=True,
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -50,3 +60,9 @@ class DealerProfile(Base):
     )
 
     user = relationship("User", back_populates="dealer_profile")
+    events = relationship(
+        "DealerProfileEvent",
+        back_populates="profile",
+        cascade="all, delete-orphan",
+        order_by="DealerProfileEvent.created_at",
+    )

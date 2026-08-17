@@ -9,8 +9,8 @@ import { FormField } from "@/components/FormField";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { SeoHead } from "@/components/seo/SeoHead";
-import { useAuth } from "@/context/AuthContext";
-import api from "@/api/axios";
+import { useLogin } from "@/hooks/useLogin";
+import { resolvePostLoginPath } from "@/lib/portal";
 import { getApiErrorMessage } from "@/lib/api-error";
 
 const loginSchema = z.object({
@@ -21,32 +21,20 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-interface AuthResponse {
-  access_token: string;
-  token_type: string;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    phone: string;
-    role: "citizen" | "collector" | "dealer" | "admin";
-    created_at: string;
-  };
-}
-
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const loginMutation = useLogin();
 
   const locationState = location.state as {
     from?: { pathname?: string };
     registered?: boolean;
+    registeredEmail?: string;
   } | null;
 
-  const from = locationState?.from?.pathname ?? "/dashboard";
+  const from = locationState?.from?.pathname;
   const justRegistered = locationState?.registered === true;
 
   const {
@@ -57,7 +45,10 @@ export function LoginPage() {
     watch,
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { rememberMe: false },
+    defaultValues: {
+      email: locationState?.registeredEmail ?? "",
+      rememberMe: false,
+    },
   });
 
   const rememberMe = watch("rememberMe");
@@ -65,13 +56,12 @@ export function LoginPage() {
   const onSubmit = async (data: LoginValues) => {
     setApiError(null);
     try {
-      const response = await api.post<AuthResponse>("/auth/login", {
+      const response = await loginMutation.mutateAsync({
         email: data.email,
         password: data.password,
+        rememberMe: data.rememberMe,
       });
-
-      login(response.data.access_token, response.data.user, data.rememberMe);
-      navigate(from, { replace: true });
+      navigate(resolvePostLoginPath(response.user.role, from), { replace: true });
     } catch (error) {
       setApiError(getApiErrorMessage(error, "Invalid email or password"));
     }
@@ -175,9 +165,9 @@ export function LoginPage() {
         <Button
           type="submit"
           className="w-full h-11 text-base"
-          disabled={isSubmitting}
+          disabled={isSubmitting || loginMutation.isPending}
         >
-          {isSubmitting ? (
+          {isSubmitting || loginMutation.isPending ? (
             <span className="flex items-center gap-2">
               <Spinner size={18} /> Signing in...
             </span>

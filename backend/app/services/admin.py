@@ -1,10 +1,10 @@
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.collector_assignment import CollectorAssignment
-from app.models.pickup_request import PickupRequest, PickupStatus
+from app.models.pickup_request import PickupStatus
 from app.models.user import User, UserRole
 from app.schemas.admin import AnalyticsRead, RequestStatusBreakdown, RoleBreakdown
+from app.services.stats import count_pickups, count_users, sum_collected_weight
 
 
 def list_users(db: Session) -> list[User]:
@@ -13,46 +13,23 @@ def list_users(db: Session) -> list[User]:
 
 
 def get_analytics(db: Session) -> AnalyticsRead:
-    total_users = db.scalar(select(func.count(User.id))) or 0
-    total_pickup_requests = db.scalar(select(func.count(PickupRequest.id))) or 0
-    total_completed_pickups = (
-        db.scalar(
-            select(func.count(PickupRequest.id)).where(
-                PickupRequest.status == PickupStatus.completed
-            )
-        )
-        or 0
-    )
-    total_collected_weight = (
-        db.scalar(select(func.coalesce(func.sum(CollectorAssignment.weight_kg), 0.0))) or 0.0
-    )
-
-    def user_count(role: UserRole) -> int:
-        return db.scalar(select(func.count(User.id)).where(User.role == role)) or 0
-
-    def request_count(status: PickupStatus) -> int:
-        return (
-            db.scalar(select(func.count(PickupRequest.id)).where(PickupRequest.status == status))
-            or 0
-        )
-
     return AnalyticsRead(
-        total_users=total_users,
-        total_pickup_requests=total_pickup_requests,
-        total_completed_pickups=total_completed_pickups,
-        total_collected_weight_kg=round(float(total_collected_weight), 2),
+        total_users=count_users(db),
+        total_pickup_requests=count_pickups(db),
+        total_completed_pickups=count_pickups(db, PickupStatus.completed),
+        total_collected_weight_kg=round(sum_collected_weight(db), 2),
         users_by_role=RoleBreakdown(
-            citizens=user_count(UserRole.citizen),
-            collectors=user_count(UserRole.collector),
-            dealers=user_count(UserRole.dealer),
-            admins=user_count(UserRole.admin),
+            citizens=count_users(db, UserRole.citizen),
+            collectors=count_users(db, UserRole.collector),
+            dealers=count_users(db, UserRole.dealer),
+            admins=count_users(db, UserRole.admin),
         ),
         requests_by_status=RequestStatusBreakdown(
-            pending=request_count(PickupStatus.pending),
-            accepted=request_count(PickupStatus.accepted),
-            on_the_way=request_count(PickupStatus.on_the_way),
-            collected=request_count(PickupStatus.collected),
-            completed=request_count(PickupStatus.completed),
-            cancelled=request_count(PickupStatus.cancelled),
+            pending=count_pickups(db, PickupStatus.pending),
+            accepted=count_pickups(db, PickupStatus.accepted),
+            on_the_way=count_pickups(db, PickupStatus.on_the_way),
+            collected=count_pickups(db, PickupStatus.collected),
+            completed=count_pickups(db, PickupStatus.completed),
+            cancelled=count_pickups(db, PickupStatus.cancelled),
         ),
     )

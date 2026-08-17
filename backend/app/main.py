@@ -20,9 +20,8 @@ async def lifespan(_: FastAPI):
     yield
 
 
-# FIX: Read cors_origins_list at call time, not at import time.
-# Railway injects env vars before the process starts, but lru_cache
-# can freeze a stale value if settings is imported before vars are set.
+# Read CORS origins once at startup so the middleware and the /health
+# endpoint always report the same allowlist for the lifetime of the process.
 cors_origins = settings.cors_origins_list
 
 app = FastAPI(
@@ -62,19 +61,9 @@ async def image_upload_unavailable_error_handler(
 
 
 @app.get("/health", tags=["health"])
-def healthcheck():
+def healthcheck() -> dict[str, object]:
     return {
         "status": "ok",
         "app": settings.app_name,
         "cors_origins": settings.cors_origins_list,
-    }
-
-
-# Temporary debug endpoint — remove after confirming CORS works
-@app.get("/debug/cors", tags=["health"])
-def debug_cors():
-    return {
-        "cors_origins_raw": settings.cors_origins,
-        "cors_origins_list": settings.cors_origins_list,
-        "loaded_into_middleware": cors_origins,
     }

@@ -401,7 +401,7 @@ pytest tests/ -k "pickup" -v
    cd backend && pytest tests/ -v
 
    # Frontend
-   cd frontend && npm run lint && npx tsc --noEmit
+   cd frontend && npm run lint && npx tsc --noEmit && npm test
    ```
 
 6. **Commit** using Conventional Commits format.

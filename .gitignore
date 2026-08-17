@@ -27,6 +27,7 @@ pip-wheel-metadata/
 .coverage
 .coverage.*
 htmlcov/
+coverage/
 .tox/
 .mypy_cache/
 
@@ -44,6 +45,8 @@ instance/
 .env
 .env.*
 !.env.example
+!frontend/.env.development
+!frontend/.env.production
 
 # ==================================================
 # FastAPI / Backend
@@ -117,3 +120,6 @@ media/
 secrets/
 credentials.json
 service-account.json
+
+# Evaluation runtime state
+agent/evaluation_state.json

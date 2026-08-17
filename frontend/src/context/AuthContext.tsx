@@ -1,24 +1,23 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
-import api from "../api/axios";
+import { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getProfile } from "../api/auth";
+import type { UserProfile, UserRole } from "@/types/auth";
 import {
-  TOKEN_STORAGE_KEY,
-  REMEMBER_ME_KEY,
-} from "../lib/constants";
+  clearAuthSession,
+  configureUnauthorizedHandler,
+  getAccessToken,
+  setAuthSession,
+} from "../api/client";
+import { authQueryKeys } from "../hooks/auth-query-keys";
 
-export type Role = "citizen" | "collector" | "dealer" | "admin";
+export type Role = UserRole;
 
-export interface User {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  role: Role;
-  created_at: string;
-}
+export type User = UserProfile;
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
   login: (token: string, user: User, rememberMe?: boolean) => void;
   logout: () => void;
@@ -26,29 +25,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function getStoredToken(): string | null {
-  return (
-    localStorage.getItem(TOKEN_STORAGE_KEY) ??
-    sessionStorage.getItem(TOKEN_STORAGE_KEY)
-  );
-}
-
-function clearStoredToken(): void {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-  localStorage.removeItem(REMEMBER_ME_KEY);
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(getStoredToken);
+  const [token, setToken] = useState<string | null>(() => getAccessToken());
   const [isLoading, setIsLoading] = useState(true);
 
   const logout = useCallback(() => {
-    clearStoredToken();
+    clearAuthSession();
     setToken(null);
     setUser(null);
-  }, []);
+    setIsLoading(false);
+    queryClient.removeQueries({ queryKey: authQueryKeys.currentUser });
+  }, [queryClient]);
 
   useEffect(() => {
     if (!token) {
@@ -57,36 +46,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    api
-      .get<User>("/auth/me")
-      .then((res) => setUser(res.data))
-      .catch(() => logout())
-      .finally(() => setIsLoading(false));
-  }, [token, logout]);
+    let isActive = true;
+
+    setIsLoading(true);
+
+    getProfile()
+      .then((profile) => {
+        if (!isActive) {
+          return;
+        }
+
+        setUser(profile);
+        queryClient.setQueryData(authQueryKeys.currentUser, profile);
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        logout();
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [token, logout, queryClient]);
 
   useEffect(() => {
-    const handleUnauthorized = () => logout();
-    window.addEventListener("unauthorized", handleUnauthorized);
-    return () => window.removeEventListener("unauthorized", handleUnauthorized);
+    configureUnauthorizedHandler(() => {
+      logout();
+    });
+
+    return () => {
+      configureUnauthorizedHandler(() => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("unauthorized"));
+        }
+      });
+    };
   }, [logout]);
 
   const login = (newToken: string, newUser: User, rememberMe = true) => {
-    clearStoredToken();
-
-    if (rememberMe) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
-      localStorage.setItem(REMEMBER_ME_KEY, "true");
-    } else {
-      sessionStorage.setItem(TOKEN_STORAGE_KEY, newToken);
-      localStorage.setItem(REMEMBER_ME_KEY, "false");
-    }
-
+    setAuthSession({
+      accessToken: newToken,
+      storage: rememberMe ? "local" : "session",
+    });
     setToken(newToken);
     setUser(newUser);
+    setIsLoading(false);
+    queryClient.setQueryData(authQueryKeys.currentUser, newUser);
   };
 
+  const isAuthenticated = Boolean(token && user);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, token, isAuthenticated, isLoading, login, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

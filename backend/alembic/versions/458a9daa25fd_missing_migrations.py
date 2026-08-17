@@ -9,13 +9,22 @@ from alembic import op
 import sqlalchemy as sa
 
 
+def _cleanup_sqlite_batch_table(table_name: str) -> None:
+    if op.get_bind().dialect.name != "sqlite":
+        return
+
+    op.execute(sa.text(f'DROP TABLE IF EXISTS "_alembic_tmp_{table_name}"'))
+
+
 def upgrade() -> None:
     # dealer_profiles
+    _cleanup_sqlite_batch_table("dealer_profiles")
     with op.batch_alter_table("dealer_profiles") as batch_op:
         batch_op.drop_index("ix_dealer_profiles_user_id")
         batch_op.create_index("ix_dealer_profiles_user_id", ["user_id"], unique=True)
 
     # inventory_lot_events
+    _cleanup_sqlite_batch_table("inventory_lot_events")
     with op.batch_alter_table("inventory_lot_events") as batch_op:
         batch_op.alter_column(
             "event_type",
@@ -35,6 +44,7 @@ def upgrade() -> None:
         )
 
     # pickup_requests
+    _cleanup_sqlite_batch_table("pickup_requests")
     with op.batch_alter_table("pickup_requests") as batch_op:
         batch_op.alter_column(
             "photo_url",
@@ -58,12 +68,13 @@ def upgrade() -> None:
                 native_enum=False,
             ),
             existing_nullable=False,
-            existing_server_default=sa.text("'pending'"),
+            existing_server_default="'pending'",
         )
 
 
 def downgrade() -> None:
     # pickup_requests
+    _cleanup_sqlite_batch_table("pickup_requests")
     with op.batch_alter_table("pickup_requests") as batch_op:
         batch_op.alter_column(
             "status",
@@ -79,7 +90,7 @@ def downgrade() -> None:
             ),
             type_=sa.VARCHAR(length=9),
             existing_nullable=False,
-            existing_server_default=sa.text("'pending'"),
+            existing_server_default="'pending'",
         )
         batch_op.drop_column("confidence")
         batch_op.drop_column("category")
@@ -91,6 +102,7 @@ def downgrade() -> None:
         )
 
     # inventory_lot_events
+    _cleanup_sqlite_batch_table("inventory_lot_events")
     with op.batch_alter_table("inventory_lot_events") as batch_op:
         batch_op.alter_column(
             "event_type",
@@ -110,6 +122,7 @@ def downgrade() -> None:
         )
 
     # dealer_profiles
+    _cleanup_sqlite_batch_table("dealer_profiles")
     with op.batch_alter_table("dealer_profiles") as batch_op:
         batch_op.drop_index("ix_dealer_profiles_user_id")
         batch_op.create_index("ix_dealer_profiles_user_id", ["user_id"], unique=False)

@@ -2,7 +2,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 
-from app.services.location import calculate_distance_km
+from app.services.location import (
+    DEFAULT_ROUTE_SPEED_KMPH,
+    calculate_distance_km,
+    estimate_travel_time_minutes,
+)
 
 RoutingProviderName = Literal["mock", "osrm", "graphhopper", "google_directions"]
 
@@ -25,6 +29,18 @@ class Route(RouteEstimate):
     origin: RoutePoint
     destination: RoutePoint
     geometry: list[RoutePoint]
+
+
+@dataclass(frozen=True)
+class RouteStop:
+    pickup_id: int
+    latitude: float
+    longitude: float
+
+
+@dataclass(frozen=True)
+class MultiStopRoute(RouteEstimate):
+    stops: tuple[RouteStop, ...]
 
 
 class RoutingProvider(ABC):
@@ -68,11 +84,61 @@ class MockRoutingProvider(RoutingProvider):
         )
 
     def estimate_time(self, origin: RoutePoint, destination: RoutePoint) -> int:
-        distance_km = self.estimate_distance(origin, destination)
-        if distance_km == 0:
-            return 0
+        return estimate_travel_time_minutes(
+            self.estimate_distance(origin, destination),
+            self.average_speed_kmph,
+        )
 
-        return max(1, round((distance_km / self.average_speed_kmph) * 60))
+
+def optimize_route(
+    origin: RoutePoint,
+    stops: list[RouteStop],
+    average_speed_kmph: float = DEFAULT_ROUTE_SPEED_KMPH,
+) -> MultiStopRoute:
+    """Order pickup stops using a greedy nearest-neighbour heuristic.
+
+    Starts from ``origin`` and repeatedly visits the closest remaining stop,
+    producing an ordered :class:`MultiStopRoute` with cumulative haversine
+    distance and an estimated total duration.
+    """
+    remaining = list(stops)
+    ordered: list[RouteStop] = []
+    current = origin
+    total_distance_km = 0.0
+
+    while remaining:
+        distances_km = [
+            calculate_distance_km(
+                current.latitude,
+                current.longitude,
+                stop.latitude,
+                stop.longitude,
+            )
+            for stop in remaining
+        ]
+        nearest_index = min(range(len(remaining)), key=lambda index: distances_km[index])
+        stop = remaining.pop(nearest_index)
+        ordered.append(stop)
+        total_distance_km += distances_km[nearest_index]
+        current = RoutePoint(latitude=stop.latitude, longitude=stop.longitude)
+
+    total_duration_minutes = 0
+    previous = origin
+    for stop in ordered:
+        leg_distance_km = calculate_distance_km(
+            previous.latitude,
+            previous.longitude,
+            stop.latitude,
+            stop.longitude,
+        )
+        total_duration_minutes += estimate_travel_time_minutes(leg_distance_km, average_speed_kmph)
+        previous = RoutePoint(latitude=stop.latitude, longitude=stop.longitude)
+
+    return MultiStopRoute(
+        stops=tuple(ordered),
+        distance_km=round(total_distance_km, 2),
+        duration_minutes=total_duration_minutes,
+    )
 
 
 def get_routing_provider(provider: RoutingProviderName = "mock") -> RoutingProvider:

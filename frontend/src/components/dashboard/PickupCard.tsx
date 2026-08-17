@@ -27,6 +27,7 @@ export function PickupCard({
 }: PickupCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const progress = getPickupProgress(request.status);
+  const detailsId = `pickup-details-${request.id}`;
 
   return (
     <Card className={cn("border-white/40 bg-card/85 shadow-sm", className)}>
@@ -50,10 +51,13 @@ export function PickupCard({
               type="button"
               className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition hover:bg-muted"
               onClick={() => setIsExpanded((current) => !current)}
+              aria-expanded={isExpanded}
+              aria-controls={detailsId}
             >
               Details
               <ChevronDown
                 className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")}
+                aria-hidden="true"
               />
             </button>
           ) : null}
@@ -97,14 +101,31 @@ export function PickupCard({
               Weight
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              {formatWeight(request.assignment?.weight_kg)}
+              {formatWeight(request.assignment?.weight_kg ?? request.estimated_weight_kg)}
             </p>
           </div>
         </div>
 
         {(isExpanded || !expandable) && (
-          <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+          <div id={detailsId} className="grid gap-4 lg:grid-cols-[1fr_auto]">
             <div className="space-y-2 text-sm text-muted-foreground">
+              <p>
+                <span className="font-medium text-foreground">Estimated weight:</span>{" "}
+                {request.estimated_weight_kg
+                  ? `${request.estimated_weight_kg.toFixed(1)} kg`
+                  : "Not provided"}
+              </p>
+              <p>
+                <span className="font-medium text-foreground">Preferred time:</span>{" "}
+                {request.preferred_time
+                  ? formatDateTime(request.preferred_time)
+                  : "Not provided"}
+              </p>
+              {request.notes ? (
+                <p>
+                  <span className="font-medium text-foreground">Notes:</span> {request.notes}
+                </p>
+              ) : null}
               <p>
                 <span className="font-medium text-foreground">Material insight:</span>{" "}
                 {request.category

@@ -1,11 +1,11 @@
 import { UserCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
+import { AccountDetailsCard } from "@/components/dashboard/AccountDetailsCard";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { ProfileCard } from "@/components/dashboard/ProfileCard";
 import { useAuth } from "@/context/AuthContext";
 import { useCitizenPickupSummary } from "@/hooks/useCitizenPickups";
-import { formatDateTime } from "@/lib/pickup";
 
 export function ProfilePage() {
   const { user } = useAuth();
@@ -26,18 +26,7 @@ export function ProfilePage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-6">
-          <ProfileCard
-            title="Account Details"
-            description="Current user attributes loaded from the authentication API."
-            items={[
-              { label: "Full Name", value: user?.name ?? "Not available" },
-              { label: "Email", value: user?.email ?? "Not available" },
-              { label: "Phone", value: user?.phone ?? "Not available" },
-              { label: "Role", value: user?.role ?? "Not available" },
-              { label: "Member Since", value: formatDateTime(user?.created_at) },
-              { label: "User ID", value: user ? String(user.id) : "Not available" },
-            ]}
-          />
+          <AccountDetailsCard user={user} />
 
           <DashboardCard
             title="Editing Constraints"

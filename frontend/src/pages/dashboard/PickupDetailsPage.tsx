@@ -92,7 +92,11 @@ export function PickupDetailsPage() {
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       Scheduled Date
                     </p>
-                    <p className="mt-2 font-medium">Not provided by the current API</p>
+                    <p className="mt-2 font-medium">
+                      {request.preferred_time
+                        ? formatDateTime(request.preferred_time)
+                        : "No preferred time set"}
+                    </p>
                   </div>
                   <div className="rounded-2xl bg-muted/20 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -102,12 +106,37 @@ export function PickupDetailsPage() {
                   </div>
                   <div className="rounded-2xl bg-muted/20 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      Estimated Weight
+                    </p>
+                    <p className="mt-2 font-medium">{formatWeight(request.estimated_weight_kg)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-muted/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       AI Category
                     </p>
                     <p className="mt-2 font-medium">
-                      {request.category ?? "No AI category returned"}
+                      {request.category && request.category !== "Unknown"
+                        ? `${request.category}${
+                            request.confidence != null
+                              ? ` (${(request.confidence * 100).toFixed(0)}% confidence)`
+                              : ""
+                          }`
+                        : request.category ?? "No AI category returned"}
                     </p>
+                    {request.category && request.category === "Unknown" ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Classification preview on standby until the AI model is live.
+                      </p>
+                    ) : null}
                   </div>
+                  {request.notes ? (
+                    <div className="rounded-2xl bg-muted/20 p-4 sm:col-span-2">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Notes
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">{request.notes}</p>
+                    </div>
+                  ) : null}
                 </div>
               </DashboardCard>
 

@@ -8,14 +8,14 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { user, token, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
     return <LoadingScreen />;
   }
 
-  if (!token || !user) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
