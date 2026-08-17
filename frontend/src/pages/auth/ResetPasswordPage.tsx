@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/FormField";
 import { Spinner } from "@/components/ui/spinner";
 import { SeoHead } from "@/components/seo/SeoHead";
-import api from "@/api/axios";
+import api from "@/api/client";
 import { getApiErrorMessage } from "@/lib/api-error";
 
 const resetPasswordSchema = z.object({
