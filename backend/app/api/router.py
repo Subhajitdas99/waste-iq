@@ -8,6 +8,7 @@ from app.api.routes import (
     collector_map,
     dealer,
     inventory,
+    jobs,
     marketplace,
     notifications,
     pickup_requests,
@@ -24,6 +25,7 @@ api_router.include_router(dealer.router, prefix="/dealer", tags=["Dealer"])
 api_router.include_router(marketplace.router, prefix="/marketplace", tags=["Marketplace"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(analytics.router, prefix="/admin/analytics", tags=["Admin Analytics"])
+api_router.include_router(jobs.router, tags=["Admin Jobs"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 
 # Inventory marketplace: same file, two routers, mounted under different

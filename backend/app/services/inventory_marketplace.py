@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, asc, desc, func, or_, select
+from sqlalchemy import Select, asc, desc, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -943,15 +943,39 @@ def release_expired_reservations(db: Session) -> int:
     if not expired_lots:
         return 0
 
+    released = 0
     with commit_or_rollback(db):
         for lot in expired_lots:
             previous_dealer_id = lot.reserved_by_dealer_id
             previous_reserved_at = lot.reserved_at
             previous_expires_at = lot.reservation_expires_at
-            lot.status = InventoryLotStatus.available
-            lot.reserved_by_dealer_id = None
-            lot.reserved_at = None
-            lot.reservation_expires_at = None
+
+            result = db.execute(
+                update(InventoryLot)
+                .where(
+                    InventoryLot.id == lot.id,
+                    InventoryLot.status == InventoryLotStatus.reserved,
+                    InventoryLot.reservation_expires_at.is_not(None),
+                    InventoryLot.reservation_expires_at <= now,
+                )
+                .values(
+                    status=InventoryLotStatus.available,
+                    reserved_by_dealer_id=None,
+                    reserved_at=None,
+                    reservation_expires_at=None,
+                    updated_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount == 0:
+                logger.info(
+                    "Skipping inventory lot %s: state changed concurrently, "
+                    "reservation already released or lot sold",
+                    lot.id,
+                )
+                continue
+
+            db.refresh(lot)
             create_lot_event(
                 db,
                 lot,
@@ -988,8 +1012,9 @@ def release_expired_reservations(db: Session) -> int:
                     ),
                 )
                 _dispatcher.notify_reservation_expired(db, lot, previous_dealer_id)
+            released += 1
 
-    return len(expired_lots)
+    return released
 
 
 def _dealer_lot_detail_statement() -> Select[tuple[InventoryLot]]:

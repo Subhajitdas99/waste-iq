@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_unused.db")
+os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
@@ -31,9 +32,7 @@ from app.models.user import User, UserRole
 @pytest.fixture()
 def db_session():
     """
-    Fresh in-memory SQLite database for a single test. Tables are created
-    before the test runs and the whole engine is discarded after, so no
-    state survives between tests.
+    Fresh in-memory SQLite database for a single test.
     """
     engine = create_engine(
         "sqlite:///:memory:",
@@ -43,7 +42,13 @@ def db_session():
     )
     Base.metadata.create_all(bind=engine)
 
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    TestingSessionLocal = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+    )
+
     session = TestingSessionLocal()
 
     try:
@@ -52,6 +57,18 @@ def db_session():
         session.close()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
+
+
+@pytest.fixture()
+def jobs_session_factory(db_session):
+    bind = db_session.get_bind()
+
+    return sessionmaker(
+        bind=bind,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+    )
 
 
 @pytest.fixture()

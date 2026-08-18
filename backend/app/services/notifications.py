@@ -166,6 +166,28 @@ class NotificationDispatcher:
             metadata_json=metadata_json,
         )
 
+    def notify_admins(
+        self,
+        db,
+        message: str,
+        *,
+        title: str = "Admin Notification",
+        link: str | None = None,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> None:
+        admins = db.execute(select(User).where(User.role == UserRole.admin)).scalars().all()
+
+        for admin in admins:
+            self._notify(
+                db,
+                user_id=admin.id,
+                type=NotificationType.system,
+                title=title,
+                message=message,
+                link=link,
+                metadata_json=metadata_json,
+            )
+
     # ─── Pickup lifecycle ────────────────────────────────────────────────────
 
     def notify_pickup_created(self, db, pickup_request: PickupRequest) -> None:
