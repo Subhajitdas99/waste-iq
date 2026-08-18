@@ -23,6 +23,13 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=8, max_length=64)
+    new_password: str = Field(min_length=8, max_length=64)
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
