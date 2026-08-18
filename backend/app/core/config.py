@@ -68,6 +68,25 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    # ------------------------------------------------------------------
+    # Monitoring & Logging
+    # ------------------------------------------------------------------
+
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="INFO",
+        alias="LOG_LEVEL",
+    )
+
+    sentry_dsn: str | None = Field(
+        default=None,
+        alias="SENTRY_DSN",
+    )
+
+    release: str = Field(
+        default="local",
+        alias="RELEASE",
+    )
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
@@ -93,6 +112,10 @@ class Settings(BaseSettings):
     @property
     def cloudinary_required(self) -> bool:
         return self.is_production
+
+    @property
+    def sentry_enabled(self) -> bool:
+        return bool(self.sentry_dsn)
 
 
 @lru_cache
