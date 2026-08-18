@@ -62,6 +62,18 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     return user
 
 
+def change_password(db: Session, user: User, current_password: str, new_password: str) -> User:
+    if not verify_password(current_password, user.password_hash):
+        raise ValueError("Current password is incorrect")
+    if verify_password(new_password, user.password_hash):
+        raise ValueError("New password must be different from the current password")
+
+    user.password_hash = hash_password(new_password)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def issue_token_for_user(user: User) -> AuthResponse:
     return AuthResponse(
         access_token=create_access_token(str(user.id)), user=UserRead.model_validate(user)

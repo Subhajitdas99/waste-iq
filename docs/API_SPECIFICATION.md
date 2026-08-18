@@ -228,6 +228,47 @@ Get the currently authenticated user's profile.
 
 ---
 
+### `POST /auth/change-password`
+
+Change the authenticated user's password. Verifies the current password and
+persists a new bcrypt hash. Existing tokens remain valid.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | Yes (any role) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "current_password": "SecurePassword123!",
+  "new_password": "NewSecurePassword456!"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `current_password` | string | Yes | 8–64 characters |
+| `new_password` | string | Yes | 8–64 characters, must differ from the current password |
+
+**Response `200 OK`:**
+
+```json
+{
+  "message": "Password changed successfully"
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Password changed |
+| `400` | Incorrect current password, or new password equals the current password |
+| `401` | Missing or invalid token |
+| `422` | Invalid request body (missing fields, password out of 8–64 range) |
+
+---
+
 ## 4. Pickup Request Endpoints
 
 ### `POST /pickup-requests`
