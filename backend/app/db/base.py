@@ -1,5 +1,6 @@
 from app.models.collector_assignment import CollectorAssignment
 from app.models.collector_location import CollectorLocation, CollectorLocationHistory
+from app.models.audit_log import AuditLog
 from app.models.dealer_profile import DealerProfile
 from app.models.inventory_lot import InventoryLot
 from app.models.inventory_lot_event import InventoryLotEvent
@@ -19,6 +20,7 @@ __all__ = [
     "CollectorAssignment",
     "CollectorLocation",
     "CollectorLocationHistory",
+    "AuditLog",
     "DealerProfile",
     "MaterialCategory",
     "PricingRule",
