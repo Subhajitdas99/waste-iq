@@ -384,9 +384,9 @@ def test_429_does_not_leak_account_existence(client, monkeypatch):
         assert _login(client, "ghost@example.com", _WRONG_PASSWORD).status_code == 401
     ghost = _login(client, "ghost@example.com", _WRONG_PASSWORD)
     assert ghost.status_code == 429
-    assert ghost.json() == known.json(), (
-        "429 bodies must be identical for existing and unknown emails"
-    )
+    assert (
+        ghost.json() == known.json()
+    ), "429 bodies must be identical for existing and unknown emails"
 
 
 def test_auth_refresh_is_not_rate_limited(client, monkeypatch):
@@ -568,9 +568,9 @@ def test_lockout_does_not_reveal_account_existence(client, db_session, monkeypat
     ghost_response = _login(client, "ghost@example.com", _WRONG_PASSWORD)
     assert locked_response.status_code == 401
     assert ghost_response.status_code == 401
-    assert locked_response.json() == ghost_response.json(), (
-        "locked and unknown accounts must produce identical responses"
-    )
+    assert (
+        locked_response.json() == ghost_response.json()
+    ), "locked and unknown accounts must produce identical responses"
 
 
 def test_repeated_failures_across_sessions_lock_exactly_at_threshold(
