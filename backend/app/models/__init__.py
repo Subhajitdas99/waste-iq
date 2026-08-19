@@ -16,6 +16,7 @@ from app.models.notification import Notification, NotificationStatus, Notificati
 from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.pricing_rule import PricingRule
 from app.models.pickup_request_event import PickupRequestEvent
+from app.models.refresh_token import RefreshToken
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "PickupRequest",
     "PickupStatus",
     "PickupRequestEvent",
+    "RefreshToken",
     "CollectorAssignment",
     "CollectorLocation",
     "CollectorLocationHistory",

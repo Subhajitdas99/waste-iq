@@ -384,17 +384,19 @@ def test_429_does_not_leak_account_existence(client, monkeypatch):
         assert _login(client, "ghost@example.com", _WRONG_PASSWORD).status_code == 401
     ghost = _login(client, "ghost@example.com", _WRONG_PASSWORD)
     assert ghost.status_code == 429
-    assert (
-        ghost.json() == known.json()
-    ), "429 bodies must be identical for existing and unknown emails"
+    assert ghost.json() == known.json(), (
+        "429 bodies must be identical for existing and unknown emails"
+    )
 
 
 def test_auth_refresh_is_not_rate_limited(client, monkeypatch):
     _set_login_limits(monkeypatch, ip=1, account=1)
     assert _login(client, "nobody@example.com", _WRONG_PASSWORD).status_code == 401
-    # /auth/refresh does not exist yet; it must not be rate-limited (404, not 429).
+    # /auth/refresh is not a login attempt and is deliberately not
+    # rate-limited (tokens are 384-bit secrets; there is nothing to brute
+    # force). Invalid tokens are rejected with 401, not 429.
     response = client.post("/auth/refresh", json={"refresh_token": "x"})
-    assert response.status_code == 404
+    assert response.status_code == 401
 
 
 def test_cors_preflight_is_not_rate_limited(client, monkeypatch):
@@ -568,9 +570,9 @@ def test_lockout_does_not_reveal_account_existence(client, db_session, monkeypat
     ghost_response = _login(client, "ghost@example.com", _WRONG_PASSWORD)
     assert locked_response.status_code == 401
     assert ghost_response.status_code == 401
-    assert (
-        locked_response.json() == ghost_response.json()
-    ), "locked and unknown accounts must produce identical responses"
+    assert locked_response.json() == ghost_response.json(), (
+        "locked and unknown accounts must produce identical responses"
+    )
 
 
 def test_repeated_failures_across_sessions_lock_exactly_at_threshold(

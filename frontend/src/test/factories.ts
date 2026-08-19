@@ -95,6 +95,7 @@ export const usersByRole: Record<UserRole, UserProfile> = {
 export function authResponseFor(user: UserProfile) {
   return {
     access_token: createTestToken({ sub: String(user.id) }),
+    refresh_token: `refresh-token-${user.id}`,
     token_type: "bearer" as const,
     user,
   };

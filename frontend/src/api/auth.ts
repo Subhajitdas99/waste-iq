@@ -44,3 +44,20 @@ export async function getProfile(): Promise<UserProfile> {
   const response = await apiClient.get<UserProfile>("/auth/me");
   return response.data;
 }
+
+export async function refresh(refreshToken: string): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse, AxiosResponse<AuthResponse>>(
+    "/auth/refresh",
+    { refresh_token: refreshToken },
+    publicRequestConfig
+  );
+  return response.data;
+}
+
+export async function logout(refreshToken: string): Promise<void> {
+  await apiClient.post("/auth/logout", { refresh_token: refreshToken });
+}
+
+export async function logoutAll(): Promise<void> {
+  await apiClient.post("/auth/logout-all");
+}

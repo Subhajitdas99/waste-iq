@@ -1,11 +1,17 @@
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getProfile } from "../api/auth";
+import {
+  getProfile,
+  logout as logoutRequest,
+  refresh as refreshRequest,
+} from "../api/auth";
 import type { UserProfile, UserRole } from "@/types/auth";
 import {
   clearAuthSession,
+  configureRefreshHandler,
   configureUnauthorizedHandler,
   getAccessToken,
+  getRefreshToken,
   setAuthSession,
 } from "../api/client";
 import { authQueryKeys } from "../hooks/auth-query-keys";
@@ -19,7 +25,7 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string, user: User, rememberMe?: boolean) => void;
+  login: (token: string, user: User, rememberMe?: boolean, refreshToken?: string | null) => void;
   logout: () => void;
 }
 
@@ -32,6 +38,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const logout = useCallback(() => {
+    // Best-effort server-side revocation of the current refresh session.
+    // Fire-and-forget: local logout must succeed even when the network is
+    // unavailable or the token is already revoked.
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      logoutRequest(refreshToken).catch(() => undefined);
+    }
     clearAuthSession();
     setToken(null);
     setUser(null);
@@ -78,11 +91,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token, logout, queryClient]);
 
   useEffect(() => {
+    // Wire the client's inflight-refresh dedupe to the real /auth/refresh
+    // endpoint. The handler returns the rotated pair; a failed exchange
+    // clears the session and triggers logout.
+    configureRefreshHandler(async (refreshToken) => {
+      try {
+        const response = await refreshRequest(refreshToken);
+        return {
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+        };
+      } catch {
+        return null;
+      }
+    });
+
     configureUnauthorizedHandler(() => {
       logout();
     });
 
     return () => {
+      configureRefreshHandler(null);
       configureUnauthorizedHandler(() => {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("unauthorized"));
@@ -91,9 +120,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [logout]);
 
-  const login = (newToken: string, newUser: User, rememberMe = true) => {
+  const login = (newToken: string, newUser: User, rememberMe = true, refreshToken?: string | null) => {
     setAuthSession({
       accessToken: newToken,
+      refreshToken: refreshToken ?? null,
       storage: rememberMe ? "local" : "session",
     });
     setToken(newToken);
