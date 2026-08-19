@@ -48,6 +48,20 @@ sequenceDiagram
     BE-->>C: 200 {id, name, email, role, ...}
 ```
 
+### Rate Limiting & Account Lockout (Issue #60)
+
+Authentication endpoints are protected by an in-memory sliding-window rate limiter (per-process; not shared across instances):
+
+| Scope | Limit |
+|-------|-------|
+| Login attempts per IP | `LOGIN_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
+| Login attempts per account email | `LOGIN_ACCOUNT_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
+| Registrations per IP | `REGISTER_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
+
+- Exceeding a limit returns **429** with a `Retry-After` header (seconds until the oldest request in the window expires). The response body is generic and does not reveal whether an account exists.
+- Accounts are locked for `LOCKOUT_COOLDOWN_MINUTES` minutes after `LOCKOUT_FAILED_ATTEMPT_THRESHOLD` consecutive failed logins. The failure counter resets when the account is locked and on any successful login. While locked, all login attempts — including with correct credentials — return the same `401 Invalid email or password` response.
+- Setting a limit to `0` disables that scope. Because the limiter is in-memory, each application instance maintains its own budget; a shared store (e.g., Redis) is required for multi-instance deployments.
+
 ---
 
 ## 2. Data Types & Common Schemas
@@ -1787,5 +1801,8 @@ All errors return a JSON body with a `detail` field:
 | Resource not found | 404 | `"Pickup request not found"` |
 | Email already registered | 400 | `"Email already registered"` |
 | Lot already reserved | 409 | `"This lot is already reserved"` |
+| Too many requests | 429 | `"Too many requests. Please try again later."` |
 | Cloudinary not configured | 503 | `"Image upload service is not configured"` |
 | Cloudinary service down | 502 | `"Image upload service is temporarily unavailable"` |
+
+429 responses include a `Retry-After` header (seconds) telling the client when the window resets.

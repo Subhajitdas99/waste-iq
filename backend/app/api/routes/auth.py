@@ -1,16 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
+from app.core.ratelimit import check_rate_limit
+from app.core.security import verify_password
 from app.models.user import User
 from app.schemas.auth import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest
 from app.schemas.user import UserRead
 from app.services.auth import (
-    authenticate_user,
     change_password as change_password_service,
     get_user_by_email,
     issue_token_for_user,
+    normalize_email,
+    record_failed_login,
     register_user,
+    reset_login_failures,
 )
 from app.services.audit import AuditService
 
@@ -20,7 +24,12 @@ _audit_service = AuditService()
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
+def register(
+    payload: RegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AuthResponse:
+    check_rate_limit(request, "register")
     try:
         user = register_user(db, payload)
     except ValueError as exc:
@@ -29,26 +38,51 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    user = authenticate_user(db, payload.email, payload.password)
-    if user is None:
-        # Record the failure before raising so it commits to the database.
-        # actor_user_id is set only when the email corresponds to an existing
-        # account; no email is stored, so the audit trail leaks no
-        # enumeration signal.
-        existing_user = get_user_by_email(db, payload.email)
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AuthResponse:
+    email = normalize_email(payload.email)
+
+    # Rate limit by IP and by account before any credential work. The account
+    # key is tracked for every attempt (existing account or not) so the 429
+    # response cannot be used to enumerate accounts.
+    check_rate_limit(request, "login", account_identifier=email)
+
+    user = get_user_by_email(db, email)
+
+    if user is None or user.is_locked():
+        # Locked accounts and unknown emails respond identically so lockout
+        # state cannot be used to enumerate accounts. Locked accounts are
+        # rejected without touching the failure counter.
         _audit_service.record(
             db,
-            actor_user_id=existing_user.id if existing_user is not None else None,
+            actor_user_id=user.id if user is not None else None,
             action="login_failure",
             resource="user",
-            resource_id=str(existing_user.id) if existing_user is not None else None,
+            resource_id=str(user.id) if user is not None else None,
         )
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
 
+    if not verify_password(payload.password, user.password_hash):
+        record_failed_login(db, user)
+        _audit_service.record(
+            db,
+            actor_user_id=user.id,
+            action="login_failure",
+            resource="user",
+            resource_id=str(user.id),
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
+
+    reset_login_failures(db, user)
     _audit_service.record(
         db,
         actor_user_id=user.id,

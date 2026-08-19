@@ -11,7 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { useLogin } from "@/hooks/useLogin";
 import { resolvePostLoginPath } from "@/lib/portal";
-import { getApiErrorMessage } from "@/lib/api-error";
+import { getApiErrorMessage, getRateLimitRetryAfterSeconds, isRateLimitError } from "@/lib/api-error";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -63,6 +63,16 @@ export function LoginPage() {
       });
       navigate(resolvePostLoginPath(response.user.role, from), { replace: true });
     } catch (error) {
+      if (isRateLimitError(error)) {
+        const seconds = getRateLimitRetryAfterSeconds(error);
+        const minutes = seconds !== null ? Math.max(1, Math.ceil(seconds / 60)) : null;
+        setApiError(
+          minutes !== null
+            ? `Too many attempts. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
+            : "Too many attempts. Please try again later."
+        );
+        return;
+      }
       setApiError(getApiErrorMessage(error, "Invalid email or password"));
     }
   };

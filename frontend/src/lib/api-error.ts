@@ -22,3 +22,14 @@ export function getApiErrorMessage(
 export function isNotFoundError(error: unknown): boolean {
   return isAxiosError(error) && error.response?.status === 404;
 }
+
+export function isRateLimitError(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 429;
+}
+
+export function getRateLimitRetryAfterSeconds(error: unknown): number | null {
+  if (!isAxiosError(error)) return null;
+  const header = error.response?.headers?.["retry-after"];
+  const seconds = Number(header);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+}

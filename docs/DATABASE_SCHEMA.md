@@ -208,6 +208,8 @@ Stores all platform users regardless of role.
 | `phone` | `VARCHAR(20)` | No | — | NOT NULL, UNIQUE, INDEX | Mobile phone number |
 | `password_hash` | `VARCHAR(255)` | No | — | NOT NULL | bcrypt hash of the password |
 | `role` | `VARCHAR` (Enum) | No | — | NOT NULL, INDEX | One of: `citizen`, `collector`, `dealer`, `admin` |
+| `failed_login_count` | `INTEGER` | No | `0` | NOT NULL | Consecutive failed logins; resets on lock and on success |
+| `locked_until` | `TIMESTAMPTZ` | Yes | `NULL` | — | Account lockout expiry; `NULL` when not locked |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Account creation timestamp |
 
 **Relationships:**
