@@ -537,6 +537,27 @@ Central, database-backed in-app notification inbox shared by all four roles. One
 
 ---
 
+## 10d. Table: `audit_logs`
+
+Append-only audit trail (WIQ-V1-018) for security-sensitive and administrative actions. Rows are written transactionally with the action they describe and are never updated or deleted by application code. `before`/`after` snapshots are sanitized by the service layer: credential material (passwords, hashes, tokens, secrets) is never persisted.
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `actor_user_id` | `INTEGER` | Yes | NULL | FK → `users.id` (SET NULL), INDEX | Acting user; NULL for actions without an authenticated actor (e.g., failed login with unknown email) |
+| `action` | `VARCHAR(64)` | No | — | NOT NULL, INDEX | Event name, e.g. `login_success`, `dealer_approved`, `inventory_lot_archived` |
+| `resource` | `VARCHAR(64)` | No | — | NOT NULL, INDEX | Resource type, e.g. `user`, `dealer_profile`, `inventory_lot`, `notification` |
+| `resource_id` | `VARCHAR(64)` | Yes | NULL | INDEX | String identifier of the affected resource |
+| `before` | `JSON` | Yes | NULL | — | Sanitized snapshot of state before the action |
+| `after` | `JSON` | Yes | NULL | — | Sanitized snapshot of state after the action |
+| `ip_address` | `VARCHAR(45)` | Yes | NULL | — | Direct client IP (IPv4/IPv6); `X-Forwarded-For` is not trusted |
+| `user_agent` | `VARCHAR(512)` | Yes | NULL | — | Client user-agent header |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL, INDEX | Audit event timestamp |
+
+**Audited actions:** `user_registered`, `login_success`, `login_failure`, `password_changed`, `dealer_approved`, `dealer_rejected`, `inventory_lot_archived`, `inventory_lot_restored`, `notification_broadcast`.
+
+---
+
 ## 11. Indexes
 
 | Table | Index Name | Columns | Type | Purpose |
@@ -592,6 +613,11 @@ Central, database-backed in-app notification inbox shared by all four roles. One
 | `notifications` | `ix_notifications_user_status` | `user_id`, `status` | B-Tree (composite) | Unread-count queries per user |
 | `notifications` | `ix_notifications_user_created` | `user_id`, `created_at` | B-Tree (composite) | Inbox pagination per user |
 | `notifications` | `ix_notifications_user_type` | `user_id`, `type` | B-Tree (composite) | Type filtering within a user's inbox |
+| `audit_logs` | `ix_audit_logs_actor_user_id` | `actor_user_id` | B-Tree | Filter by acting user |
+| `audit_logs` | `ix_audit_logs_action` | `action` | B-Tree | Filter by event name |
+| `audit_logs` | `ix_audit_logs_resource` | `resource` | B-Tree | Filter by resource type |
+| `audit_logs` | `ix_audit_logs_resource_id` | `resource_id` | B-Tree | Lookup of a resource's history |
+| `audit_logs` | `ix_audit_logs_created_at` | `created_at` | B-Tree | Chronological ordering and date-range filters |
 
 ---
 
@@ -628,6 +654,7 @@ Central, database-backed in-app notification inbox shared by all four roles. One
 | `marketplace_transactions` | `inventory_lot_id` | `inventory_lots.id` | RESTRICT |
 | `marketplace_transactions` | `order_id` | `marketplace_orders.id` | SET NULL |
 | `notifications` | `user_id` | `users.id` | CASCADE |
+| `audit_logs` | `actor_user_id` | `users.id` | SET NULL |
 
 ### Unique Constraints
 

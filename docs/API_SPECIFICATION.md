@@ -1519,6 +1519,61 @@ Reject a dealer's profile with a required reason. Only valid from `submitted`.
 
 ---
 
+### `GET /admin/audit-logs`
+
+Admin-only listing of the append-only audit trail (WIQ-V1-018). Records are returned newest-first (`created_at DESC`, `id DESC`). This is a read-only endpoint: no create, update, or delete operations are exposed.
+
+**Auth Required:** Yes — `admin` role.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Constraints | Description |
+|-----------|------|---------|-------------|-------------|
+| `page` | `integer` | `1` | `>= 1` | Page number |
+| `page_size` | `integer` | `50` | `1..100` | Items per page |
+| `actor_user_id` | `integer` | — | — | Filter by acting user |
+| `action` | `string` | — | — | Filter by event name, e.g. `login_success` |
+| `resource` | `string` | — | — | Filter by resource type, e.g. `user` |
+| `created_after` | `datetime` (ISO 8601) | — | — | Only records created at or after this instant |
+| `created_before` | `datetime` (ISO 8601) | — | — | Only records created at or before this instant |
+
+**Response `200 OK`:** `AuditLogPageRead`.
+
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "actor_user_id": 7,
+      "actor_email": "admin@example.com",
+      "action": "dealer_approved",
+      "resource": "dealer_profile",
+      "resource_id": "4",
+      "before": {"status": "submitted"},
+      "after": {"status": "approved"},
+      "ip_address": "203.0.113.10",
+      "user_agent": "Mozilla/5.0 ...",
+      "created_at": "2026-08-19T09:30:00Z"
+    }
+  ],
+  "page": 1,
+  "page_size": 50,
+  "total_items": 1,
+  "total_pages": 1
+}
+```
+
+`actor_email` is `null` when the acting user was deleted or unknown (e.g. failed login with an unregistered email). `before`/`after` are always sanitized: credential material is never included.
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Audit records returned |
+| `401` | Missing or invalid token |
+| `403` | Non-admin caller |
+| `422` | Invalid pagination bounds (`page < 1`, `page_size` outside `1..100`) |
+
+---
+
 ## 9. Admin Inventory Management
 
 ### `GET /admin/inventory/lots`

@@ -10,8 +10,11 @@ from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, RegisterRequest
 from app.schemas.user import UserRead
+from app.services.audit import AuditService
 
 logger = logging.getLogger(__name__)
+
+_audit_service = AuditService()
 
 
 def normalize_email(email: str) -> str:
@@ -46,6 +49,15 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
     db.add(user)
 
     try:
+        db.flush()
+        _audit_service.record(
+            db,
+            actor_user_id=user.id,
+            action="user_registered",
+            resource="user",
+            resource_id=str(user.id),
+            after={"role": role_enum.value},
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -69,6 +81,13 @@ def change_password(db: Session, user: User, current_password: str, new_password
         raise ValueError("New password must be different from the current password")
 
     user.password_hash = hash_password(new_password)
+    _audit_service.record(
+        db,
+        actor_user_id=user.id,
+        action="password_changed",
+        resource="user",
+        resource_id=str(user.id),
+    )
     db.commit()
     db.refresh(user)
     return user

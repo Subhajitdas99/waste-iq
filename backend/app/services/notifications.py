@@ -10,6 +10,7 @@ from app.models.notification import Notification, NotificationStatus, Notificati
 from app.models.pickup_request import PickupRequest
 from app.models.user import User, UserRole
 from app.repositories.notifications import NotificationRepository
+from app.services.audit import AuditService
 from app.schemas.notification import (
     NotificationBroadcastRead,
     NotificationBroadcastRequest,
@@ -414,9 +415,14 @@ class NotificationBroadcaster:
 
     def __init__(self, service: NotificationService | None = None) -> None:
         self._service = service or NotificationService()
+        self._audit_service = AuditService()
 
     def broadcast(
-        self, db, payload: NotificationBroadcastRequest, broadcast_type: NotificationType
+        self,
+        db,
+        payload: NotificationBroadcastRequest,
+        broadcast_type: NotificationType,
+        actor: User,
     ) -> NotificationBroadcastRead:
         recipient_roles = payload.recipient_roles or []
         for role in recipient_roles:
@@ -440,6 +446,18 @@ class NotificationBroadcaster:
                 message=payload.message,
                 link=payload.link,
             )
+        self._audit_service.record(
+            db,
+            actor_user_id=actor.id,
+            action="notification_broadcast",
+            resource="notification",
+            after={
+                "type": broadcast_type.value,
+                "title": payload.title,
+                "recipient_roles": recipient_roles,
+                "recipients_count": len(user_ids),
+            },
+        )
         db.commit()
 
         return NotificationBroadcastRead(

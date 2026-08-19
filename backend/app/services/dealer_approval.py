@@ -15,6 +15,7 @@ from app.schemas.dealer import (
     DealerApprovalEventRead,
     DealerProfileRead,
 )
+from app.services.audit import AuditService
 from app.services.notifications import NotificationDispatcher
 
 # Allowed approval workflow transitions. Editing a profile always moves it
@@ -52,7 +53,7 @@ def validate_approval_transition(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Invalid approval status transition from " f"'{current.value}' to '{target.value}'"
+                f"Invalid approval status transition from '{current.value}' to '{target.value}'"
             ),
         )
 
@@ -169,6 +170,7 @@ class AdminDealerApprovalService:
     def __init__(self, repository: DealerProfileRepository | None = None) -> None:
         self._repository = repository or DealerProfileRepository()
         self._dispatcher = NotificationDispatcher()
+        self._audit_service = AuditService()
 
     def list_dealers(
         self,
@@ -245,6 +247,7 @@ class AdminDealerApprovalService:
     ) -> DealerApprovalActionRead:
         profile = self._get_profile_by_user_id_or_404(db, dealer_user_id)
         validate_approval_transition(profile.approval_status, DealerApprovalStatus.approved)
+        previous_status = profile.approval_status
 
         profile.approval_status = DealerApprovalStatus.approved
         profile.approved_at = datetime.now(timezone.utc)
@@ -254,6 +257,15 @@ class AdminDealerApprovalService:
             db, profile, status=DealerApprovalStatus.approved, note="Profile approved.", actor=admin
         )
         self._dispatcher.notify_dealer_profile_approved(db, profile)
+        self._audit_service.record(
+            db,
+            actor_user_id=admin.id,
+            action="dealer_approved",
+            resource="dealer_profile",
+            resource_id=str(profile.id),
+            before={"status": previous_status.value},
+            after={"status": DealerApprovalStatus.approved.value},
+        )
         return _to_action_schema(self._repository.save(db, profile))
 
     def reject_dealer(
@@ -261,6 +273,7 @@ class AdminDealerApprovalService:
     ) -> DealerApprovalActionRead:
         profile = self._get_profile_by_user_id_or_404(db, dealer_user_id)
         validate_approval_transition(profile.approval_status, DealerApprovalStatus.rejected)
+        previous_status = profile.approval_status
 
         profile.approval_status = DealerApprovalStatus.rejected
         profile.rejection_reason = reason
@@ -274,6 +287,15 @@ class AdminDealerApprovalService:
             actor=admin,
         )
         self._dispatcher.notify_dealer_profile_rejected(db, profile, reason)
+        self._audit_service.record(
+            db,
+            actor_user_id=admin.id,
+            action="dealer_rejected",
+            resource="dealer_profile",
+            resource_id=str(profile.id),
+            before={"status": previous_status.value},
+            after={"status": DealerApprovalStatus.rejected.value},
+        )
         return _to_action_schema(self._repository.save(db, profile))
 
     def _get_profile_by_user_id_or_404(self, db: Session, dealer_user_id: int) -> DealerProfile:

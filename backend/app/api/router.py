@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     admin,
     analytics,
+    audit_logs,
     auth,
     collector,
     collector_map,
@@ -26,6 +27,7 @@ api_router.include_router(marketplace.router, prefix="/marketplace", tags=["Mark
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(analytics.router, prefix="/admin/analytics", tags=["Admin Analytics"])
 api_router.include_router(jobs.router, tags=["Admin Jobs"])
+api_router.include_router(audit_logs.router, tags=["Admin Audit Logs"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 
 # Inventory marketplace: same file, two routers, mounted under different

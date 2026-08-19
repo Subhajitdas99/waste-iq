@@ -112,4 +112,6 @@ def admin_broadcast_notification(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin")),
 ) -> NotificationBroadcastRead:
-    return _notification_broadcaster.broadcast(db, payload=payload, broadcast_type=payload.type)
+    return _notification_broadcaster.broadcast(
+        db, payload=payload, broadcast_type=payload.type, actor=current_user
+    )

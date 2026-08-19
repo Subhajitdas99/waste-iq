@@ -24,6 +24,7 @@ from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.pricing_rule import PricingRule
 from app.models.user import User, UserRole
 from app.repositories.marketplace import create_transaction as create_marketplace_transaction
+from app.services.audit import AuditService
 from app.services.dealer_approval import ensure_approved_dealer
 from app.services.notifications import NotificationDispatcher
 from app.schemas.inventory import (
@@ -49,6 +50,7 @@ MONEY_PLACES = Decimal("0.01")
 RESERVATION_TTL_HOURS = 24
 logger = logging.getLogger(__name__)
 _dispatcher = NotificationDispatcher()
+_audit_service = AuditService()
 
 
 @contextmanager
@@ -892,6 +894,18 @@ def archive_inventory_lot(
                 event_notes="Inventory lot archived.",
                 metadata_json={"archive_reason": archive_reason},
             )
+            _audit_service.record(
+                db,
+                actor_user_id=admin.id,
+                action="inventory_lot_archived",
+                resource="inventory_lot",
+                resource_id=str(lot.id),
+                before={"visibility": InventoryLotVisibility.visible.value},
+                after={
+                    "visibility": InventoryLotVisibility.hidden.value,
+                    "archive_reason": archive_reason,
+                },
+            )
         lot = _get_lot_or_404(db, lot.id)
 
     return _serialize_archive_result(lot)
@@ -916,6 +930,15 @@ def restore_inventory_lot(db: Session, admin: User, lot_id: int) -> InventoryLot
                 new_status=lot.status,
                 event_notes="Inventory lot restored.",
                 metadata_json={"previous_archive_reason": previous_archive_reason},
+            )
+            _audit_service.record(
+                db,
+                actor_user_id=admin.id,
+                action="inventory_lot_restored",
+                resource="inventory_lot",
+                resource_id=str(lot.id),
+                before={"visibility": InventoryLotVisibility.hidden.value},
+                after={"visibility": InventoryLotVisibility.visible.value},
             )
         lot = _get_lot_or_404(db, lot.id)
 

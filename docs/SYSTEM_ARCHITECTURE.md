@@ -420,6 +420,43 @@ Key decisions:
 
 ---
 
+## 6.7 Audit Logging (Issue #61)
+
+A centralized, append-only audit trail covering security-sensitive and administrative actions. Every audited event produces one row in `audit_logs`, written synchronously inside the same database transaction as the action it describes — there is no queue, no background job, and no way to edit or delete records through application code.
+
+```mermaid
+flowchart LR
+    subgraph ACTIONS["Audited actions"]
+        REG["register_user\nuser_registered"]
+        LOGIN["POST /auth/login\nlogin_success / login_failure"]
+        PW["change_password\npassword_changed"]
+        APPROVE["AdminDealerApprovalService\ndealer_approved / dealer_rejected"]
+        ARCHIVE["archive_inventory_lot\ninventory_lot_archived /\ninventory_lot_restored"]
+        BROAD["NotificationBroadcaster\nnotification_broadcast"]
+    end
+
+    CTX["RequestIDMiddleware\n(ip_address + user_agent contextvars)"]
+    SVC["AuditService\n(record + sanitize_snapshot)"]
+    REPO["AuditLogRepository\n(create + list only)"]
+    DB[("audit_logs\nappend-only")]
+    API["GET /admin/audit-logs\n(admin-only, paginated, filterable)"]
+
+    ACTIONS --> SVC
+    CTX --> SVC
+    SVC --> REPO --> DB
+    DB --> API
+```
+
+Key decisions:
+
+- **Request metadata via the existing middleware** — `RequestIDMiddleware` already establishes per-request contextvars (request ID). It now also sets the client IP and user-agent the same way, so `AuditService` can capture them without threading `Request` through every service signature. Only the direct connection IP (`request.client.host`) is used; `X-Forwarded-For` is not trusted because the application has no proxy-aware IP handling.
+- **Transactional by construction** — audit records are flushed into the caller's session and ride the triggering action's commit (e.g., inside `commit_or_rollback` in `inventory_marketplace.py`, before `DealerProfileRepository.save` in `dealer_approval.py`, before `NotificationBroadcaster`'s commit, inside `register_user`/`change_password`). A failed or rolled-back action never leaves an orphaned audit row. The login endpoints are the only exceptions and commit the record explicitly before responding.
+- **Append-only repository** — `AuditLogRepository` exposes only `create` and `list`; there are no update/delete methods and no write endpoints. The admin API returns `405` for POST/PUT/PATCH/DELETE.
+- **No credential material** — `sanitize_snapshot()` strips keys such as `password`, `password_hash`, `token`, and `secret` from `before`/`after` payloads; `password_changed` records no snapshot at all. Failed logins never store the attempted email (preventing enumeration via the audit trail); `actor_user_id` is set only when the email matches an existing account.
+- **Admin-only read API** — `GET /admin/audit-logs` requires the `admin` role, supports `page`/`page_size` (max 100) plus filters (`actor_user_id`, `action`, `resource`, `created_after`, `created_before`), and returns newest-first with a deterministic `id` tiebreaker.
+
+---
+
 ## 7. Inventory Marketplace Flow
 
 ### Dealer Approval Workflow
@@ -548,6 +585,7 @@ flowchart LR
 - **All ORM models** use `from __future__ import annotations` and `Mapped[type]` for fully typed column declarations
 - **Cascade deletes** are configured at the ORM level (`cascade="all, delete-orphan"`) matching foreign key `ondelete` actions
 - **Audit events** for both pickup requests and inventory lots are stored in separate event tables for full audit trail without modifying the primary record
+- **Security-sensitive and administrative actions** are additionally recorded in the append-only `audit_logs` table (WIQ-V1-018), written transactionally with the triggering action
 - **Soft archiving** for inventory lots uses `archived_at` + `archive_reason` fields rather than hard deletion
 
 ---
@@ -600,6 +638,7 @@ flowchart TB
 | **Authentication** | JWT (HS256) | Signed tokens; `ACCESS_TOKEN_EXPIRE_MINUTES` configurable |
 | **Password Storage** | bcrypt (Passlib) | Cost factor 12; salted hashes |
 | **Authorization** | RBAC via `require_roles()` | FastAPI dependency; checked per-endpoint |
+| **Audit Trail** | Append-only `audit_logs` table | Transactional writes; sanitized snapshots; admin-only read API (WIQ-V1-018) |
 | **Input Validation** | Pydantic v2 | All request bodies validated before handler executes |
 | **CORS** | FastAPI CORSMiddleware | Allowlist of origins from `CORS_ORIGINS` env var |
 | **HTTPS** | Enforced by Render.com | TLS termination at load balancer |
