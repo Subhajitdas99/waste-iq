@@ -1,6 +1,7 @@
 import logging
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -72,6 +73,40 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     if user is None or not verify_password(password, user.password_hash):
         return None
     return user
+
+
+def record_failed_login(db: Session, user: User) -> None:
+    """Atomically increment the failed-login counter, locking the account when
+    the configured threshold is reached.
+
+    The counter and lock state are updated in a single conditional UPDATE
+    whose expressions reference the row's pre-update values, so concurrent
+    login attempts cannot lose increments or bypass the lock.
+    """
+    threshold = settings.lockout_failed_attempt_threshold
+    locked_until = datetime.now(timezone.utc) + timedelta(minutes=settings.lockout_cooldown_minutes)
+
+    db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(
+            failed_login_count=case(
+                (User.failed_login_count + 1 >= threshold, 0),
+                else_=User.failed_login_count + 1,
+            ),
+            locked_until=case(
+                (User.failed_login_count + 1 >= threshold, locked_until),
+                else_=User.locked_until,
+            ),
+        )
+    )
+
+
+def reset_login_failures(db: Session, user: User) -> None:
+    """Clear failure and lockout state after a successful login."""
+    db.execute(
+        update(User).where(User.id == user.id).values(failed_login_count=0, locked_until=None)
+    )
 
 
 def change_password(db: Session, user: User, current_password: str, new_password: str) -> User:

@@ -10,7 +10,7 @@ import {
   matchesPickupQuery,
   sortPickupRequests,
 } from "@/lib/pickup";
-import { getApiErrorMessage } from "@/lib/api-error";
+import { getApiErrorMessage, getRateLimitRetryAfterSeconds, isRateLimitError } from "@/lib/api-error";
 import { createPickupRequest, createUser } from "./factories";
 import type { PickupTimelineEvent } from "@/types/pickup";
 
@@ -210,6 +210,45 @@ describe("getApiErrorMessage", () => {
   it("uses the fallback when the detail is missing or not stringifiable", () => {
     expect(getApiErrorMessage(makeAxiosError({ status: 500, data: { detail: { code: 1 } } }), "fb")).toBe("fb");
     expect(getApiErrorMessage(makeAxiosError({ status: 500, data: {} }), "fb")).toBe("fb");
+  });
+});
+
+describe("rate limit error helpers", () => {
+  function makeRateLimitError(headers?: Record<string, string>) {
+    return new AxiosError("Request failed", "ERR_BAD_RESPONSE", undefined, undefined, {
+      data: { detail: "Too many requests. Please try again later." },
+      status: 429,
+      statusText: "Too Many Requests",
+      headers: headers ?? {},
+      config: { headers: new AxiosHeaders() },
+    });
+  }
+
+  it("detects 429 responses", () => {
+    expect(isRateLimitError(makeRateLimitError())).toBe(true);
+    expect(isRateLimitError(new Error("boom"))).toBe(false);
+    expect(
+      isRateLimitError(
+        new AxiosError("Request failed", "ERR_BAD_REQUEST", undefined, undefined, {
+          data: {},
+          status: 401,
+          statusText: "Error",
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("reads the Retry-After header", () => {
+    expect(getRateLimitRetryAfterSeconds(makeRateLimitError({ "retry-after": "8" }))).toBe(8);
+    expect(getRateLimitRetryAfterSeconds(makeRateLimitError({ "retry-after": "0.5" }))).toBe(1);
+  });
+
+  it("returns null when Retry-After is missing or invalid", () => {
+    expect(getRateLimitRetryAfterSeconds(makeRateLimitError())).toBeNull();
+    expect(getRateLimitRetryAfterSeconds(makeRateLimitError({ "retry-after": "abc" }))).toBeNull();
+    expect(getRateLimitRetryAfterSeconds(new Error("boom"))).toBeNull();
   });
 });
 

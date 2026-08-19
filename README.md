@@ -361,6 +361,14 @@ The frontend will be available at **http://localhost:5173**.
 | `CLOUDINARY_CLOUD_NAME` | ❌ | — | Cloudinary cloud name (optional in dev) |
 | `CLOUDINARY_API_KEY` | ❌ | — | Cloudinary API key |
 | `CLOUDINARY_API_SECRET` | ❌ | — | Cloudinary API secret |
+| `LOGIN_RATE_LIMIT_MAX` | ❌ | `10` | Max login attempts per IP per window |
+| `LOGIN_ACCOUNT_RATE_LIMIT_MAX` | ❌ | `5` | Max login attempts per account email per window |
+| `REGISTER_RATE_LIMIT_MAX` | ❌ | `10` | Max registrations per IP per window |
+| `FORGOT_PASSWORD_RATE_LIMIT_MAX` | ❌ | `5` | Max forgot-password requests per IP per window |
+| `RESEND_VERIFICATION_RATE_LIMIT_MAX` | ❌ | `5` | Max verification-email resends per IP per window |
+| `RATE_LIMIT_WINDOW_SECONDS` | ❌ | `60` | Sliding-window length for rate limits |
+| `LOCKOUT_FAILED_ATTEMPT_THRESHOLD` | ❌ | `5` | Failed logins before account lockout |
+| `LOCKOUT_COOLDOWN_MINUTES` | ❌ | `15` | Account lockout duration in minutes |
 
 > ⚠️ In **development**, Cloudinary is optional. If not configured, image uploads are skipped and `image_url` is stored as `NULL`. In **production**, valid Cloudinary credentials are required.
 

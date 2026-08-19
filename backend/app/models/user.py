@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, String, func
+from sqlalchemy import DateTime, Enum, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -30,6 +30,12 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    failed_login_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     pickup_requests = relationship(
         "PickupRequest", back_populates="citizen", cascade="all, delete-orphan"
@@ -48,3 +54,16 @@ class User(Base):
         "DealerProfile", back_populates="user", cascade="all, delete-orphan", uselist=False
     )
     notifications = relationship("Notification", back_populates="user")
+
+    def is_locked(self) -> bool:
+        """True while the account is inside a lockout window.
+
+        Tolerates naive datetimes (SQLite stores timezone-less values) and
+        timezone-aware values (PostgreSQL) for ``locked_until``.
+        """
+        if self.locked_until is None:
+            return False
+        locked_until = self.locked_until
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        return locked_until > datetime.now(timezone.utc)

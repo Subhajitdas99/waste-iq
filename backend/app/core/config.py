@@ -87,6 +87,58 @@ class Settings(BaseSettings):
         alias="RELEASE",
     )
 
+    # ------------------------------------------------------------------
+    # Rate Limiting & Account Lockout (WIQ-V1-017)
+    # ------------------------------------------------------------------
+
+    login_rate_limit_max: int = Field(
+        default=10,
+        alias="LOGIN_RATE_LIMIT_MAX",
+        ge=0,
+    )
+
+    login_account_rate_limit_max: int = Field(
+        default=5,
+        alias="LOGIN_ACCOUNT_RATE_LIMIT_MAX",
+        ge=0,
+    )
+
+    register_rate_limit_max: int = Field(
+        default=10,
+        alias="REGISTER_RATE_LIMIT_MAX",
+        ge=0,
+    )
+
+    forgot_password_rate_limit_max: int = Field(
+        default=5,
+        alias="FORGOT_PASSWORD_RATE_LIMIT_MAX",
+        ge=0,
+    )
+
+    resend_verification_rate_limit_max: int = Field(
+        default=5,
+        alias="RESEND_VERIFICATION_RATE_LIMIT_MAX",
+        ge=0,
+    )
+
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        alias="RATE_LIMIT_WINDOW_SECONDS",
+        gt=0,
+    )
+
+    lockout_failed_attempt_threshold: int = Field(
+        default=5,
+        alias="LOCKOUT_FAILED_ATTEMPT_THRESHOLD",
+        gt=0,
+    )
+
+    lockout_cooldown_minutes: int = Field(
+        default=15,
+        alias="LOCKOUT_COOLDOWN_MINUTES",
+        gt=0,
+    )
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",

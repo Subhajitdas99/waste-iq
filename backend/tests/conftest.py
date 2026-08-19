@@ -29,6 +29,15 @@ from app.models.base import Base
 from app.models.user import User, UserRole
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Isolate in-memory rate-limit state between tests."""
+    from app.core.ratelimit import rate_limiter
+
+    rate_limiter.reset()
+    yield
+
+
 @pytest.fixture()
 def db_session():
     """
