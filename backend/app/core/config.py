@@ -122,6 +122,34 @@ class Settings(BaseSettings):
         ge=0,
     )
 
+    # ------------------------------------------------------------------
+    # Email Delivery & Verification (WIQ-V1-014)
+    # ------------------------------------------------------------------
+
+    email_backend: Literal["console", "smtp"] = Field(
+        default="console",
+        alias="EMAIL_BACKEND",
+    )
+
+    smtp_host: str | None = Field(default=None, alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT", gt=0)
+    smtp_user: str | None = Field(default=None, alias="SMTP_USER")
+    smtp_password: str | None = Field(default=None, alias="SMTP_PASSWORD")
+    smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
+    email_from: str | None = Field(default=None, alias="EMAIL_FROM")
+    email_from_name: str = Field(default="Waste-IQ", alias="EMAIL_FROM_NAME")
+
+    frontend_url: str = Field(
+        default="http://localhost:5173",
+        alias="FRONTEND_URL",
+    )
+
+    verification_token_expire_minutes: int = Field(
+        default=1440,
+        alias="VERIFICATION_TOKEN_EXPIRE_MINUTES",
+        gt=0,
+    )
+
     rate_limit_window_seconds: int = Field(
         default=60,
         alias="RATE_LIMIT_WINDOW_SECONDS",

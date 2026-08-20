@@ -10,5 +10,7 @@ class UserRead(BaseModel):
     phone: str
     role: str
     created_at: datetime
+    email_verified: bool
+    email_verified_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)

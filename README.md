@@ -62,6 +62,7 @@ The system bridges the gap between informal waste collection practices and a mod
 ### Platform-Wide
 
 - 🔔 **Notification & Communication System** — centralized in-app inbox for every role: pickup lifecycle updates, dealer approval results, inventory reserve/purchase/expiry alerts, system messages, and admin broadcasts (`POST /admin/notifications/broadcast`); served by `GET /notifications` + unread count/list + mark-read / delete APIs, with a header bell (live unread badge + preview dropdown) and a full notifications page at `/{role}/notifications` with All/Unread/Read filters and pagination
+- ✉️ **Email Verification** — signed one-time verification links sent at registration (`POST /auth/verify-email`, `POST /auth/resend-verification`); console email backend for development, SMTP backend for production, per-IP resend rate limiting, and a dashboard banner + `/verify-email` page to complete or resend verification
 - 🔐 JWT-based authentication with role-based access control
 - 📸 Cloudinary image upload with graceful fallback in development
 - 🗄️ Alembic database migrations with PostgreSQL (SQLite for local dev)

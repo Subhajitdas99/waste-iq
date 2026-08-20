@@ -1,6 +1,7 @@
 import type { AxiosResponse } from "axios";
 import apiClient, { type ApiRequestConfig } from "@/api/client";
 import type {
+  ActionMessageResponse,
   AuthResponse,
   LoginPayload,
   RegisterPayload,
@@ -60,4 +61,22 @@ export async function logout(refreshToken: string): Promise<void> {
 
 export async function logoutAll(): Promise<void> {
   await apiClient.post("/auth/logout-all");
+}
+
+export async function verifyEmail(token: string): Promise<ActionMessageResponse> {
+  const response = await apiClient.post<
+    ActionMessageResponse,
+    AxiosResponse<ActionMessageResponse>
+  >("/auth/verify-email", { token }, publicRequestConfig);
+  return response.data;
+}
+
+export async function resendVerification(
+  email: string
+): Promise<ActionMessageResponse> {
+  const response = await apiClient.post<
+    ActionMessageResponse,
+    AxiosResponse<ActionMessageResponse>
+  >("/auth/resend-verification", { email }, publicRequestConfig);
+  return response.data;
 }

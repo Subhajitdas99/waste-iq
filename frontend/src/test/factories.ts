@@ -81,6 +81,8 @@ export function createUser(overrides: Partial<UserProfile> = {}): UserProfile {
     phone: "+15550000000",
     role: "citizen",
     created_at: "2026-01-01T00:00:00Z",
+    email_verified: false,
+    email_verified_at: null,
     ...overrides,
   };
 }

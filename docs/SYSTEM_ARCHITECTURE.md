@@ -457,6 +457,39 @@ Key decisions:
 
 ---
 
+## 6.8 Email Verification (Issue #57)
+
+Registration issues a signed, expiring verification token and delivers it by email; `POST /auth/verify-email` and `POST /auth/resend-verification` drive the lifecycle (see [API Specification — Email Verification](../docs/API_SPECIFICATION.md)).
+
+```mermaid
+flowchart LR
+    REG["register_user"]
+    RESEND["POST /auth/resend-verification\n(per-IP rate limited)"]
+    SVC["EmailVerificationService\ndispatch_verification_email /\nverify_email"]
+    SEC["security.create_verification_token\nJWT purpose=email_verify, jti, exp"]
+    MAIL["email.send_verification_email\n(provider abstraction)"]
+    AUD["AuditService\nverification_email_sent /\nemail_verified"]
+    VERIFY["POST /auth/verify-email"]
+    DB[(users\nemail_verified_at)]
+
+    REG --> SVC --> SEC --> MAIL
+    RESEND --> SVC
+    VERIFY --> SVC --> DB
+    SVC --> AUD
+    MAIL -. "EmailDeliveryError → logged, flow continues" .-> REG
+```
+
+Key decisions:
+
+- **Provider abstraction** — `app/services/email.py` defines an `EmailProvider` interface with two implementations: `ConsoleEmailProvider` (default, dev) appends messages to an in-process `email_outbox` and logs only a redacted summary; `SmtpEmailProvider` sends real mail via the configured SMTP host with STARTTLS. Selection happens once at startup from `EMAIL_BACKEND`; settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `FRONTEND_URL`) are read from environment variables and never logged.
+- **Stateless signed tokens** — verification tokens are JWTs (`purpose: "email_verify"`, random `jti`, `exp` = `VERIFICATION_TOKEN_EXPIRE_MINUTES`) signed with the same secret as access tokens. Nothing is stored server-side; single-use semantics come from the account state transition: after `email_verified_at` is set, replaying a token is idempotent and cannot change state. A `jti` makes every issuance unique material.
+- **Delivery never blocks the flow** — a failed email delivery is logged and reported as `False` from `dispatch_verification_email`, so registration and resend still succeed without a mail provider. Tokens are only recorded in audit events as nothing at all — never in logs, DB columns, or audit snapshots.
+- **Enumeration-safe by construction** — invalid/expired/malformed/wrong-purpose/stale tokens all raise the same `EmailVerificationError` and surface as an identical `400` detail; resend always returns the same generic `200` message. Resend is rate-limited per IP only (never per account email) so it cannot be used to enumerate accounts or lock victims out.
+- **Audit integration** — `verification_email_sent` (on successful delivery) and `email_verified` (with `after: {"email_verified": true}`) are recorded in the same transaction as the state change. Failed validation attempts are deliberately not audited (anti-log-flood).
+- **Frontend** — unverified users see a resend banner on every dashboard page; `/verify-email?token=...` completes verification for both logged-out and logged-in users (registered without `GuestRoute`) and refreshes the cached profile so the banner disappears immediately.
+
+---
+
 ## 7. Inventory Marketplace Flow
 
 ### Dealer Approval Workflow

@@ -48,6 +48,24 @@ const USER_BY_ID: Record<number, UserProfile> = {
   4: usersByRole.admin,
 };
 
+// ─── Email verification store ────────────────────────────────────────────────
+
+const verifiedUserIds = new Set<number>();
+
+export function resetVerificationStore(): void {
+  verifiedUserIds.clear();
+}
+
+export function profileForUser(user: UserProfile): UserProfile {
+  return verifiedUserIds.has(user.id)
+    ? {
+        ...user,
+        email_verified: true,
+        email_verified_at: "2026-01-01T12:00:00Z",
+      }
+    : user;
+}
+
 function decodeTokenSubject(token: string | null): number | null {
   if (!token) {
     return null;
@@ -407,7 +425,50 @@ export const handlers = [
       return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
     }
 
-    return HttpResponse.json(user);
+    return HttpResponse.json(profileForUser(user));
+  }),
+
+  http.post("*/auth/verify-email", async ({ request }) => {
+    const body = (await request.json()) as { token?: string };
+    const match = /^verification-token-(\d+)$/.exec(body.token ?? "");
+
+    if (!match) {
+      return HttpResponse.json(
+        { detail: "Invalid or expired verification token" },
+        { status: 400 },
+      );
+    }
+
+    const userId = Number(match[1]);
+
+    if (!USER_BY_ID[userId]) {
+      return HttpResponse.json(
+        { detail: "Invalid or expired verification token" },
+        { status: 400 },
+      );
+    }
+
+    if (verifiedUserIds.has(userId)) {
+      return HttpResponse.json({ message: "Email already verified" });
+    }
+
+    verifiedUserIds.add(userId);
+    return HttpResponse.json({ message: "Email verified successfully" });
+  }),
+
+  http.post("*/auth/resend-verification", async ({ request }) => {
+    const body = (await request.json()) as { email?: string };
+
+    if (body.email === "rate-limited@example.com") {
+      return HttpResponse.json(
+        { detail: "Rate limit exceeded" },
+        { status: 429, headers: { "Retry-After": "300" } },
+      );
+    }
+
+    return HttpResponse.json({
+      message: "If the email is registered and unverified, a verification email has been sent.",
+    });
   }),
 
   http.get("*/pickup-requests", () => {

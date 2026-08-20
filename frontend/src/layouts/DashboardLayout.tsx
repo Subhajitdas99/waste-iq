@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Leaf,
   LogOut,
+  Mail,
   Menu,
   Moon,
+  ShieldAlert,
   Sun,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -13,6 +16,9 @@ import { Button } from "@/components/ui/button";
 import { NotificationDropdown } from "@/components/dashboard/notifications/NotificationDropdown";
 import { getPortalConfig } from "@/lib/portal";
 import { cn } from "@/lib/utils";
+import { authQueryKeys } from "@/hooks/auth-query-keys";
+import { resendVerification } from "@/api/auth";
+import { getRateLimitRetryAfterSeconds, isRateLimitError } from "@/lib/api-error";
 
 function SidebarContent({
   portalName,
@@ -60,6 +66,80 @@ function SidebarContent({
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+function VerificationBanner() {
+  const { user } = useAuth();
+  const { data: profile } = useQuery({
+    queryKey: authQueryKeys.currentUser,
+    staleTime: 60_000,
+  });
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const emailVerified = profile?.email_verified ?? user?.email_verified ?? true;
+
+  const resendMutation = useMutation({
+    meta: {
+      suppressGlobalError: true,
+    },
+    mutationFn: resendVerification,
+    onSuccess: (response) => {
+      setNotice(response.message);
+    },
+  });
+
+  if (emailVerified || !user) {
+    return null;
+  }
+
+  const onResend = async () => {
+    setNotice(null);
+    try {
+      await resendMutation.mutateAsync(user.email);
+    } catch (error) {
+      if (isRateLimitError(error)) {
+        const seconds = getRateLimitRetryAfterSeconds(error);
+        const minutes = seconds !== null ? Math.max(1, Math.ceil(seconds / 60)) : null;
+        setNotice(
+          minutes !== null
+            ? `Too many attempts. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
+            : "Too many attempts. Please try again later."
+        );
+        return;
+      }
+      setNotice("Unable to resend the verification email.");
+    }
+  };
+
+  return (
+    <div
+      role="status"
+      className="flex flex-wrap items-center gap-3 border border-primary/30 bg-primary/10 px-4 py-3 text-sm rounded-lg mb-6"
+    >
+      <ShieldAlert className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+      <p className="flex-1 min-w-40">
+        Your email address is not verified yet.{" "}
+        {notice && <span className="block font-medium text-primary">{notice}</span>}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        onClick={onResend}
+        disabled={resendMutation.isPending}
+      >
+        {resendMutation.isPending ? (
+          <span className="flex items-center gap-2">Sending...</span>
+        ) : (
+          <>
+            <Mail className="h-4 w-4" aria-hidden="true" />
+            Resend verification email
+          </>
+        )}
+      </Button>
     </div>
   );
 }
@@ -158,6 +238,7 @@ export function DashboardLayout() {
         </header>
 
         <main className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-background via-background to-primary/5 px-4 py-6 lg:px-8 lg:py-8">
+          <VerificationBanner />
           <Outlet />
         </main>
       </div>

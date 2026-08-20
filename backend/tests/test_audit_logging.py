@@ -406,10 +406,11 @@ def test_admin_lists_audit_logs(db_session, client, admin_headers):
     body = response.json()
     assert body["page"] == 1
     assert body["page_size"] == 50
-    assert body["total_items"] == 2
+    # Each registration emits user_registered + verification_email_sent.
+    assert body["total_items"] == 4
     assert body["total_pages"] == 1
     actions = {item["action"] for item in body["items"]}
-    assert actions == {"user_registered"}
+    assert actions == {"user_registered", "verification_email_sent"}
     assert all(item["actor_email"] is not None for item in body["items"])
     serialized = json.dumps(body)
     assert "password" not in serialized.lower()
@@ -428,18 +429,19 @@ def test_audit_logs_empty(db_session, client, admin_headers):
 def test_audit_logs_pagination(db_session, client, admin_headers):
     for index in range(5):
         _register(client, email=f"user{index}@example.com", phone=f"98765432{index}")
-    response = _list_audit(client, admin_headers, page=1, page_size=2)
+    response = _list_audit(client, admin_headers, page=1, page_size=3)
     body = response.json()
-    assert len(body["items"]) == 2
-    assert body["total_items"] == 5
-    assert body["total_pages"] == 3
+    assert len(body["items"]) == 3
+    # Each registration emits user_registered + verification_email_sent.
+    assert body["total_items"] == 10
+    assert body["total_pages"] == 4
     first_page_ids = {item["id"] for item in body["items"]}
 
-    response = _list_audit(client, admin_headers, page=2, page_size=2)
+    response = _list_audit(client, admin_headers, page=2, page_size=3)
     second_page_ids = {item["id"] for item in response.json()["items"]}
     assert not first_page_ids & second_page_ids
 
-    response = _list_audit(client, admin_headers, page=3, page_size=2)
+    response = _list_audit(client, admin_headers, page=4, page_size=3)
     assert len(response.json()["items"]) == 1
 
 
@@ -467,7 +469,8 @@ def test_audit_logs_filter_by_actor(db_session, client, admin_headers, make_user
     )
     response = _list_audit(client, admin_headers, actor_user_id=registered_user_id)
     assert response.status_code == 200
-    assert response.json()["total_items"] == 1
+    # Registration emits user_registered + verification_email_sent for the actor.
+    assert response.json()["total_items"] == 2
     assert response.json()["items"][0]["actor_user_id"] == registered_user_id
 
 
@@ -485,7 +488,8 @@ def test_audit_logs_filter_by_resource(db_session, client, admin_headers):
     _register(client)
     response = _list_audit(client, admin_headers, resource="user")
     assert response.status_code == 200
-    assert response.json()["total_items"] == 1
+    # Registration emits user_registered + verification_email_sent on "user".
+    assert response.json()["total_items"] == 2
     response = _list_audit(client, admin_headers, resource="dealer_profile")
     assert response.json()["total_items"] == 0
 
@@ -504,7 +508,8 @@ def test_audit_logs_filter_by_created_after(db_session, client, admin_headers):
         admin_headers,
         created_after=(datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
     )
-    assert response.json()["total_items"] == 1
+    # user_registered + verification_email_sent fall inside the window.
+    assert response.json()["total_items"] == 2
 
 
 def test_audit_logs_filter_by_created_before(db_session, client, admin_headers):
@@ -521,7 +526,8 @@ def test_audit_logs_filter_by_created_before(db_session, client, admin_headers):
         admin_headers,
         created_before=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     )
-    assert response.json()["total_items"] == 1
+    # user_registered + verification_email_sent fall inside the window.
+    assert response.json()["total_items"] == 2
 
 
 # ─── Admin API: append-only enforcement ──────────────────────────────────────

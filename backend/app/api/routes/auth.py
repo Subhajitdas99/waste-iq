@@ -11,6 +11,8 @@ from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    ResendVerificationRequest,
+    VerifyEmailRequest,
 )
 from app.schemas.user import UserRead
 from app.services.auth import (
@@ -23,6 +25,11 @@ from app.services.auth import (
     reset_login_failures,
 )
 from app.services.audit import AuditService
+from app.services.email_verification import (
+    EmailVerificationError,
+    dispatch_verification_email,
+    verify_email as verify_email_service,
+)
 from app.services.refresh_token import InvalidRefreshTokenError, RefreshTokenService
 
 router = APIRouter()
@@ -124,6 +131,45 @@ def refresh(
         refresh_token=new_refresh_token,
         user=UserRead.model_validate(user),
     )
+
+
+@router.post("/verify-email")
+def verify_email(
+    payload: VerifyEmailRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Verify an account's email with a signed one-time token (WIQ-V1-014).
+
+    Public. Invalid, expired, malformed, and stale tokens all produce the
+    same generic 400 response so the endpoint cannot be used to enumerate
+    accounts. Re-verifying an already verified account is idempotent.
+    """
+    try:
+        message, _newly_verified = verify_email_service(db, payload.token)
+    except EmailVerificationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"message": message}
+
+
+@router.post("/resend-verification")
+def resend_verification(
+    payload: ResendVerificationRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Resend the verification email for an unverified account.
+
+    Public and rate-limited per IP. The response is identical whether or
+    not the email is registered (and whether or not it is already verified),
+    so the endpoint cannot be used for account or email enumeration.
+    """
+    check_rate_limit(request, "resend_verification")
+    user = get_user_by_email(db, normalize_email(payload.email))
+    if user is not None and not user.email_verified:
+        dispatch_verification_email(db, user)
+    return {
+        "message": "If the email is registered and unverified, a verification email has been sent."
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

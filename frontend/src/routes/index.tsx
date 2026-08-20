@@ -25,6 +25,9 @@ const LoginPage = lazy(() =>
 const RegisterPage = lazy(() =>
   import("../pages/auth/RegisterPage").then((m) => ({ default: m.RegisterPage }))
 );
+const VerifyEmailPage = lazy(() =>
+  import("../pages/auth/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage }))
+);
 const NotFoundPage = lazy(() =>
   import("../pages/public/NotFoundPage").then((m) => ({ default: m.NotFoundPage }))
 );
@@ -167,6 +170,12 @@ export const router = createBrowserRouter([
         element: (
           <GuestRoute>{lazyPage(RegisterPage)}</GuestRoute>
         ),
+      },
+      {
+        // Intentionally not wrapped in GuestRoute: logged-in users must be
+        // able to complete verification from a link too.
+        path: "verify-email",
+        element: lazyPage(VerifyEmailPage),
       },
     ],
   },
