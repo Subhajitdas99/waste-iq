@@ -3,9 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
 from app.core.ratelimit import check_rate_limit
-from app.core.security import verify_password
+from app.core.security import create_access_token, verify_password
 from app.models.user import User
-from app.schemas.auth import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest
+from app.schemas.auth import (
+    AuthResponse,
+    ChangePasswordRequest,
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+)
 from app.schemas.user import UserRead
 from app.services.auth import (
     change_password as change_password_service,
@@ -17,10 +23,12 @@ from app.services.auth import (
     reset_login_failures,
 )
 from app.services.audit import AuditService
+from app.services.refresh_token import InvalidRefreshTokenError, RefreshTokenService
 
 router = APIRouter()
 
 _audit_service = AuditService()
+_refresh_token_service = RefreshTokenService()
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -34,7 +42,7 @@ def register(
         user = register_user(db, payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return issue_token_for_user(user)
+    return issue_token_for_user(db, user)
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -91,7 +99,52 @@ def login(
         resource_id=str(user.id),
     )
     db.commit()
-    return issue_token_for_user(user)
+    return issue_token_for_user(db, user)
+
+
+@router.post("/refresh", response_model=AuthResponse)
+def refresh(
+    payload: RefreshRequest,
+    db: Session = Depends(get_db),
+) -> AuthResponse:
+    """Exchange a refresh token for a fresh access + refresh token pair.
+
+    The presented token is rotated: it is revoked and a new one is issued in
+    the same family. Replaying an already-rotated token revokes the family.
+    Requires no Authorization header.
+    """
+    try:
+        new_refresh_token, _row, user = _refresh_token_service.rotate(db, payload.refresh_token)
+    except InvalidRefreshTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+        ) from exc
+    return AuthResponse(
+        access_token=create_access_token(str(user.id)),
+        refresh_token=new_refresh_token,
+        user=UserRead.model_validate(user),
+    )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    payload: RefreshRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke the current session's refresh token. Idempotent."""
+    _refresh_token_service.revoke(db, payload.refresh_token, user_id=current_user.id)
+    return None
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+def logout_all(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke every refresh session of the authenticated user."""
+    _refresh_token_service.revoke_all_for_user(db, current_user.id)
+    return None
 
 
 @router.get("/me", response_model=UserRead)
@@ -111,6 +164,7 @@ def change_password(
             current_user,
             payload.current_password,
             payload.new_password,
+            payload.refresh_token,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

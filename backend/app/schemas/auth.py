@@ -26,11 +26,21 @@ class LoginRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=8, max_length=64)
     new_password: str = Field(min_length=8, max_length=64)
+    # Refresh token of the current session. When provided, only the other
+    # sessions are revoked on password change and the current one survives.
+    refresh_token: str | None = None
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1)
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
 class AuthResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user: UserRead

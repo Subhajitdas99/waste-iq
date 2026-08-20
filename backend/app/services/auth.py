@@ -12,10 +12,12 @@ from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, RegisterRequest
 from app.schemas.user import UserRead
 from app.services.audit import AuditService
+from app.services.refresh_token import RefreshTokenService
 
 logger = logging.getLogger(__name__)
 
 _audit_service = AuditService()
+_refresh_token_service = RefreshTokenService()
 
 
 def normalize_email(email: str) -> str:
@@ -109,13 +111,23 @@ def reset_login_failures(db: Session, user: User) -> None:
     )
 
 
-def change_password(db: Session, user: User, current_password: str, new_password: str) -> User:
+def change_password(
+    db: Session,
+    user: User,
+    current_password: str,
+    new_password: str,
+    refresh_token: str | None = None,
+) -> User:
     if not verify_password(current_password, user.password_hash):
         raise ValueError("Current password is incorrect")
     if verify_password(new_password, user.password_hash):
         raise ValueError("New password must be different from the current password")
 
     user.password_hash = hash_password(new_password)
+    # Revoke every other session; the current one survives when its refresh
+    # token was supplied (see docs/backlog roadmap: change-password keeps the
+    # current session).
+    _refresh_token_service.revoke_all_except(db, user.id, refresh_token)
     _audit_service.record(
         db,
         actor_user_id=user.id,
@@ -128,9 +140,14 @@ def change_password(db: Session, user: User, current_password: str, new_password
     return user
 
 
-def issue_token_for_user(user: User) -> AuthResponse:
+def issue_token_for_user(db: Session, user: User) -> AuthResponse:
+    """Issue a fresh access token and a new refresh session."""
+    raw_token, _row = _refresh_token_service.issue(db, user)
+    db.commit()
     return AuthResponse(
-        access_token=create_access_token(str(user.id)), user=UserRead.model_validate(user)
+        access_token=create_access_token(str(user.id)),
+        refresh_token=raw_token,
+        user=UserRead.model_validate(user),
     )
 
 

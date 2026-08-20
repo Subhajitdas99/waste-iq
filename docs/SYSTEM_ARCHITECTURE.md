@@ -539,7 +539,7 @@ The API follows RESTful conventions with JSON request/response bodies (except mu
 
 | Prefix | Tags | Auth Required | Description |
 |--------|------|---------------|-------------|
-| `/auth` | Authentication | No (register/login) | User registration, login, profile |
+| `/auth` | Authentication | No (register/login/refresh); Yes (me/logout/logout-all/change-password) | Registration, login, refresh-token exchange, profile, logout, password change |
 | `/pickup-requests` | Pickup Requests | Yes | Full pickup lifecycle |
 | `/collector` | Collector | Yes (collector role) | Collector-specific operations |
 | `/dealer` | Dealer | Yes (dealer role) | Profile management, submit for approval, approval timeline |
@@ -586,6 +586,7 @@ flowchart LR
 - **Cascade deletes** are configured at the ORM level (`cascade="all, delete-orphan"`) matching foreign key `ondelete` actions
 - **Audit events** for both pickup requests and inventory lots are stored in separate event tables for full audit trail without modifying the primary record
 - **Security-sensitive and administrative actions** are additionally recorded in the append-only `audit_logs` table (WIQ-V1-018), written transactionally with the triggering action
+- **Refresh-token sessions** (WIQ-V1-013) are server-side rows in `refresh_tokens`: opaque 384-bit secrets whose SHA-256 digest is stored, with rotation (single-use tokens linked by `family_id`) and family-wide revocation on reuse detection. Token material never reaches `audit_logs` or application logs, and changing a password revokes all refresh sessions except the presented one
 - **Soft archiving** for inventory lots uses `archived_at` + `archive_reason` fields rather than hard deletion
 
 ---
@@ -635,7 +636,7 @@ flowchart TB
 
 | Security Control | Implementation | Details |
 |-----------------|----------------|---------|
-| **Authentication** | JWT (HS256) | Signed tokens; `ACCESS_TOKEN_EXPIRE_MINUTES` configurable |
+| **Authentication** | JWT (HS256) access tokens + opaque rotating refresh tokens | Access tokens live 30 min (`ACCESS_TOKEN_EXPIRE_MINUTES`) and carry a `type: "access"` claim; refresh tokens live 30 days (`REFRESH_TOKEN_EXPIRE_DAYS`), are stored as SHA-256 digests only, rotate on every use, and revoke their whole family on reuse (WIQ-V1-013) |
 | **Password Storage** | bcrypt (Passlib) | Cost factor 12; salted hashes |
 | **Authorization** | RBAC via `require_roles()` | FastAPI dependency; checked per-endpoint |
 | **Audit Trail** | Append-only `audit_logs` table | Transactional writes; sanitized snapshots; admin-only read API (WIQ-V1-018) |

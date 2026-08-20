@@ -356,7 +356,8 @@ The frontend will be available at **http://localhost:5173**.
 | `ENVIRONMENT` | ✅ | `development` | `development` \| `testing` \| `production` |
 | `JWT_SECRET_KEY` | ✅ | — | Strong random secret for JWT signing |
 | `JWT_ALGORITHM` | ❌ | `HS256` | JWT signing algorithm |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | ❌ | `1440` | Token lifetime in minutes (24 hours) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | ❌ | `30` | Access-token lifetime in minutes (short-lived JWT) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | ❌ | `30` | Refresh-token lifetime in days (opaque secret, rotated on every use, revoked on logout/password change) |
 | `CORS_ORIGINS` | ✅ | `http://localhost:5173` | Comma-separated allowed origins |
 | `CLOUDINARY_CLOUD_NAME` | ❌ | — | Cloudinary cloud name (optional in dev) |
 | `CLOUDINARY_API_KEY` | ❌ | — | Cloudinary API key |

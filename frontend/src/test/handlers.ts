@@ -386,6 +386,20 @@ export const handlers = [
     return HttpResponse.json(authResponseFor(BASE_USER), { status: 201 });
   }),
 
+  http.post("*/auth/refresh", async ({ request }) => {
+    const body = (await request.json()) as { refresh_token?: string };
+
+    if (!body.refresh_token || body.refresh_token === "revoked-refresh-token") {
+      return HttpResponse.json({ detail: "Invalid refresh token" }, { status: 401 });
+    }
+
+    return HttpResponse.json(authResponseFor(BASE_USER));
+  }),
+
+  http.post("*/auth/logout", () => new HttpResponse(null, { status: 204 })),
+
+  http.post("*/auth/logout-all", () => new HttpResponse(null, { status: 204 })),
+
   http.get("*/auth/me", ({ request }) => {
     const user = requireAuthorization(request);
 

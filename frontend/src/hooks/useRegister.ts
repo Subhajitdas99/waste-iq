@@ -22,7 +22,12 @@ export function useRegister() {
         return;
       }
 
-      login(response.access_token, response.user, variables.rememberMe);
+      login(
+        response.access_token,
+        response.user,
+        variables.rememberMe,
+        response.refresh_token,
+      );
       queryClient.setQueryData(authQueryKeys.currentUser, response.user);
     },
   });

@@ -10,6 +10,7 @@ export interface LoginMutationVariables extends LoginPayload {
 
 interface LoginMutationResult {
   access_token: string;
+  refresh_token: string;
   user: Awaited<ReturnType<typeof loginRequest>>["user"];
   rememberMe: boolean;
 }
@@ -30,12 +31,13 @@ export function useLogin() {
 
       return {
         access_token: response.access_token,
+        refresh_token: response.refresh_token,
         user: response.user,
         rememberMe,
       };
     },
-    onSuccess: ({ access_token, user, rememberMe }) => {
-      login(access_token, user, rememberMe);
+    onSuccess: ({ access_token, refresh_token, user, rememberMe }) => {
+      login(access_token, user, rememberMe, refresh_token);
       queryClient.setQueryData(authQueryKeys.currentUser, user);
     },
   });

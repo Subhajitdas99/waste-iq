@@ -33,7 +33,12 @@ All protected endpoints require a **Bearer token** in the `Authorization` header
 Authorization: Bearer <access_token>
 ```
 
-Tokens are obtained from `POST /auth/login` or `POST /auth/register`. The default expiry is **1440 minutes (24 hours)**, configurable via `ACCESS_TOKEN_EXPIRE_MINUTES`.
+Waste-IQ uses a **two-token model** (WIQ-V1-013):
+
+- **Access tokens** are short-lived JWTs (HS256, default **30 minutes**, configurable via `ACCESS_TOKEN_EXPIRE_MINUTES`). They carry a `type: "access"` claim and are accepted by every protected endpoint.
+- **Refresh tokens** are opaque 384-bit secrets with a default lifetime of **30 days** (`REFRESH_TOKEN_EXPIRE_DAYS`). They are exchanged for a fresh access + refresh pair at `POST /auth/refresh`. Only the SHA-256 digest of a refresh token is stored server-side; the raw token is returned to the client exactly once at issuance and is never persisted.
+
+Both tokens are returned by `POST /auth/login` and `POST /auth/register`. A refresh token is never accepted as an access token and an access token is never accepted as a refresh token.
 
 ### Authentication Flow
 
@@ -43,10 +48,23 @@ sequenceDiagram
     participant BE as FastAPI
 
     C->>BE: POST /auth/login {email, password}
-    BE-->>C: 200 {access_token, token_type, user}
-    C->>BE: GET /auth/me\nAuthorization: Bearer <token>
+    BE-->>C: 200 {access_token, refresh_token, token_type, user}
+    C->>BE: GET /auth/me\nAuthorization: Bearer <access_token>
     BE-->>C: 200 {id, name, email, role, ...}
+    Note over C,BE: Access token expires after ACCESS_TOKEN_EXPIRE_MINUTES
+    C->>BE: POST /auth/refresh {refresh_token}
+    BE-->>C: 200 {access_token, refresh_token, token_type, user}
+    Note over C,BE: Old refresh token revoked; new one rotated in same family
 ```
+
+### Refresh-Token Behavior
+
+- **Rotation:** every successful `POST /auth/refresh` revokes the presented token and issues a new one in the same token family (`family_id`). A rotated token can be used exactly once.
+- **Reuse detection:** presenting an already-rotated token is treated as a replay and revokes the **entire family** — including the token issued by that rotation. Other sessions (other families) are unaffected.
+- **Revocation:** `POST /auth/logout` revokes the caller's presented refresh token; `POST /auth/logout-all` revokes every refresh session of the authenticated user. Both are idempotent.
+- **Password change:** changing the password revokes all refresh sessions except the one whose refresh token was supplied in the request body.
+- **Lockout:** a locked account cannot refresh, even with a valid refresh token.
+- **Error responses:** expired, malformed, unknown, revoked, or reused tokens all return the same generic `401 {"detail": "Invalid refresh token"}` — responses never reveal whether a user, session, or token exists. Refresh tokens are not rate-limited (they are high-entropy secrets; see [Rate Limiting](#rate-limiting--account-lockout-issue-60)).
 
 ### Rate Limiting & Account Lockout (Issue #60)
 
@@ -61,6 +79,7 @@ Authentication endpoints are protected by an in-memory sliding-window rate limit
 - Exceeding a limit returns **429** with a `Retry-After` header (seconds until the oldest request in the window expires). The response body is generic and does not reveal whether an account exists.
 - Accounts are locked for `LOCKOUT_COOLDOWN_MINUTES` minutes after `LOCKOUT_FAILED_ATTEMPT_THRESHOLD` consecutive failed logins. The failure counter resets when the account is locked and on any successful login. While locked, all login attempts — including with correct credentials — return the same `401 Invalid email or password` response.
 - Setting a limit to `0` disables that scope. Because the limiter is in-memory, each application instance maintains its own budget; a shared store (e.g., Redis) is required for multi-instance deployments.
+- `POST /auth/refresh` is deliberately **not** rate-limited: refresh tokens are 384-bit secrets with nothing to brute-force, and applying login limits would let an attacker lock out a victim's session refresh.
 
 ---
 
@@ -151,6 +170,7 @@ Register a new user account.
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "6fKxR2mQpZv9LbNcDeFgHiJk...",
   "token_type": "bearer",
   "user": {
     "id": 1,
@@ -163,9 +183,16 @@ Register a new user account.
 }
 ```
 
+| Field | Type | Description |
+|-------|------|-------------|
+| `access_token` | string | Short-lived JWT (default 30 minutes) |
+| `refresh_token` | string | Opaque 384-bit secret; exchanged at `POST /auth/refresh` (default 30 days) |
+| `token_type` | string | Always `bearer` |
+| `user` | object | The created `UserRead` profile |
+
 | Status | Scenario |
 |--------|----------|
-| `201` | User created and token issued |
+| `201` | User created and token pair issued |
 | `400` | Email or phone already registered |
 | `422` | Invalid request body (missing fields, bad email format) |
 
@@ -173,7 +200,7 @@ Register a new user account.
 
 ### `POST /auth/login`
 
-Authenticate an existing user and receive a JWT.
+Authenticate an existing user and receive an access + refresh token pair.
 
 | Field | Value |
 |-------|-------|
@@ -194,6 +221,7 @@ Authenticate an existing user and receive a JWT.
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "6fKxR2mQpZv9LbNcDeFgHiJk...",
   "token_type": "bearer",
   "user": {
     "id": 1,
@@ -208,9 +236,107 @@ Authenticate an existing user and receive a JWT.
 
 | Status | Scenario |
 |--------|----------|
-| `200` | Login successful |
-| `401` | Invalid email or password |
+| `200` | Login successful; access + refresh token issued |
+| `401` | Invalid email or password (identical body for unknown email, wrong password, and locked account) |
+| `429` | Rate limit exceeded for the IP or account |
 | `422` | Malformed request body |
+
+---
+
+### `POST /auth/refresh`
+
+Exchange a valid refresh token for a fresh access token **and** a rotated refresh token (WIQ-V1-013). The presented token is revoked as part of the exchange; the new token belongs to the same token family.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) — the refresh token itself is the credential |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "refresh_token": "6fKxR2mQpZv9LbNcDeFgHiJk..."
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `refresh_token` | string | ✅ | The opaque refresh token issued by login/register/previous refresh |
+
+**Response `200 OK`:** identical shape to `POST /auth/login`.
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "9sLmNpQrStUvWxYzAbCdEfGh...",
+  "token_type": "bearer",
+  "user": {
+    "id": 1,
+    "name": "Riya Sharma",
+    "email": "riya@example.com",
+    "phone": "+919876543210",
+    "role": "citizen",
+    "created_at": "2026-06-01T08:00:00Z"
+  }
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Token rotated; fresh access + refresh tokens returned |
+| `401` | Expired, malformed, unknown, revoked, or reused refresh token (identical body: `{"detail": "Invalid refresh token"}`) |
+| `422` | Missing/invalid request body |
+
+**Rotation & reuse behavior:**
+
+- Each refresh token is single-use. Reusing an already-rotated token revokes the whole token family (the rotated successor dies too).
+- Family revocation never affects other sessions (other families) of the same user.
+- A locked account cannot refresh, even with a valid token.
+
+---
+
+### `POST /auth/logout`
+
+Revoke the caller's refresh token (idempotent). The access token continues to be honored until it expires naturally.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | Yes (any role) — Bearer access token |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "refresh_token": "6fKxR2mQpZv9LbNcDeFgHiJk..."
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `refresh_token` | string | ✅ | The refresh token of the session to revoke |
+
+| Status | Scenario |
+|--------|----------|
+| `204` | Success — token revoked (or already revoked/unknown; no error) |
+| `401` | Missing/invalid access token |
+| `422` | Missing/invalid request body |
+
+---
+
+### `POST /auth/logout-all`
+
+Revoke **every** refresh session of the authenticated user (idempotent). Use it for a global sign-out across devices.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | Yes (any role) — Bearer access token |
+
+| Status | Scenario |
+|--------|----------|
+| `204` | Success — all refresh sessions revoked |
+| `401` | Missing/invalid access token |
 
 ---
 
@@ -245,7 +371,10 @@ Get the currently authenticated user's profile.
 ### `POST /auth/change-password`
 
 Change the authenticated user's password. Verifies the current password and
-persists a new bcrypt hash. Existing tokens remain valid.
+persists a new bcrypt hash. Changing the password revokes all refresh sessions
+**except** the one whose refresh token is supplied in the body — the current
+session survives while every other device is signed out. Access tokens remain
+valid until they expire.
 
 | Field | Value |
 |-------|-------|
@@ -257,7 +386,8 @@ persists a new bcrypt hash. Existing tokens remain valid.
 ```json
 {
   "current_password": "SecurePassword123!",
-  "new_password": "NewSecurePassword456!"
+  "new_password": "NewSecurePassword456!",
+  "refresh_token": "6fKxR2mQpZv9LbNcDeFgHiJk..."
 }
 ```
 
@@ -265,6 +395,7 @@ persists a new bcrypt hash. Existing tokens remain valid.
 |-------|------|----------|-------------|
 | `current_password` | string | Yes | 8–64 characters |
 | `new_password` | string | Yes | 8–64 characters, must differ from the current password |
+| `refresh_token` | string | No | Refresh token of the current session; when omitted, **all** refresh sessions are revoked |
 
 **Response `200 OK`:**
 
@@ -276,7 +407,7 @@ persists a new bcrypt hash. Existing tokens remain valid.
 
 | Status | Scenario |
 |--------|----------|
-| `200` | Password changed |
+| `200` | Password changed; other refresh sessions revoked |
 | `400` | Incorrect current password, or new password equals the current password |
 | `401` | Missing or invalid token |
 | `422` | Invalid request body (missing fields, password out of 8–64 range) |

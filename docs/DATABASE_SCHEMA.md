@@ -21,6 +21,8 @@
 9. [Table: inventory\_lots](#9-table-inventory_lots)
 10. [Table: inventory\_lot\_events](#10-table-inventory_lot_events)
 10c. [Table: notifications](#10c-table-notifications)
+10d. [Table: audit\_logs](#10d-table-audit_logs)
+10e. [Table: refresh\_tokens](#10e-table-refresh_tokens)
 11. [Indexes](#11-indexes)
 12. [Key Constraints](#12-key-constraints)
 13. [Enum Types](#13-enum-types)
@@ -177,6 +179,18 @@ erDiagram
         datetime created_at
     }
 
+    refresh_tokens {
+        int id PK
+        int user_id FK
+        string token_hash UK
+        string family_id
+        string user_agent
+        datetime created_at
+        datetime expires_at
+        datetime revoked_at
+        int replaced_by FK
+    }
+
     users ||--o{ pickup_requests : "citizen creates"
     users ||--o| dealer_profiles : "has profile"
     users ||--o{ collector_assignments : "collector fulfills"
@@ -184,6 +198,7 @@ erDiagram
     users ||--o{ collector_location_history : "position history"
     users ||--o{ pickup_request_events : "actor"
     users ||--o{ notifications : "receives"
+    users ||--o{ refresh_tokens : "refresh sessions"
     pickup_requests ||--o| collector_assignments : "assigned to"
     pickup_requests ||--o{ pickup_request_events : "has events"
     pickup_requests ||--o| inventory_lots : "becomes lot"
@@ -192,6 +207,7 @@ erDiagram
     inventory_lots ||--o{ inventory_lot_events : "has events"
     users ||--o{ inventory_lots : "reserved_by_dealer"
     pricing_rules ||--o{ inventory_lots : "applied to"
+    refresh_tokens ||--o| refresh_tokens : "replaced_by"
 ```
 
 ---
@@ -560,6 +576,36 @@ Append-only audit trail (WIQ-V1-018) for security-sensitive and administrative a
 
 ---
 
+## 10e. Table: `refresh_tokens`
+
+Server-side refresh-token sessions (WIQ-V1-013). Only the **SHA-256 digest** of each opaque token is stored — never the raw token — so a database leak yields no usable credentials and application/audit logs never contain token material. Rows group into rotation **families** via `family_id`; presenting an already-rotated token revokes the entire family (reuse detection).
+
+| Column | Type | Nullable | Default | Constraints | Description |
+|--------|------|----------|---------|-------------|-------------|
+| `id` | `INTEGER` | No | auto | PK, INDEX | Surrogate primary key |
+| `user_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), INDEX | The session owner |
+| `token_hash` | `VARCHAR(64)` | No | — | NOT NULL, UNIQUE, INDEX | SHA-256 digest of the opaque refresh token |
+| `family_id` | `VARCHAR(36)` | No | — | NOT NULL, INDEX | Rotation family (UUID); shared by every rotated descendant of one issued token |
+| `user_agent` | `VARCHAR(512)` | Yes | `NULL` | — | Client user-agent captured at issuance |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Issuance timestamp |
+| `expires_at` | `TIMESTAMPTZ` | No | — | NOT NULL | Expiry (`REFRESH_TOKEN_EXPIRE_DAYS` after issuance) |
+| `revoked_at` | `TIMESTAMPTZ` | Yes | `NULL` | — | Revocation timestamp (logout, rotation, reuse, password change); `NULL` while active |
+| `replaced_by` | `INTEGER` | Yes | `NULL` | FK → `refresh_tokens.id` (SET NULL) | The successor token created by rotation; set on rotation |
+
+**Behavior notes:**
+
+- `POST /auth/login` and `POST /auth/register` each create a new row (new family) and return the raw token once.
+- `POST /auth/refresh` revokes the presented row (setting `revoked_at` + `replaced_by`) and inserts a rotated successor in the same family.
+- Reuse of an already-rotated token sets `revoked_at` on every still-active row of that family.
+- `POST /auth/logout` revokes one row; `POST /auth/logout-all` revokes all active rows of the user; password change revokes all rows except the presented token's.
+- Deleting a user cascades to all of their refresh sessions.
+
+**Relationships:**
+- Many `refresh_tokens` → one `users`
+- A `refresh_tokens` row may point to its successor via `replaced_by`
+
+---
+
 ## 11. Indexes
 
 | Table | Index Name | Columns | Type | Purpose |
@@ -620,6 +666,9 @@ Append-only audit trail (WIQ-V1-018) for security-sensitive and administrative a
 | `audit_logs` | `ix_audit_logs_resource` | `resource` | B-Tree | Filter by resource type |
 | `audit_logs` | `ix_audit_logs_resource_id` | `resource_id` | B-Tree | Lookup of a resource's history |
 | `audit_logs` | `ix_audit_logs_created_at` | `created_at` | B-Tree | Chronological ordering and date-range filters |
+| `refresh_tokens` | `ix_refresh_tokens_user_id` | `user_id` | B-Tree | Session listing/revocation per user (`logout-all`, password change) |
+| `refresh_tokens` | `ix_refresh_tokens_token_hash` | `token_hash` | B-Tree (UNIQUE) | Lookup of a presented token's digest |
+| `refresh_tokens` | `ix_refresh_tokens_family_id` | `family_id` | B-Tree | Family-wide revocation on reuse detection |
 
 ---
 
@@ -657,6 +706,8 @@ Append-only audit trail (WIQ-V1-018) for security-sensitive and administrative a
 | `marketplace_transactions` | `order_id` | `marketplace_orders.id` | SET NULL |
 | `notifications` | `user_id` | `users.id` | CASCADE |
 | `audit_logs` | `actor_user_id` | `users.id` | SET NULL |
+| `refresh_tokens` | `user_id` | `users.id` | CASCADE |
+| `refresh_tokens` | `replaced_by` | `refresh_tokens.id` | SET NULL |
 
 ### Unique Constraints
 
@@ -672,6 +723,7 @@ Append-only audit trail (WIQ-V1-018) for security-sensitive and administrative a
 | `material_categories` | `code` | Unique category codes |
 | `marketplace_orders` | `order_number` | Globally unique order identifier |
 | `marketplace_orders` | `inventory_lot_id` | One order per purchased lot |
+| `refresh_tokens` | `token_hash` | Unique digest per issued token |
 
 ### Check Constraints
 
