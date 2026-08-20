@@ -17,7 +17,7 @@ import { NotificationDropdown } from "@/components/dashboard/notifications/Notif
 import { getPortalConfig } from "@/lib/portal";
 import { cn } from "@/lib/utils";
 import { authQueryKeys } from "@/hooks/auth-query-keys";
-import { resendVerification } from "@/api/auth";
+import { getProfile, resendVerification } from "@/api/auth";
 import { getRateLimitRetryAfterSeconds, isRateLimitError } from "@/lib/api-error";
 
 function SidebarContent({
@@ -74,7 +74,9 @@ function VerificationBanner() {
   const { user } = useAuth();
   const { data: profile } = useQuery({
     queryKey: authQueryKeys.currentUser,
+    queryFn: getProfile,
     staleTime: 60_000,
+    enabled: Boolean(user),
   });
   const [notice, setNotice] = useState<string | null>(null);
 
