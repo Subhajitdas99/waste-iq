@@ -50,6 +50,7 @@ erDiagram
         int user_id FK
         string waste_type
         string image_url
+        string image_public_id
         string category
         float confidence
         text address
@@ -249,6 +250,7 @@ The central entity of the platform. Tracks a single recyclable waste pickup from
 | `user_id` | `INTEGER` | No | — | FK → `users.id` (CASCADE), INDEX | Citizen who submitted the request |
 | `waste_type` | `VARCHAR(100)` | No | — | NOT NULL | Free-text waste description (e.g., "Old newspapers") |
 | `image_url` | `TEXT` | Yes | NULL | — | Cloudinary CDN URL of the uploaded waste photo |
+| `image_public_id` | `TEXT` | Yes | NULL | — | Cloudinary public_id (provider asset identifier) of the uploaded photo; used to delete the exact stored asset when the request is cancelled (WIQ-V1-020). Never exposed in API responses |
 | `category` | `VARCHAR(50)` | Yes | NULL | — | AI-detected material category code |
 | `confidence` | `FLOAT` | Yes | NULL | — | AI classification confidence score (0.0–1.0) |
 | `address` | `TEXT` | No | — | NOT NULL | Human-readable pickup address |

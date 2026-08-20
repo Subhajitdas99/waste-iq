@@ -213,11 +213,13 @@ docker compose ps
 | `JWT_ALGORITHM` | ❌ | `HS256` | JWT signing algorithm | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | ❌ | `1440` | JWT token lifetime in minutes (1440 = 24 hours) | `1440` |
 | `CORS_ORIGINS` | ✅ | `http://localhost:5173` | Comma-separated list of allowed CORS origins | `https://app.waste-iq.dev,http://localhost:5173` |
-| `CLOUDINARY_CLOUD_NAME` | ❌ | — | Cloudinary cloud name. Optional in development | `my-cloud-name` |
-| `CLOUDINARY_API_KEY` | ❌ | — | Cloudinary API key | `123456789012345` |
-| `CLOUDINARY_API_SECRET` | ❌ | — | Cloudinary API secret | `abcdefghijklmnopqrstuvwxyz` |
+| `CLOUDINARY_CLOUD_NAME` | ✅ prod | — | Cloudinary cloud name. Optional in development (uploads are skipped) | `my-cloud-name` |
+| `CLOUDINARY_API_KEY` | ✅ prod | — | Cloudinary API key | `123456789012345` |
+| `CLOUDINARY_API_SECRET` | ✅ prod | — | Cloudinary API secret. Never logged, never exposed in API responses | `abcdefghijklmnopqrstuvwxyz` |
 
-> ⚠️ **In production:** `CLOUDINARY_*` variables are **required** for image uploads to work. In development, if they are not set, image uploads are silently skipped and `image_url` is stored as `NULL`.
+> ⚠️ **In production:** `CLOUDINARY_*` variables are **required** for image uploads. If they are missing, an upload attempt returns `503` (`Image upload service is not configured`); if Cloudinary is unreachable or rejects the request, it returns `502` (`Image upload service unavailable`). Uploads are never silently dropped in production. In development, if they are not set, image uploads are skipped and `image_url` is stored as `NULL` — the explicit, documented development fallback.
+
+> **Upload storage convention (WIQ-V1-020):** every uploaded waste photo is stored under `pickups/{user_id}/{uuid}` (e.g. `pickups/42/9f8c1a2b…`). The path uses only the numeric user ID and a random 32-hex UUID — never email addresses, usernames, or other identifying strings. The Cloudinary `public_id` is persisted in `pickup_requests.image_public_id` (server-side only, never exposed in API responses) so the exact stored asset can be deleted when the request is cancelled.
 
 > ⚠️ **In production:** `JWT_SECRET_KEY` must be a cryptographically random string of at least 32 characters. Generate one with: `openssl rand -hex 32`
 
@@ -445,7 +447,8 @@ render logs --tail --service waste-iq-backend
 | `ERROR: Could not connect to database` | Database connection failed | Check `DATABASE_URL` and DB service health |
 | `WARNING: CORS blocked request from` | CORS misconfiguration | Check `CORS_ORIGINS` env var |
 | `CRITICAL: alembic upgrade failed` | Migration error on startup | Check migration file for conflicts |
-| `503: Image upload service is not configured` | Cloudinary not set up | Set Cloudinary env vars |
+| `503: Image upload service is not configured` | Cloudinary not set up | Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in production (`ENVIRONMENT=production`) |
+| `502: Image upload service unavailable` | Cloudinary is unreachable or rejected the request | Check [status.cloudinary.com](https://status.cloudinary.com) and the Cloudinary credentials |
 
 ### Uptime Monitoring
 
@@ -563,7 +566,7 @@ alembic current
 | Schema change that is backward-compatible | Forward-fix in a new migration |
 | Schema change that broke data integrity | Restore from backup, then forward-fix |
 | Critical security vulnerability | Hotfix branch → PR → merge → deploy immediately |
-| External service outage (Cloudinary) | App degrades gracefully (image_url=null); no rollback needed |
+| External service outage (Cloudinary) | App degrades gracefully in development (image_url=null); in production the upload fails with 502 and the request is not created; cancellation cleanup logs and continues without failing the cancellation |
 
 ---
 
@@ -578,8 +581,8 @@ alembic current
 | **401 Unauthorized on all requests** | JWT_SECRET_KEY mismatch between services or token expired | Ensure the same `JWT_SECRET_KEY` is used consistently; check token expiry |
 | **Cannot connect to database** | `DATABASE_URL` is wrong or DB is not running | Verify connection string; run `pg_isready -h localhost` |
 | **`alembic upgrade head` fails** | Data in the database conflicts with the migration | Review the migration file; may require manual data fixes |
-| **Cloudinary upload fails (502)** | Cloudinary service is temporarily unavailable | Check [status.cloudinary.com](https://status.cloudinary.com); the app will return 502 |
-| **Cloudinary upload fails (503)** | Cloudinary credentials not configured | Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in `.env` |
+| **Cloudinary upload fails (502)** | Cloudinary service is temporarily unavailable or rejected credentials | Check [status.cloudinary.com](https://status.cloudinary.com) and the Cloudinary credentials; the app returns 502 and the request is not created |
+| **Cloudinary upload fails (503)** | Cloudinary credentials not configured in production | Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in production (`ENVIRONMENT=production`) |
 | **Frontend blank page after build** | `VITE_API_URL` not set or set to wrong URL | Verify `frontend/.env` or Render environment variable |
 | **`npm install` fails** | Node.js version too old or corrupted `node_modules` | Run `node --version` (must be ≥ 20); delete `node_modules` and `package-lock.json`, then `npm install` |
 | **`ImportError` on Python startup** | Virtual environment not activated or dependencies not installed | Run `source .venv/bin/activate` then `pip install -r requirements.txt` |

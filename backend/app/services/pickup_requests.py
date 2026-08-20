@@ -19,7 +19,9 @@ from app.schemas.pickup_request import (
     PickupRequestUpdate,
 )
 from app.services.notifications import NotificationDispatcher
+from app.services.pickup_request_images import cleanup_pickup_request_images
 from app.services.stats import count_pickups_for_user
+from app.services.upload import ImageUploader
 
 _repository = PickupRequestRepository()
 _dispatcher = NotificationDispatcher()
@@ -452,7 +454,9 @@ def complete_pickup_request(
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
 
 
-def cancel_pickup_request(db: Session, citizen: User, request_id: int) -> PickupRequestRead | None:
+def cancel_pickup_request(
+    db: Session, citizen: User, request_id: int, uploader: ImageUploader
+) -> PickupRequestRead | None:
     pickup_request = _repository.get_by_id(db, request_id)
     if pickup_request is None:
         return None
@@ -466,6 +470,9 @@ def cancel_pickup_request(db: Session, citizen: User, request_id: int) -> Pickup
         )
 
     pickup_request.status = PickupStatus.cancelled
+    # Best-effort cleanup of the request's stored image assets. Provider
+    # failures (including already-missing assets) never fail the cancellation.
+    cleanup_pickup_request_images(db, pickup_request, uploader)
     _repository.add_status_event(
         db,
         pickup_request,

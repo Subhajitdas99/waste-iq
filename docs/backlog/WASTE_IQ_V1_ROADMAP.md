@@ -663,11 +663,11 @@ assets orphan on cancellation, no per-user organization, production
 enforcement is a soft flag.
 
 **Acceptance Criteria**
-- [ ] Delete the Cloudinary asset when a pickup request is cancelled (store `public_id`, call `delete_resources`)
-- [ ] Upload to per-user folder prefixes (`pickups/{user_id}/{uuid}`), standardized filenames
-- [ ] Verify production raises 503/502 correctly (`app/main.py` handlers); document required env vars
-- [ ] Keep the `ImageUploader` protocol so S3/R2 (boto3) can be swapped later; ADR note in `SYSTEM_ARCHITECTURE.md`
-- [ ] Backend tests (cancel cleanup, folder prefixing, size/type rejection)
+- [x] Delete the Cloudinary asset when a pickup request is cancelled (store `public_id`, call `delete_resources`)
+- [x] Upload to per-user folder prefixes (`pickups/{user_id}/{uuid}`), standardized filenames
+- [x] Verify production raises 503/502 correctly (`app/main.py` handlers); document required env vars
+- [x] Keep the `ImageUploader` protocol so S3/R2 (boto3) can be swapped later; ADR note in `SYSTEM_ARCHITECTURE.md`
+- [x] Backend tests (cancel cleanup, folder prefixing, size/type rejection)
 
 **Technical Notes**
 - Modules: `app/services/upload.py`, `app/services/pickup_request_images.py`, `app/services/pickup_requests.py` (cancel), `app/core/config.py`

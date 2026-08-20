@@ -37,6 +37,7 @@ class PickupRequestCreationService:
             preferred_time=preferred_time,
             notes=notes,
             image_url=processed_image.image_url,
+            image_public_id=processed_image.image_public_id,
         )
         return create_pickup_request(
             db=db,

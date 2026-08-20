@@ -22,6 +22,9 @@ class PickupRequestCreate(BaseModel):
     preferred_time: datetime | None = None
     notes: str | None = Field(default=None, max_length=2000)
     image_url: str | None = None
+    # Provider asset identifier (e.g. Cloudinary public_id), set server-side
+    # only; never accepted from clients and never exposed in responses.
+    image_public_id: str | None = None
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
