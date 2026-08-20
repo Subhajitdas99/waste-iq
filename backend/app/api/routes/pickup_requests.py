@@ -3,7 +3,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user, get_db, get_pickup_request_creation_service
+from app.core.dependencies import (
+    get_current_user,
+    get_db,
+    get_image_uploader,
+    get_pickup_request_creation_service,
+)
 from app.models.user import User
 from app.schemas.pickup_request import (
     CitizenRequestSummaryRead,
@@ -19,6 +24,7 @@ from app.services.pickup_requests import (
     update_pickup_request,
 )
 from app.services.pickup_request_creation import PickupRequestCreationService
+from app.services.upload import ImageUploader
 
 router = APIRouter()
 
@@ -110,13 +116,14 @@ def cancel_request(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    uploader: ImageUploader = Depends(get_image_uploader),
 ) -> PickupRequestRead:
     if current_user.role != "citizen":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Only citizens can cancel requests"
         )
 
-    request = cancel_pickup_request(db, current_user, request_id)
+    request = cancel_pickup_request(db, current_user, request_id, uploader)
     if request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"

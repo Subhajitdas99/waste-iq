@@ -26,6 +26,7 @@ class PickupRequest(Base):
     )
     waste_type: Mapped[str] = mapped_column(String(100), nullable=False)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_public_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     address: Mapped[str] = mapped_column(Text, nullable=False)

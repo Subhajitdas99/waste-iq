@@ -542,7 +542,7 @@ Submit a new pickup request. Accepts multipart/form-data to allow optional image
 | `address` | string | ✅ | 8–500 characters |
 | `latitude` | float | ✅ | −90 to 90 |
 | `longitude` | float | ✅ | −180 to 180 |
-| `image` | file | ❌ | Any image format; uploaded to Cloudinary |
+| `image` | file | ❌ | jpg/jpeg/png/webp, ≤ 10 MB; uploaded to `pickups/{user_id}/{uuid}` in Cloudinary |
 
 **Response `201 Created`:**
 
@@ -711,7 +711,7 @@ Cancel a pending pickup request.
 |-------|-------|
 | **Auth Required** | Yes — `citizen` role, request owner |
 
-**Response `200 OK`:** Updated `PickupRequestRead` with `status: "cancelled"`.
+**Response `200 OK`:** Updated `PickupRequestRead` with `status: "cancelled"`. The uploaded image asset (if any) is deleted from Cloudinary (idempotent; a missing asset is not an error) and the request's `image_url` / `image_public_id` are cleared on success.
 
 | Status | Scenario |
 |--------|----------|

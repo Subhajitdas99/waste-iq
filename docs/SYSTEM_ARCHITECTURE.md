@@ -186,7 +186,7 @@ flowchart TB
         DEALER_SVC["DealerProfileService\ncreate, update, submit"]
         APPROVAL_SVC["AdminDealerApprovalService\napprove, reject, review queue"]
         ADMIN_SVC["AdminService\nanalytics, user_mgmt"]
-        UPLOAD_SVC["UploadService\nCloudinary integration"]
+        UPLOAD_SVC["ImageUploader\nprovider-neutral protocol\nCloudinary impl"]
     end
 
     subgraph REPO["Repository Layer"]
@@ -677,9 +677,45 @@ flowchart TB
 | **CORS** | FastAPI CORSMiddleware | Allowlist of origins from `CORS_ORIGINS` env var |
 | **HTTPS** | Enforced by Render.com | TLS termination at load balancer |
 | **Secrets Management** | Environment variables | No secrets in source code; `.env` excluded via `.gitignore` |
-| **Image Upload** | Cloudinary signed uploads | Backend handles credentials; URL stored in DB |
+| **Image Upload** | Provider-neutral `ImageUploader` protocol (Cloudinary impl) | Backend holds credentials; assets stored under `pickups/{user_id}/{uuid}`; `image_url` + `image_public_id` persisted (WIQ-V1-020) |
 | **SQL Injection** | SQLAlchemy ORM + parameterized queries | No raw string interpolation in SQL |
 | **Sensitive Logs** | Passwords never logged | FastAPI access logs exclude request bodies |
+
+---
+
+## 11.5 Image Storage (WIQ-V1-020)
+
+### Storage Abstraction
+
+Waste-IQ stores citizen waste photos through a small provider-neutral protocol (`app/services/upload.py`):
+
+```python
+class ImageUploader(Protocol):
+    def upload_image(self, *, file_path: str, filename: str, user_id: int | None) -> UploadedImage | None: ...
+    def delete_image(self, *, public_id: str) -> bool: ...
+```
+
+- **Upload** returns `UploadedImage(url, public_id)` — the public URL and the provider's stable identifier for the stored asset. Business code never sees Cloudinary objects or SDK types.
+- **Delete** is idempotent: it returns `True` when the asset is confirmed gone (deleted, already deleted, or not found) and raises `ImageDeleteError` only on genuine provider failures. This keeps cancellation cleanup safe and repeatable.
+- **Configuration** — `CloudinaryUploader` is the only place that touches the Cloudinary SDK. Uploads are stored under `pickups/{user_id}/{uuid4().hex}` (never emails/usernames) and the resulting `public_id` is persisted in `pickup_requests.image_public_id` (server-side only, never exposed in API responses).
+
+### Cancellation Cleanup
+
+When a citizen cancels a pending request (`POST /pickup-requests/{id}/cancel`), the service:
+
+1. Marks the request `cancelled` and records the timeline event.
+2. Reads the persisted `image_public_id` and asks the provider to delete the asset (best-effort, inside the same transaction).
+3. On success (or when the asset is already gone) it clears `image_url`/`image_public_id` so the database never claims an asset exists after cleanup.
+4. On a transient provider failure it keeps the references and still completes the cancellation — cleanup never fails a business cancellation.
+
+### ADR-001 — Why Cloudinary, and the S3/R2 Migration Path
+
+- **Why Cloudinary today:** the project ships with Cloudinary pre-integrated (`app/services/upload.py`), it provides an easy signed-upload API plus a global CDN, and it is already exercised by the existing pickup-upload flow and tests. There was no need to stand up additional object-storage infrastructure for the v1.0 scope.
+- **Why the abstraction stays provider-agnostic:** pickup-request business logic depends only on the `ImageUploader` protocol (`upload`/`delete` + opaque public IDs). Nothing in `pickup_requests.py` or `pickup_request_images.py` imports the Cloudinary SDK, so a future S3/R2/boto3 implementation can be dropped in by:
+  - adding a new implementation of `ImageUploader` (e.g. `S3ImageUploader`) that maps `public_id` to an S3 object key (`pickups/{user_id}/{uuid}`) and `delete_image` to `delete_object` (S3 treats deleting a missing key as success, matching the idempotent semantics),
+  - wiring it via `get_image_uploader` in `app/core/dependencies.py` based on configuration,
+  - without touching pickup-request creation, cancellation, or the persisted `image_public_id` schema.
+- **Operational limitations:** the current `CloudinaryUploader` deletes assets synchronously during cancellation; if Cloudinary is unreachable at that moment the asset is orphaned until a future retry (the database reference is intentionally retained). A background sweep job could reclaim such orphans later; that is a deliberate trade-off of the synchronous, transaction-consistent design chosen here.
 
 ---
 
