@@ -39,6 +39,18 @@ class RefreshRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
 class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str

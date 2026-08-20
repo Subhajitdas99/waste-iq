@@ -7,6 +7,7 @@ import {
   resetMarketplaceStore,
   resetNotificationStore,
   resetPickupStore,
+  resetVerificationStore,
 } from "./handlers";
 
 if (typeof window !== "undefined" && !window.ResizeObserver) {
@@ -62,6 +63,7 @@ beforeAll(async () => {
   await Promise.all([
     import("../pages/auth/LoginPage"),
     import("../pages/auth/RegisterPage"),
+    import("../pages/auth/VerifyEmailPage"),
     import("../pages/dashboard/DashboardOverviewPage"),
     import("../pages/dashboard/CollectorOverviewPage"),
     import("../pages/dashboard/DealerOverviewPage"),
@@ -101,6 +103,7 @@ afterEach(() => {
   resetMarketplaceStore();
   resetCollectorMapStore();
   resetNotificationStore();
+  resetVerificationStore();
 });
 
 afterAll(() => {

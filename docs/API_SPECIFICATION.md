@@ -75,11 +75,22 @@ Authentication endpoints are protected by an in-memory sliding-window rate limit
 | Login attempts per IP | `LOGIN_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
 | Login attempts per account email | `LOGIN_ACCOUNT_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
 | Registrations per IP | `REGISTER_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
+| Verification email resends per IP | `RESEND_VERIFICATION_RATE_LIMIT_MAX` per `RATE_LIMIT_WINDOW_SECONDS` |
 
 - Exceeding a limit returns **429** with a `Retry-After` header (seconds until the oldest request in the window expires). The response body is generic and does not reveal whether an account exists.
 - Accounts are locked for `LOCKOUT_COOLDOWN_MINUTES` minutes after `LOCKOUT_FAILED_ATTEMPT_THRESHOLD` consecutive failed logins. The failure counter resets when the account is locked and on any successful login. While locked, all login attempts — including with correct credentials — return the same `401 Invalid email or password` response.
 - Setting a limit to `0` disables that scope. Because the limiter is in-memory, each application instance maintains its own budget; a shared store (e.g., Redis) is required for multi-instance deployments.
 - `POST /auth/refresh` is deliberately **not** rate-limited: refresh tokens are 384-bit secrets with nothing to brute-force, and applying login limits would let an attacker lock out a victim's session refresh.
+
+### Email Verification (WIQ-V1-014 / Issue #57)
+
+- Every account is created **unverified** (`email_verified_at = NULL`, `email_verified = false`); registration immediately dispatches a verification email.
+- **Verification tokens** are signed JWTs (`HS256`, same secret as access tokens) carrying `purpose: "email_verify"`, a random `jti`, and `exp` defaulting to `VERIFICATION_TOKEN_EXPIRE_MINUTES` (1440 min = 24 h). They are never stored server-side; single-use semantics come from the account state transition they perform.
+- `POST /auth/verify-email` validates the token, sets `email_verified_at`, and records an `email_verified` audit event (`after: {"email_verified": true}`). Re-presenting a token after verification is **idempotent**: `200 {"message": "Email already verified"}`.
+- **Enumeration safety:** every unusable token (invalid, expired, malformed, wrong purpose, deleted account, non-numeric subject) returns the identical `400 {"detail": "Invalid or expired verification token"}`. Resend responses are the same generic message whether or not the email exists.
+- `POST /auth/resend-verification` is rate-limited **per IP** (`RESEND_VERIFICATION_RATE_LIMIT_MAX`); it is deliberately **not** limited per account email, which would allow account enumeration and enable attacker lockout. Sending verification email is never blocked by delivery failure — registration and resend still succeed (the failure is logged).
+- Login is **not** gated on verification; unverified users may use the platform (the UI surfaces a resend banner).
+- **Email delivery:** `EMAIL_BACKEND=console` (default) logs a redacted delivery summary to the application log (token material is never logged); `EMAIL_BACKEND=smtp` sends real mail via the configured SMTP host. See `SYSTEM_ARCHITECTURE.md`.
 
 ---
 
@@ -94,9 +105,16 @@ Authentication endpoints are protected by an in-memory sliding-window rate limit
   "email": "riya@example.com",
   "phone": "+919876543210",
   "role": "citizen",
-  "created_at": "2026-05-01T10:30:00Z"
+  "created_at": "2026-05-01T10:30:00Z",
+  "email_verified": false,
+  "email_verified_at": null
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `email_verified` | boolean | Whether the account email has been verified |
+| `email_verified_at` | string \| null | ISO-8601 timestamp of verification, or `null`
 
 ### PickupRequestRead
 
@@ -178,7 +196,9 @@ Register a new user account.
     "email": "riya@example.com",
     "phone": "+919876543210",
     "role": "citizen",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "email_verified": false,
+    "email_verified_at": null
   }
 }
 ```
@@ -189,6 +209,8 @@ Register a new user account.
 | `refresh_token` | string | Opaque 384-bit secret; exchanged at `POST /auth/refresh` (default 30 days) |
 | `token_type` | string | Always `bearer` |
 | `user` | object | The created `UserRead` profile |
+
+> **Note:** registration also sends a verification email to the new account (see [Email Verification](#email-verification-wiq-v1-014--issue-57)).
 
 | Status | Scenario |
 |--------|----------|
@@ -357,7 +379,9 @@ Get the currently authenticated user's profile.
   "email": "riya@example.com",
   "phone": "+919876543210",
   "role": "citizen",
-  "created_at": "2026-06-01T08:00:00Z"
+  "created_at": "2026-06-01T08:00:00Z",
+  "email_verified": false,
+  "email_verified_at": null
 }
 ```
 
@@ -411,6 +435,91 @@ valid until they expire.
 | `400` | Incorrect current password, or new password equals the current password |
 | `401` | Missing or invalid token |
 | `422` | Invalid request body (missing fields, password out of 8–64 range) |
+
+---
+
+### `POST /auth/verify-email`
+
+Verify the email address of an account using a one-time signed token from the
+verification email. Public — works whether or not the caller is authenticated
+(logged-in users can complete verification from a link without signing out).
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `token` | string | ✅ | Signed JWT with `purpose: "email_verify"`; expires after `VERIFICATION_TOKEN_EXPIRE_MINUTES` |
+
+**Response `200 OK`:**
+
+```json
+{
+  "message": "Email verified successfully"
+}
+```
+
+**Response `200 OK` (already verified — idempotent):**
+
+```json
+{
+  "message": "Email already verified"
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Account verified (or already verified — idempotent) |
+| `400` | Invalid, expired, malformed, wrong-purpose, or otherwise unusable token (identical generic response for every case) |
+| `422` | Missing/invalid request body |
+
+---
+
+### `POST /auth/resend-verification`
+
+Request a new verification email. Enumeration-safe: the response is identical
+whether or not the email belongs to an unverified account.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "email": "riya@example.com"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `email` | string | ✅ | Valid email format |
+
+**Response `200 OK`:**
+
+```json
+{
+  "message": "If the email is registered and unverified, a verification email has been sent."
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Always (when request body is valid) — no information is leaked about whether the account exists or is already verified |
+| `422` | Missing/invalid request body |
+| `429` | Rate limit exceeded (`RESEND_VERIFICATION_RATE_LIMIT_MAX` per IP, with `Retry-After` header) |
 
 ---
 

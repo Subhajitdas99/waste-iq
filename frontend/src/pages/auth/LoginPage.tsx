@@ -105,9 +105,13 @@ export function LoginPage() {
         {justRegistered && (
           <div
             role="status"
-            className="p-3 bg-primary/15 border border-primary/30 text-primary text-sm rounded-md"
+            className="p-3 bg-primary/15 border border-primary/30 text-primary text-sm rounded-md space-y-1"
           >
-            Account created successfully. Please sign in.
+            <p>Account created successfully. Please sign in.</p>
+            <p>
+              A verification link has been sent to your inbox. Verify your email to
+              unlock the full Waste-IQ experience.
+            </p>
           </div>
         )}
 

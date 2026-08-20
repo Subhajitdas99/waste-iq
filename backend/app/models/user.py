@@ -36,6 +36,9 @@ class User(Base):
     locked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     pickup_requests = relationship(
         "PickupRequest", back_populates="citizen", cascade="all, delete-orphan"
@@ -67,3 +70,8 @@ class User(Base):
         if locked_until.tzinfo is None:
             locked_until = locked_until.replace(tzinfo=timezone.utc)
         return locked_until > datetime.now(timezone.utc)
+
+    @property
+    def email_verified(self) -> bool:
+        """True once the account's email has been verified (WIQ-V1-014)."""
+        return self.email_verified_at is not None

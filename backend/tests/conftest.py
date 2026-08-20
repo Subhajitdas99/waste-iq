@@ -38,6 +38,15 @@ def _reset_rate_limiter():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_email_outbox():
+    """Isolate the console email backend's captured messages between tests."""
+    from app.services.email import clear_email_outbox
+
+    clear_email_outbox()
+    yield
+
+
 @pytest.fixture()
 def db_session():
     """

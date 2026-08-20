@@ -41,6 +41,7 @@ erDiagram
         string phone UK
         string password_hash
         string role
+        datetime email_verified_at
         datetime created_at
     }
 
@@ -226,6 +227,7 @@ Stores all platform users regardless of role.
 | `role` | `VARCHAR` (Enum) | No | — | NOT NULL, INDEX | One of: `citizen`, `collector`, `dealer`, `admin` |
 | `failed_login_count` | `INTEGER` | No | `0` | NOT NULL | Consecutive failed logins; resets on lock and on success |
 | `locked_until` | `TIMESTAMPTZ` | Yes | `NULL` | — | Account lockout expiry; `NULL` when not locked |
+| `email_verified_at` | `TIMESTAMPTZ` | Yes | `NULL` | — | Timestamp of email verification (WIQ-V1-014); `NULL` until the account verifies its email |
 | `created_at` | `TIMESTAMPTZ` | No | `now()` | NOT NULL | Account creation timestamp |
 
 **Relationships:**
