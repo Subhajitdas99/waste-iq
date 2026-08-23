@@ -12,7 +12,6 @@ from app.models.user import User, UserRole
 from app.schemas.auth import AuthResponse, RegisterRequest
 from app.schemas.user import UserRead
 from app.services.audit import AuditService
-from app.services.email_verification import dispatch_verification_email
 from app.services.refresh_token import RefreshTokenService
 
 logger = logging.getLogger(__name__)
@@ -68,10 +67,6 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
         raise ValueError("Email or phone is already registered") from exc
 
     db.refresh(user)
-    # New accounts start unverified and receive a verification email
-    # (WIQ-V1-014). Delivery failure never fails registration: the account
-    # is still created and the user can resend later.
-    dispatch_verification_email(db, user)
     return user
 
 

@@ -430,6 +430,50 @@ def test_verify_email_rolls_back_when_audit_fails(db_session, monkeypatch):
     assert _audit_actions(db_session, "email_verified") == []
 
 
+# ─── Background dispatch task (WIQ-V1-021) ──────────────────────────────────
+
+
+def test_background_delivery_task_sends_email_and_audits(client, db_session):
+    from app.services.email_verification import complete_verification_email_delivery
+
+    user = _create_user(db_session, email="bg-task@example.com", phone="9876543230")
+
+    complete_verification_email_delivery(user.id)
+
+    message = email_outbox[-1]
+    assert message.to_email == "bg-task@example.com"
+    assert "verify-email?token=" in message.html_body
+    events = _audit_actions(db_session, "verification_email_sent")
+    assert len(events) == 1
+    assert events[0].actor_user_id == user.id
+    assert events[0].resource_id == str(user.id)
+
+
+def test_background_delivery_task_logs_failure_without_raising(client, db_session, monkeypatch):
+    from app.services.email_verification import complete_verification_email_delivery
+
+    user = _create_user(db_session, email="bg-fail@example.com", phone="9876543231")
+
+    def _fail(_message):
+        raise EmailDeliveryError("provider down")
+
+    monkeypatch.setattr("app.services.email.send_email", _fail)
+
+    complete_verification_email_delivery(user.id)
+
+    assert email_outbox == []
+    assert _audit_actions(db_session, "verification_email_sent") == []
+
+
+def test_background_delivery_task_skips_missing_user(client, db_session):
+    from app.services.email_verification import complete_verification_email_delivery
+
+    complete_verification_email_delivery(999999)
+
+    assert email_outbox == []
+    assert _audit_actions(db_session, "verification_email_sent") == []
+
+
 # ─── Migration / model metadata ─────────────────────────────────────────────
 
 

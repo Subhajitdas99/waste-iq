@@ -679,7 +679,7 @@ enforcement is a soft flag.
 
 - **Labels:** `infrastructure`, `backend`, `high priority`
 - **Priority:** High  ·  **Complexity:** M  ·  **Effort:** 2d
-- **Status:** Not started
+- **Status:** Implemented (PR #73 + PR #74; completed by WIQ-V1-021 follow-up)
 - **Dependencies:** WIQ-V1-014 (email dispatch), WIQ-V1-022 (runs in the Docker image)
 
 **Description**
@@ -689,12 +689,12 @@ queue exists. Needed: reservation expiry sweep, email dispatch, aging-pickup
 alerts.
 
 **Acceptance Criteria**
-- [ ] In-process APScheduler started in FastAPI lifespan + `BackgroundTasks` for on-request email dispatch
-- [ ] Scheduled job: expire stale reservations → release lot, emit `reservation_expired` (reuse `NotificationDispatcher`)
-- [ ] Scheduled job: detect aging `pending`/`accepted` pickups → notify admins
-- [ ] Idempotent, configurable, disabled in tests; last-run visibility via admin endpoint/logs
-- [ ] Document Celery + Redis upgrade path for multi-instance
-- [ ] Backend unit tests per job (run synchronously in tests)
+- [x] In-process APScheduler started in FastAPI lifespan + `BackgroundTasks` for on-request email dispatch
+- [x] Scheduled job: expire stale reservations → release lot, emit `reservation_expired` (reuse `NotificationDispatcher`)
+- [x] Scheduled job: detect aging `pending`/`accepted` pickups → notify admins
+- [x] Idempotent, configurable, disabled in tests; last-run visibility via admin endpoint/logs
+- [x] Document Celery + Redis upgrade path for multi-instance
+- [x] Backend unit tests per job (run synchronously in tests)
 
 **Technical Notes**
 - Modules: new `app/services/jobs.py`, `app/services/inventory_marketplace.py` (extract sweep), `app/services/notifications.py`, `app/main.py`; add `apscheduler`

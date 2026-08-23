@@ -17,11 +17,13 @@ Design notes
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.core.security import create_verification_token, decode_verification_token
+from app.db.session import SessionLocal
 from app.models.user import User
 from app.services.audit import AuditService
 from app.services.email import EmailDeliveryError, send_verification_email as deliver_email
@@ -30,39 +32,64 @@ logger = logging.getLogger(__name__)
 
 _audit_service = AuditService()
 
-# Generic detail shared by every token failure so clients cannot distinguish
-# invalid, expired, malformed, or stale tokens.
+# Generic detail shared by every verification failure so clients cannot
+# distinguish invalid, expired, malformed, or stale tokens.
 INVALID_TOKEN_DETAIL = "Invalid or expired verification token"
+
+# Session factory used by the background delivery task. Overridable in tests so
+# the task writes to the same database as the request that scheduled it.
+delivery_session_factory: Callable[[], Session] = SessionLocal
 
 
 class EmailVerificationError(ValueError):
     """Raised for invalid, expired, or otherwise unusable verification tokens."""
 
 
-def dispatch_verification_email(db: Session, user: User) -> bool:
-    """Issue a fresh token and deliver the verification email for ``user``.
+def complete_verification_email_delivery(user_id: int) -> None:
+    """Deliver the verification email off the request path (WIQ-V1-021).
 
-    Records a ``verification_email_sent`` audit event and commits when the
-    provider accepts the message. Returns ``False`` (after logging) when
-    delivery fails so registration and resend keep working without an email
-    provider. Never logs token material.
+    Executed as a FastAPI ``BackgroundTask`` after ``register`` /
+    ``resend_verification`` have responded, so SMTP I/O never blocks the API
+    response. Owns a fresh database session because the request-scoped
+    session is closed by the time the task runs. Never raises: delivery
+    failures are logged so the request outcome is unaffected. The
+    ``verification_email_sent`` audit event is recorded only after the
+    provider accepts the message. Never logs token material.
     """
-    token = create_verification_token(str(user.id))
+    token = create_verification_token(str(user_id))
+    db = delivery_session_factory()
     try:
-        deliver_email(user, token)
-    except EmailDeliveryError:
-        logger.error("Verification email delivery failed for user %s", user.id, exc_info=True)
-        return False
+        user = db.get(User, user_id)
+        if user is None:
+            logger.warning(
+                "Verification email skipped: user %s no longer exists",
+                user_id,
+            )
+            return
 
-    _audit_service.record(
-        db,
-        actor_user_id=user.id,
-        action="verification_email_sent",
-        resource="user",
-        resource_id=str(user.id),
-    )
-    db.commit()
-    return True
+        try:
+            deliver_email(user, token)
+        except EmailDeliveryError:
+            logger.error(
+                "Verification email delivery failed for user %s",
+                user_id,
+                exc_info=True,
+            )
+            return
+
+        _audit_service.record(
+            db,
+            actor_user_id=user_id,
+            action="verification_email_sent",
+            resource="user",
+            resource_id=str(user_id),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Background verification email delivery failed for user %s", user_id)
+    finally:
+        db.close()
 
 
 def verify_email(db: Session, token: str) -> tuple[str, bool]:

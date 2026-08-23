@@ -216,6 +216,10 @@ docker compose ps
 | `CLOUDINARY_CLOUD_NAME` | ✅ prod | — | Cloudinary cloud name. Optional in development (uploads are skipped) | `my-cloud-name` |
 | `CLOUDINARY_API_KEY` | ✅ prod | — | Cloudinary API key | `123456789012345` |
 | `CLOUDINARY_API_SECRET` | ✅ prod | — | Cloudinary API secret. Never logged, never exposed in API responses | `abcdefghijklmnopqrstuvwxyz` |
+| `ENABLE_BACKGROUND_JOBS` | ❌ | `true` | Run the in-process APScheduler jobs inside the FastAPI lifespan. Set to `false` to run scheduled work externally (e.g. a Celery worker). Always `false` in the test environment | `true` |
+| `RESERVATION_SWEEP_INTERVAL_MINUTES` | ❌ | `1` | How often the expired-reservation sweep runs (minutes, > 0) | `1` |
+| `AGING_PICKUP_INTERVAL_MINUTES` | ❌ | `5` | How often the aging-pickup alert check runs (minutes, > 0) | `5` |
+| `AGING_PICKUP_THRESHOLD_DAYS` | ❌ | `2` | Age (days) after which a `pending`/`accepted` pickup alerts admins | `2` |
 
 > ⚠️ **In production:** `CLOUDINARY_*` variables are **required** for image uploads. If they are missing, an upload attempt returns `503` (`Image upload service is not configured`); if Cloudinary is unreachable or rejects the request, it returns `502` (`Image upload service unavailable`). Uploads are never silently dropped in production. In development, if they are not set, image uploads are skipped and `image_url` is stored as `NULL` — the explicit, documented development fallback.
 
@@ -449,6 +453,20 @@ render logs --tail --service waste-iq-backend
 | `CRITICAL: alembic upgrade failed` | Migration error on startup | Check migration file for conflicts |
 | `503: Image upload service is not configured` | Cloudinary not set up | Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` in production (`ENVIRONMENT=production`) |
 | `502: Image upload service unavailable` | Cloudinary is unreachable or rejected the request | Check [status.cloudinary.com](https://status.cloudinary.com) and the Cloudinary credentials |
+| `INFO: Scheduler started` | APScheduler background jobs are running | None. If absent, check `ENABLE_BACKGROUND_JOBS` (`false` → jobs run externally) |
+| `INFO: Released N expired reservation(s)` | Reservation-expiry sweep ran | None — expected periodic output |
+| `INFO: Found N aging pickup(s)` | Aging-pickup alert check ran | Investigate if count > 0 |
+
+### Background Jobs (WIQ-V1-021)
+
+Scheduled work (expired-reservation sweep, aging-pickup admin alerts) runs in-process via APScheduler inside the FastAPI lifespan. Verification emails are dispatched as FastAPI `BackgroundTasks` after the response, so SMTP I/O never blocks request handlers.
+
+| Topic | Detail |
+|-------|--------|
+| Last-run visibility | `GET /admin/jobs/status` (admin-only) returns the last successful run timestamps for `reservation_sweep` and `aging_pickups` |
+| Disabling | Set `ENABLE_BACKGROUND_JOBS=false` (always off in the `test` environment) |
+| Tuning | Intervals and thresholds via `RESERVATION_SWEEP_INTERVAL_MINUTES`, `AGING_PICKUP_INTERVAL_MINUTES`, `AGING_PICKUP_THRESHOLD_DAYS` |
+| Multi-instance (Celery + Redis) | Each instance runs its own scheduler, which duplicates work on horizontal scale. For N-instance deployments, run scheduled work in a **Celery worker with Celery Beat** (broker: Redis) and set `ENABLE_BACKGROUND_JOBS=false` on the web instances. The job functions are already standalone and idempotent (guarded `UPDATE`s + notification metadata de-duplication), so they can be wrapped as Celery tasks without domain changes; Redis can later also back the in-memory rate limiter. See `docs/SYSTEM_ARCHITECTURE.md §6.9` |
 
 ### Uptime Monitoring
 

@@ -463,16 +463,17 @@ Registration issues a signed, expiring verification token and delivers it by ema
 
 ```mermaid
 flowchart LR
-    REG["register_user"]
+    REG["register"]
     RESEND["POST /auth/resend-verification\n(per-IP rate limited)"]
-    SVC["EmailVerificationService\ndispatch_verification_email /\nverify_email"]
+    SVC["EmailVerificationService\ncomplete_verification_email_delivery /\nverify_email"]
     SEC["security.create_verification_token\nJWT purpose=email_verify, jti, exp"]
     MAIL["email.send_verification_email\n(provider abstraction)"]
     AUD["AuditService\nverification_email_sent /\nemail_verified"]
     VERIFY["POST /auth/verify-email"]
     DB[(users\nemail_verified_at)]
+    BG["FastAPI BackgroundTask\n(off the request path)"]
 
-    REG --> SVC --> SEC --> MAIL
+    REG --> SVC --> SEC --> BG --> MAIL
     RESEND --> SVC
     VERIFY --> SVC --> DB
     SVC --> AUD
@@ -483,10 +484,39 @@ Key decisions:
 
 - **Provider abstraction** — `app/services/email.py` defines an `EmailProvider` interface with two implementations: `ConsoleEmailProvider` (default, dev) appends messages to an in-process `email_outbox` and logs only a redacted summary; `SmtpEmailProvider` sends real mail via the configured SMTP host with STARTTLS. Selection happens once at startup from `EMAIL_BACKEND`; settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `FRONTEND_URL`) are read from environment variables and never logged.
 - **Stateless signed tokens** — verification tokens are JWTs (`purpose: "email_verify"`, random `jti`, `exp` = `VERIFICATION_TOKEN_EXPIRE_MINUTES`) signed with the same secret as access tokens. Nothing is stored server-side; single-use semantics come from the account state transition: after `email_verified_at` is set, replaying a token is idempotent and cannot change state. A `jti` makes every issuance unique material.
-- **Delivery never blocks the flow** — a failed email delivery is logged and reported as `False` from `dispatch_verification_email`, so registration and resend still succeed without a mail provider. Tokens are only recorded in audit events as nothing at all — never in logs, DB columns, or audit snapshots.
+- **Delivery never blocks the flow** — registration and resend respond immediately; the verification email is dispatched by a FastAPI `BackgroundTask` (`complete_verification_email_delivery`) that owns a fresh DB session, issues the token, delivers via the provider, and records the `verification_email_sent` audit event only after the provider accepts the message. Delivery failure is logged (never raised) so registration and resend still succeed without a mail provider. Tokens are never recorded in logs, DB columns, or audit snapshots.
 - **Enumeration-safe by construction** — invalid/expired/malformed/wrong-purpose/stale tokens all raise the same `EmailVerificationError` and surface as an identical `400` detail; resend always returns the same generic `200` message. Resend is rate-limited per IP only (never per account email) so it cannot be used to enumerate accounts or lock victims out.
 - **Audit integration** — `verification_email_sent` (on successful delivery) and `email_verified` (with `after: {"email_verified": true}`) are recorded in the same transaction as the state change. Failed validation attempts are deliberately not audited (anti-log-flood).
 - **Frontend** — unverified users see a resend banner on every dashboard page; `/verify-email?token=...` completes verification for both logged-out and logged-in users (registered without `GuestRoute`) and refreshes the cached profile so the banner disappears immediately.
+
+## 6.9 Background Jobs (WIQ-V1-021)
+
+Time-driven work runs in-process via **APScheduler** (`BackgroundScheduler`, UTC), started and stopped inside the FastAPI lifespan (`app/main.py` → `app/services/jobs.py`). Two jobs are registered under stable IDs:
+
+| Job ID | Function | What it does |
+|--------|----------|--------------|
+| `reservation_sweep` | `reservation_sweep_job` | Calls `release_expired_reservations` (`app/services/inventory_marketplace.py`) to release lots whose 24-hour dealer reservation has lapsed: status → `available`, reservation fields cleared, `reservation_expired` lot event + expired marketplace transaction written, then `NotificationDispatcher.notify_reservation_expired` notifies the former deleter. |
+| `aging_pickups` | `aging_pickup_alert_job` | Finds `pending`/`accepted` pickup requests older than `AGING_PICKUP_THRESHOLD_DAYS` and notifies all admins through `NotificationDispatcher.notify_admins`, de-duplicated by `pickup_id` in the notification metadata. |
+
+Key properties:
+
+- **Idempotent** — the sweep uses a guarded conditional `UPDATE` (`WHERE status = reserved AND reservation_expires_at <= now`) and skips any lot whose `rowcount` is 0, so a concurrent purchase or a re-run of the job can never double-release a lot or overwrite a newer state. The aging job consults `NotificationRepository.exists_by_metadata` before notifying, so repeated runs produce at most one alert per pickup.
+- **Configurable** — `ENABLE_BACKGROUND_JOBS`, `RESERVATION_SWEEP_INTERVAL_MINUTES`, `AGING_PICKUP_INTERVAL_MINUTES`, `AGING_PICKUP_THRESHOLD_DAYS` (see `app/core/config.py`), all validated `> 0`.
+- **Disabled during tests** — `start_scheduler` returns immediately when `ENVIRONMENT=test` or `ENABLE_BACKGROUND_JOBS=false`. Tests execute every job **synchronously** by calling the job functions directly with a `SessionLocal` monkey-patched to the test database (`tests/test_jobs.py`), so no test depends on a running scheduler.
+- **Observable** — every run records `last_runs[...]` in-process, exposed to authenticated admins via `GET /admin/jobs/status`, and logs an INFO line with the release/expiry counts.
+- **On-request email dispatch** — verification emails are delivered by FastAPI `BackgroundTasks` (see §6.8) so SMTP I/O never blocks request handlers; the jobs above remain DB-only.
+
+### Celery + Redis upgrade path (multi-instance)
+
+The current design is intentionally single-process: one APScheduler per uvicorn worker. When Waste-IQ is scaled to **multiple application instances** (or when a job must survive process restarts), migrate scheduled work to **Celery + Redis** without changing domain logic:
+
+1. **The job bodies already are independent functions** (`reservation_sweep_job`, `aging_pickup_alert_job`, and the marketplace sweep `release_expired_reservations`) that take nothing but a DB session — move them (or the final `release_*`/`exists_by_metadata` primitives) into `@celery_app.task` wrappers verbatim.
+2. **Replace the interval triggers with Celery Beat** schedules driven by the same settings (`RESERVATION_SWEEP_INTERVAL_MINUTES`, `AGING_PICKUP_INTERVAL_MINUTES`) so configuration stays in one place.
+3. **Use Redis as the broker + result backend**; Redis also becomes a shared store later for the in-memory rate limiter (§8 API Layer) — one upgrade unlocks both scale limits.
+4. **Idempotency transfers unchanged** — the guarded `UPDATE`/`exists` checks already make either APScheduler or Celery duplicate-delivery proof on a single shared PostgreSQL database.
+5. **Email delivery** — background tasks are per-request; for multi-instance deployments, defer delivery to a Celery task or the mail provider's own queue (e.g. SES/SendGrid) so sends survive worker restarts.
+
+Until then, keep `ENABLE_BACKGROUND_JOBS=false` and run the Celery worker/scheduler externally — no code change required beyond the wiring above.
 
 ---
 

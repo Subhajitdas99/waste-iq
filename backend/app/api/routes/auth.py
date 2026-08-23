@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
@@ -26,8 +26,8 @@ from app.services.auth import (
 )
 from app.services.audit import AuditService
 from app.services.email_verification import (
+    complete_verification_email_delivery,
     EmailVerificationError,
-    dispatch_verification_email,
     verify_email as verify_email_service,
 )
 from app.services.refresh_token import InvalidRefreshTokenError, RefreshTokenService
@@ -42,6 +42,7 @@ _refresh_token_service = RefreshTokenService()
 def register(
     payload: RegisterRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> AuthResponse:
     check_rate_limit(request, "register")
@@ -49,6 +50,10 @@ def register(
         user = register_user(db, payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    # Deliver the verification email off the request path (WIQ-V1-021) so
+    # SMTP I/O never blocks the response. Delivery failure never fails
+    # registration: it is logged and the user can resend later.
+    background_tasks.add_task(complete_verification_email_delivery, user.id)
     return issue_token_for_user(db, user)
 
 
@@ -155,18 +160,20 @@ def verify_email(
 def resend_verification(
     payload: ResendVerificationRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """Resend the verification email for an unverified account.
 
     Public and rate-limited per IP. The response is identical whether or
     not the email is registered (and whether or not it is already verified),
-    so the endpoint cannot be used for account or email enumeration.
+    so the endpoint cannot be used for account or email enumeration. Any
+    delivery is dispatched as a background task off the request path.
     """
     check_rate_limit(request, "resend_verification")
     user = get_user_by_email(db, normalize_email(payload.email))
     if user is not None and not user.email_verified:
-        dispatch_verification_email(db, user)
+        background_tasks.add_task(complete_verification_email_delivery, user.id)
     return {
         "message": "If the email is registered and unverified, a verification email has been sent."
     }
