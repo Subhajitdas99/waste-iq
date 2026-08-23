@@ -98,12 +98,26 @@ def client(db_session):
     def _override_get_db():
         yield db_session
 
+    from app.services import email_verification
+
     fastapi_app.dependency_overrides[get_db] = _override_get_db
+    # Background email dispatch (WIQ-V1-021) opens its own session after the
+    # request completes; point it at the same test database so the delivery
+    # and its audit event are observable through db_session.
+    test_bind = db_session.get_bind()
+    original_factory = email_verification.delivery_session_factory
+    email_verification.delivery_session_factory = sessionmaker(
+        bind=test_bind,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+    )
 
     try:
         with TestClient(fastapi_app) as test_client:
             yield test_client
     finally:
+        email_verification.delivery_session_factory = original_factory
         fastapi_app.dependency_overrides.clear()
 
 
