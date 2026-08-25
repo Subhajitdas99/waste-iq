@@ -1,10 +1,21 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from typing import Literal
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
 from app.core.ratelimit import check_rate_limit
 from app.core.security import create_access_token, verify_password
 from app.models.user import User
+from app.schemas.audit import LoginHistoryEntryRead, LoginHistoryPageRead
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
@@ -203,6 +214,37 @@ def logout_all(
 @router.get("/me", response_model=UserRead)
 def me(current_user: User = Depends(get_current_user)) -> UserRead:
     return UserRead.model_validate(current_user)
+
+
+@router.get("/login-history", response_model=LoginHistoryPageRead)
+def my_login_history(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    outcome: Literal["success", "failure"] | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoginHistoryPageRead:
+    """Recent login attempts for the authenticated user (WIQ-V1-019).
+
+    Identity comes exclusively from the access token — there is deliberately
+    no user/actor query parameter, so a caller can only ever read their own
+    history. Failures are not attributed to a cause (wrong password, locked
+    account, unknown email all surface as plain ``failure``).
+    """
+    items, total_items, total_pages = _audit_service.login_history(
+        db,
+        actor_user_id=current_user.id,
+        outcome=outcome,
+        page=page,
+        page_size=page_size,
+    )
+    return LoginHistoryPageRead(
+        items=[LoginHistoryEntryRead.model_validate(item) for item in items],
+        page=page,
+        page_size=page_size,
+        total_items=total_items,
+        total_pages=total_pages,
+    )
 
 
 @router.post("/change-password")

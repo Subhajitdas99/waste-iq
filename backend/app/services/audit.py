@@ -113,3 +113,30 @@ class AuditService:
             created_after=created_after,
             created_before=created_before,
         )
+
+    def login_history(
+        self,
+        db: Session,
+        *,
+        actor_user_id: int | None = None,
+        outcome: str | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[Sequence[AuditLog], int, int]:
+        """List login-attempt records (WIQ-V1-019), newest first.
+
+        Thin wrapper over ``AuditLogRepository.list_login_events``; see that
+        method for the query semantics. ``actor_user_id`` must be supplied by
+        the caller — routes derive it from the authenticated principal.
+        """
+        return self._repository.list_login_events(
+            db,
+            actor_user_id=actor_user_id,
+            outcome=outcome,
+            created_after=created_after,
+            created_before=created_before,
+            page=page,
+            page_size=page_size,
+        )
