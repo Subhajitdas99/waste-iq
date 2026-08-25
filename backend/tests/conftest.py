@@ -5,6 +5,9 @@ from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_unused.db")
 os.environ.setdefault("ENVIRONMENT", "test")
+# Hard guarantee that tests never contact Sentry, even if a developer's local
+# backend/.env contains a real DSN (environment variables win over .env).
+os.environ.setdefault("SENTRY_DSN", "")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")

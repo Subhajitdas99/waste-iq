@@ -520,6 +520,51 @@ Until then, keep `ENABLE_BACKGROUND_JOBS=false` and run the Celery worker/schedu
 
 ---
 
+## 6.10 Monitoring & Logging (WIQ-V1-023)
+
+Observability is wired at process start (`app/main.py` → `setup_logging(settings.log_level)` then `init_sentry()`) and per-request via middleware.
+
+### Request Lifecycle & Request-ID Propagation
+
+1. `RequestIDMiddleware` (outermost, `app/core/middleware.py`) resolves the correlation ID: a client-supplied `X-Request-ID` header is accepted **only** when it is ≤ 64 characters and matches `^[A-Za-z0-9._-]+$`; anything else — missing, oversized, whitespace, control characters — falls back to a generated UUID4. Untrusted values therefore can never reach log files or response headers.
+2. The resolved ID is stored in a `ContextVar` (`app/core/logging.py`), on `request.state.request_id`, and echoed in the `X-Request-ID` response header.
+3. The same middleware captures client IP (direct connection only; `X-Forwarded-For` is not trusted) and user-agent into `app/core/request_context.py` contextvars consumed by `AuditService`.
+
+### JSON Logging & Uvicorn Access Logs
+
+`setup_logging` configures root **and** the three Uvicorn loggers (`uvicorn`, `uvicorn.error`, `uvicorn.access`) through `logging.config.dictConfig`: all share one JSON handler with propagation disabled, so every line appears exactly once and access logs carry the request ID from the context var. `JsonFormatter` (stdlib-only) emits:
+
+```json
+{"timestamp": "...", "level": "INFO", "logger": "uvicorn.access", "message": "...", "request_id": "...", "event": "access", "method": "GET", "path": "/health/ready", "status_code": 200}
+```
+
+- Required fields: `timestamp`, `level`, `logger`, `message`, `request_id`.
+- Uvicorn access records are parsed into structured fields (`client_addr`, `method`, `path`, `http_version`, `status_code`).
+- `extra` fields and exception tracebacks (`exception`) are preserved; output is always valid JSON.
+- `LOG_LEVEL` gates the effective level of application and Uvicorn loggers alike.
+
+### Sentry
+
+`init_sentry()` (`app/core/sentry_sdk.py`) initializes Sentry **only** when `SENTRY_DSN` is set — otherwise the SDK stays fully disabled with zero network activity. When enabled it passes `environment` (`ENVIRONMENT`) and `release` (`RELEASE`) tags and enables the Starlette/FastAPI integrations (dependency: `sentry-sdk[fastapi]`) so unhandled route exceptions are captured.
+
+Authenticated identity is attached through `set_sentry_user(user_id)` — called once from the shared `get_current_user` dependency, so every authenticated request's errors are correlated by numeric id only. `send_default_pii` remains off; tokens, emails and other PII are never reported. Tests/CI pin `SENTRY_DSN=""` so no external calls are possible offline.
+
+### Readiness Checks
+
+| Endpoint | Checks | Failure behavior |
+|----------|--------|------------------|
+| `GET /health` | Process liveness | Always `200` while the process serves |
+| `GET /health/ready` | Database connectivity (`SELECT 1`) | `503` `{"status":"not_ready","reason":"database_unreachable"}` |
+| `GET /health/ready` (production only) | Cloudinary configuration present | `503` `{"reason":"cloudinary_not_configured"}` |
+
+The production Cloudinary check validates that `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET` are set — configuration presence only, never a network call — keeping probes fast and deterministic. Development/test/staging readiness does not require Cloudinary.
+
+### Prometheus Metrics — Deferred
+
+Prometheus `/metrics` is intentionally deferred: platform dashboards cover current needs and no scraper exists yet. Revisit alongside multi-instance deployment (the same milestone that introduces Celery + Redis above).
+
+---
+
 ## 7. Inventory Marketplace Flow
 
 ### Dealer Approval Workflow

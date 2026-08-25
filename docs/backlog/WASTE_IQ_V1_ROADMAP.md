@@ -733,7 +733,7 @@ policy — not production-safe.
 
 - **Labels:** `infrastructure`, `devops`, `backend`, `high priority`
 - **Priority:** High  ·  **Complexity:** M  ·  **Effort:** 2d
-- **Status:** Not started
+- **Status:** Implemented (Prometheus `/metrics` explicitly deferred)
 - **Dependencies:** WIQ-V1-022
 
 **Description**
@@ -741,12 +741,12 @@ The API uses bare `logging` with ad-hoc records, no request correlation, no
 error tracking, and `/health` only checks process liveness.
 
 **Acceptance Criteria**
-- [ ] Structured (JSON) logging with request-id middleware; `LOG_LEVEL` setting
-- [ ] Uvicorn access logs into structured format
-- [ ] Sentry SDK (`SENTRY_DSN`, environment/release tagging, `user_id` context); disabled when DSN absent
-- [ ] `GET /health/ready` — liveness + DB check (+ Cloudinary config in production)
-- [ ] Optional Prometheus `/metrics` (`prometheus-fastapi-instrumentator`)
-- [ ] Backend tests (readiness OK/DB-down, request-id present)
+- [x] Structured (JSON) logging with request-id middleware; `LOG_LEVEL` setting
+- [x] Uvicorn access logs into structured format
+- [x] Sentry SDK (`SENTRY_DSN`, environment/release tagging, `user_id` context); disabled when DSN absent
+- [x] `GET /health/ready` — liveness + DB check (+ Cloudinary config in production)
+- [ ] Optional Prometheus `/metrics` (`prometheus-fastapi-instrumentator`) — **deferred by design**: platform dashboards cover current needs; revisit with multi-instance deployment
+- [x] Backend tests (readiness OK/DB-down, request-id present)
 
 **Technical Notes**
 - Modules: `app/main.py`, `app/core/config.py`, new `app/core/logging.py`, `app/core/middleware.py`; add `sentry-sdk` (+ optional `prometheus-fastapi-instrumentator`)

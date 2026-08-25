@@ -324,6 +324,46 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f db
 
 Watch for `Application startup complete.` and `Scheduler started` in backend logs; migration errors appear here and cause the backend container to exit (the restart policy retries it, so fix the underlying issue rather than restarting blindly).
 
+### Monitoring & Logging (WIQ-V1-023)
+
+#### JSON Structured Logging
+
+Every log line — application **and** Uvicorn access/error logs — is a single-line JSON object emitted by `app.core.logging.setup_logging`:
+
+```json
+{"timestamp": "2026-08-25T12:00:00+0000", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1 - \"GET /health/ready HTTP/1.1\" 200", "request_id": "7f9c24e2-...", "event": "access", "method": "GET", "path": "/health/ready", "status_code": 200, "client_addr": "127.0.0.1", "http_version": "1.1"}
+```
+
+Fields: `timestamp`, `level`, `logger`, `message`, `request_id`, plus structured access fields (`method`, `path`, `status_code`, …) on Uvicorn access records, `extra` fields passed by application code, and an `exception` string with tracebacks.
+
+#### Request IDs
+
+`RequestIDMiddleware` assigns every request a correlation ID, returned in the `X-Request-ID` response header and attached to every log line of that request. A client-supplied `X-Request-ID` is trusted only when it is ≤ 64 characters and uses `A–Z a–z 0–9 . _ -`; anything else (missing, oversized, whitespace/control characters) is replaced with a generated UUID4.
+
+#### LOG_LEVEL
+
+`LOG_LEVEL` (`DEBUG`, `INFO`, default `WARNING`, `ERROR`, `CRITICAL`) controls the effective level of root/application logging and all Uvicorn loggers. At levels above `INFO`, access logs are suppressed.
+
+#### Sentry Error Tracking
+
+Sentry is active only when `SENTRY_DSN` is set — with no DSN the SDK stays completely disabled and makes no network calls:
+
+| Variable | Purpose |
+|----------|---------|
+| `SENTRY_DSN` | Enables Sentry when set; leave empty to disable |
+| `ENVIRONMENT` | Reported as the Sentry environment tag (`development`/`staging`/`production`) |
+| `RELEASE` | Reported as the Sentry release tag (e.g. `v1.2.3`; defaults to `local`) |
+
+Behavior: FastAPI/Starlette integrations are enabled so unhandled route exceptions are captured; the authenticated user's numeric id is attached as user context (id only — never tokens, emails or other PII); `send_default_pii` remains off so request bodies/cookies are not reported. Tests and CI never contact Sentry (`SENTRY_DSN` is pinned empty in the test environment).
+
+#### Readiness Endpoint
+
+`GET /health/ready` verifies database connectivity (503 `database_unreachable` while down). When `ENVIRONMENT=production` it additionally requires Cloudinary configuration to be present — returning 503 `cloudinary_not_configured` if `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` or `CLOUDINARY_API_SECRET` are missing. The check inspects configuration only and never calls Cloudinary, so probes stay fast and deterministic. Non-production environments are unaffected by the Cloudinary requirement.
+
+#### Prometheus Metrics — Deferred
+
+Prometheus `/metrics` (`prometheus-fastapi-instrumentator`) is intentionally **deferred**: Render.com already exposes CPU/memory/request metrics in its dashboard, and no scraper infrastructure exists yet. Revisit when self-hosted monitoring (Grafana) or multi-instance alerting is introduced.
+
 #### Restart Behavior
 
 All production services use `restart: unless-stopped`: containers come back automatically after crashes or daemon/host restarts, but stay stopped if you explicitly run `stop`. A failing backend (e.g., bad migration) will be retried by Docker — check logs instead of assuming transient failure.
@@ -665,9 +705,9 @@ Configure an external uptime monitor on the health endpoint:
 
 Render.com provides built-in CPU, memory, and request metrics in the dashboard.
 
-For more granular APM, consider adding:
-- **Sentry** (error tracking): `pip install sentry-sdk[fastapi]`
-- **Prometheus + Grafana** (metrics): Add `prometheus-fastapi-instrumentator`
+**Sentry** (error tracking) is integrated — set `SENTRY_DSN`, `ENVIRONMENT` and `RELEASE` to activate it (see [Monitoring & Logging](#monitoring--logging-wiq-v1-023)).
+
+**Prometheus + Grafana** (metrics): deferred. `prometheus-fastapi-instrumentator` is not installed; the `/metrics` endpoint does not exist by design (see [Monitoring & Logging](#monitoring--logging-wiq-v1-023)).
 
 ---
 
