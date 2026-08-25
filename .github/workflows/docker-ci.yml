@@ -1,0 +1,106 @@
+name: Docker CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
+      - "backend/.dockerignore"
+      - ".github/workflows/docker-ci.yml"
+
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
+      - "backend/.dockerignore"
+      - ".github/workflows/docker-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: runtime
+          push: false
+          tags: wasteiq-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: wasteiq-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  compose-config:
+    name: Validate Compose Configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create placeholder backend .env for config parsing
+        run: cp backend/.env.example backend/.env
+
+      - name: Validate base Compose file
+        run: docker compose -f docker-compose.yml config -q
+
+      # Dummy values are used only to prove the override parses; they are not
+      # real secrets and are never pushed anywhere.
+      - name: Validate production Compose override
+        run: |
+          POSTGRES_PASSWORD=ci-placeholder-password \
+          JWT_SECRET_KEY=ci-placeholder-jwt-secret \
+          CORS_ORIGINS=http://localhost:5173 \
+          FRONTEND_URL=http://localhost:5173 \
+          VITE_API_URL=http://localhost:8000 \
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config -q
+
+      - name: Verify required production variables fail fast
+        run: |
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config -q >/dev/null 2>&1; then
+            echo "::error::Production config parsed without POSTGRES_PASSWORD/JWT_SECRET_KEY set — required-variable guards are broken."
+            exit 1
+          else
+            echo "Required-variable guards behave as expected."
+          fi
