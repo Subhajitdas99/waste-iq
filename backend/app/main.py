@@ -100,6 +100,20 @@ def readiness_check(db: Session = Depends(get_db)) -> dict[str, object] | JSONRe
             content={
                 "status": "not_ready",
                 "app": settings.app_name,
+                "reason": "database_unreachable",
+            },
+        )
+
+    # Production additionally requires Cloudinary credentials to be present.
+    # Configuration presence only — never a network call — so probes stay
+    # fast and deterministic. Non-production environments are unaffected.
+    if settings.is_production and not settings.cloudinary_configured:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "app": settings.app_name,
+                "reason": "cloudinary_not_configured",
             },
         )
 
