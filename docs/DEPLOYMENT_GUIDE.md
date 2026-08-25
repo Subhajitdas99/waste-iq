@@ -199,6 +199,185 @@ docker compose down -v --remove-orphans
 docker compose ps
 ```
 
+### Production-Oriented Full-Stack Container Deployment
+
+For a self-contained production deployment (single host or VM), the repository ships a hardened production override: `docker-compose.prod.yml`. It layers on top of the base Compose file:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml   # optional convenience
+# …or pass both files explicitly on every command:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml <command>
+```
+
+**What the production override changes compared to the base file:**
+
+| Area | Base (`docker-compose.yml`) | Production override |
+|------|------------------------------|---------------------|
+| Restart policy | none (manual dev lifecycle) | `unless-stopped` on db/backend/frontend |
+| Database exposure | `localhost:5432` | not published (compose network only) |
+| Backend secrets | `backend/.env` file | environment variables only (`${VAR:?}` fail-fast) |
+| Backend port | fixed `8000:8000` | `${BACKEND_PORT:-8000}:8000` |
+| Frontend port | fixed `5173:80` | `${FRONTEND_PORT:-8080}:80` |
+| Frontend API URL | build-time default `http://localhost:8000` | build arg `VITE_API_URL` |
+| Upload temp dir | ephemeral container fs | named volume `uploads_data:/app/uploads` |
+| Dev-only `agent` service | started with the stack | excluded via Compose profile |
+
+#### Prerequisites
+
+| Tool | Minimum Version | Check Command |
+|------|-----------------|---------------|
+| Docker Engine | 24+ (with Compose V2 built in) | `docker --version` |
+| Docker Compose | v2.24+ (required for `!reset` override syntax) | `docker compose version` |
+
+#### Required Production Environment Variables
+
+Compose interpolates variables from your shell environment **or** a project-root `.env` file (git-ignored — verify with `git check-ignore .env`). Required variables fail fast at config-parse time if missing:
+
+```bash
+POSTGRES_PASSWORD=<strong random password>        # openssl rand -hex 24
+JWT_SECRET_KEY=<strong random secret, ≥32 chars>  # openssl rand -hex 32
+CORS_ORIGINS=https://your-frontend-domain         # comma-separated, exact match
+FRONTEND_URL=https://your-frontend-domain          # used to build verification links
+VITE_API_URL=https://api.your-domain               # baked into the frontend bundle at build time
+```
+
+Optional but recommended in production:
+
+```bash
+ENVIRONMENT=production                     # implied by the override
+ADMIN_REGISTRATION_CODE=…                  # enables admin sign-up
+BOOTSTRAP_ADMIN_NAME=… / BOOTSTRAP_ADMIN_EMAIL=… / BOOTSTRAP_ADMIN_PHONE=… / BOOTSTRAP_ADMIN_PASSWORD=…
+CLOUDINARY_CLOUD_NAME=… / CLOUDINARY_API_KEY=… / CLOUDINARY_API_SECRET=…   # required for uploads when ENVIRONMENT=production (503 otherwise)
+EMAIL_BACKEND=smtp / SMTP_HOST=… / SMTP_USER=… / SMTP_PASSWORD=… / EMAIL_FROM=…
+SENTRY_DSN=… / RELEASE=vX.Y.Z
+BACKEND_PORT=8000 / FRONTEND_PORT=8080     # host-side ports
+```
+
+> ⚠️ **Never commit these values.** Generate secrets with `openssl rand -hex 32`; rotate `JWT_SECRET_KEY` only with an awareness that all issued access tokens are invalidated (refresh tokens remain valid because they are stored server-side).
+
+#### Secret Configuration Summary
+
+- **Backend image:** no secrets are copied into the image; configuration is injected at runtime through the Compose `environment:` mapping.
+- **Frontend image:** only public values (`VITE_*`) are baked in at build time — they are visible in the shipped JS bundle by design and must never contain secrets.
+- **Database password:** provided once via `POSTGRES_PASSWORD` and referenced internally; PostgreSQL is never exposed on the host.
+- **JWT secret:** provided via `JWT_SECRET_KEY`; the Compose config fails fast when it is unset.
+
+#### Building Images
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+```
+
+CI validates that both images build on every relevant PR (see `.github/workflows/docker-ci.yml`); images are not pushed by CI.
+
+#### Starting the Stack
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+Startup order is health-gated: **db → (healthy) → backend runs `alembic upgrade head`, then serves traffic → (healthy) → frontend**. Migrations run automatically inside the backend container before Uvicorn binds its port (established startup pattern preserved from the original Dockerfile CMD).
+
+#### Checking Container Health
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+```
+
+Wait until all three services report `(healthy)`:
+
+| Service | Healthcheck | Meaning |
+|---------|-------------|---------|
+| `db` | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB` | PostgreSQL accepts connections |
+| `backend` | HTTP GET `/health/ready` inside the container | process up **and** database reachable |
+| `frontend` | HTTP GET `/health` against Nginx | static server responding |
+
+#### Database Readiness
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec db pg_isready -U wasteiq -d wasteiq
+```
+
+#### Backend Readiness
+
+```bash
+curl -fsS http://localhost:8000/health        # {"status":"ok", …}
+curl -fsS http://localhost:8000/health/ready  # {"status":"ready", …}
+```
+
+`/health/ready` returns `503` while the database is unreachable — use it for load-balancer readiness probes.
+
+#### Frontend Availability
+
+```bash
+curl -fsS http://localhost:8080/health   # ok (Nginx static server)
+```
+
+Then open `http://localhost:8080` (or your configured domain) in a browser.
+
+#### Logs
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f db
+```
+
+Watch for `Application startup complete.` and `Scheduler started` in backend logs; migration errors appear here and cause the backend container to exit (the restart policy retries it, so fix the underlying issue rather than restarting blindly).
+
+#### Restart Behavior
+
+All production services use `restart: unless-stopped`: containers come back automatically after crashes or daemon/host restarts, but stay stopped if you explicitly run `stop`. A failing backend (e.g., bad migration) will be retried by Docker — check logs instead of assuming transient failure.
+
+#### Stopping the Stack
+
+```bash
+# Stop, keep data volumes
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# Stop AND remove database/upload data (destructive!)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+```
+
+#### Updating / Rebuilding Images
+
+```bash
+git pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+New migrations are applied automatically by the backend's startup command. Take a database backup first (see [Backup Strategy](#9-backup-strategy)).
+
+#### Smoke Test
+
+Run after every deployment. Use a **throwaway account** and remember the rate limits (registration: 10 requests per IP per window; login: 10 per IP and 5 per account per window — see `LOGIN_RATE_LIMIT_MAX`, `REGISTER_RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_SECONDS`):
+
+```bash
+API=http://localhost:8000
+
+# 1. Liveness
+curl -fsS "$API/health"
+
+# 2. Readiness (database connectivity)
+curl -fsS "$API/health/ready"
+
+# 3. Registration (returns 201 with access + refresh tokens)
+curl -fsS -X POST "$API/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Smoke Test","email":"smoke-test@example.com","phone":"+10000000000","password":"Str0ngPassw0rd!","role":"citizen"}'
+
+# 4. Login (returns 200 with fresh tokens)
+curl -fsS -X POST "$API/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"smoke-test@example.com","password":"Str0ngPassw0rd!"}'
+```
+
+All four commands must succeed without 5xx responses. Do not reuse real credentials in scripts or shell history.
+
+#### Background Jobs (Single-Instance Assumption)
+
+APScheduler runs **in-process** inside the backend container (`reservation sweep`, `aging pickup alerts`). This is safe for exactly one backend replica — do **not** scale the backend service horizontally (`--scale backend=N` duplicates scheduled work). For multi-instance deployments set `ENABLE_BACKGROUND_JOBS=false` on web instances and move scheduling to Celery Beat (see [Monitoring & Logging](#8-monitoring--logging)).
+
 ---
 
 ## 4. Environment Variables Reference

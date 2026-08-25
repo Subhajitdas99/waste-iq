@@ -1,0 +1,44 @@
+# Secrets & local environment files — must never enter the build context.
+.env
+.env.*
+!.env.example
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Test & tooling caches / artifacts
+.pytest_cache/
+.pytest_tmp/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local databases & uploads (dev fallbacks, never needed in the image)
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+
+# Git metadata
+.git
+.gitignore
+.gitattributes
+
+# Editors / OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Docker files themselves (not required inside the image)
+Dockerfile
+.dockerignore
+
+# Documentation not used at runtime
+README.md
