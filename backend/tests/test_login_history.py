@@ -109,9 +109,7 @@ def test_non_login_actions_are_excluded(db_session, citizen_user):
 
 
 def test_outcome_success_filter(db_session, citizen_user):
-    success = _create_login_event(
-        db_session, actor_user_id=citizen_user.id, action="login_success"
-    )
+    success = _create_login_event(db_session, actor_user_id=citizen_user.id, action="login_success")
     _create_login_event(db_session, actor_user_id=citizen_user.id, action="login_failure")
 
     items, total_items, _ = _list(db_session, outcome="success")
@@ -122,9 +120,7 @@ def test_outcome_success_filter(db_session, citizen_user):
 
 def test_outcome_failure_filter(db_session, citizen_user):
     _create_login_event(db_session, actor_user_id=citizen_user.id, action="login_success")
-    failure = _create_login_event(
-        db_session, actor_user_id=citizen_user.id, action="login_failure"
-    )
+    failure = _create_login_event(db_session, actor_user_id=citizen_user.id, action="login_failure")
 
     items, total_items, _ = _list(db_session, outcome="failure")
 
@@ -150,9 +146,7 @@ def test_actor_user_id_filters_to_that_user_only(db_session, citizen_user, admin
     assert total_items == 1
 
 
-def test_unattributed_failures_are_excluded_when_filtering_by_actor(
-    db_session, citizen_user
-):
+def test_unattributed_failures_are_excluded_when_filtering_by_actor(db_session, citizen_user):
     """Unknown-email failures have no actor and must not appear in a user's history."""
     _create_login_event(db_session, actor_user_id=None, action="login_failure")
     mine = _create_login_event(db_session, actor_user_id=citizen_user.id)
@@ -164,9 +158,7 @@ def test_unattributed_failures_are_excluded_when_filtering_by_actor(
 
 
 def test_created_after_and_created_before_filters(db_session, citizen_user):
-    old = _create_login_event(
-        db_session, actor_user_id=citizen_user.id, minutes_ago=120
-    )
+    old = _create_login_event(db_session, actor_user_id=citizen_user.id, minutes_ago=120)
     recent = _create_login_event(db_session, actor_user_id=citizen_user.id, minutes_ago=1)
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -181,9 +173,7 @@ def test_created_after_and_created_before_filters(db_session, citizen_user):
 
 
 def test_newest_records_come_first(db_session, citizen_user):
-    older = _create_login_event(
-        db_session, actor_user_id=citizen_user.id, minutes_ago=30
-    )
+    older = _create_login_event(db_session, actor_user_id=citizen_user.id, minutes_ago=30)
     newer = _create_login_event(db_session, actor_user_id=citizen_user.id, minutes_ago=1)
 
     items, _, _ = _list(db_session)
@@ -224,9 +214,7 @@ def test_empty_history_returns_zero_totals(db_session):
 # ─── Schemas ─────────────────────────────────────────────────────────────────
 
 
-def test_entry_schema_validates_from_orm_row_and_hides_internal_fields(
-    db_session, citizen_user
-):
+def test_entry_schema_validates_from_orm_row_and_hides_internal_fields(db_session, citizen_user):
     record = _create_login_event(db_session, actor_user_id=citizen_user.id)
 
     entry = LoginHistoryEntryRead.model_validate(record)
@@ -259,9 +247,7 @@ def test_entry_schema_rejects_non_login_actions(db_session, citizen_user):
 
 
 def test_admin_entry_resolves_actor_fields(db_session, admin_user, citizen_user):
-    record = _create_login_event(
-        db_session, actor_user_id=citizen_user.id, action="login_failure"
-    )
+    record = _create_login_event(db_session, actor_user_id=citizen_user.id, action="login_failure")
 
     entry = AdminLoginHistoryEntryRead.model_validate(record)
 
@@ -366,9 +352,10 @@ def test_auth_login_history_outcome_filter(client):
     assert successes["items"][0]["outcome"] == "success"
     assert failures["total_items"] == 1
     assert failures["items"][0]["outcome"] == "failure"
-    assert client.get(
-        "/auth/login-history", params={"outcome": "bogus"}, headers=headers
-    ).status_code == 422
+    assert (
+        client.get("/auth/login-history", params={"outcome": "bogus"}, headers=headers).status_code
+        == 422
+    )
 
 
 def test_auth_login_history_pagination_and_bounds(client):
@@ -391,9 +378,7 @@ def test_auth_login_history_pagination_and_bounds(client):
     page_two_ids = {item["id"] for item in second["items"]}
     assert not page_one_ids & page_two_ids
 
-    assert (
-        client.get("/auth/login-history", params={"page": 0}, headers=headers).status_code == 422
-    )
+    assert client.get("/auth/login-history", params={"page": 0}, headers=headers).status_code == 422
     assert (
         client.get("/auth/login-history", params={"page_size": 0}, headers=headers).status_code
         == 422
