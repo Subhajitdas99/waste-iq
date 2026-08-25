@@ -1,0 +1,88 @@
+# ---------------------------------------------------------------------------
+# Waste-IQ — Production Compose override
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# All secrets are provided by the environment (shell, CI secret store, or a
+# root-level .env file that is git-ignored). Required variables fail fast at
+# config parse time when missing. No secrets are baked into images.
+#
+# The dev-only `agent` service is not part of the production stack.
+# ---------------------------------------------------------------------------
+
+services:
+  db:
+    restart: unless-stopped
+    # PostgreSQL is internal to the compose network in production; it is not
+    # exposed on the host.
+    ports: !reset []
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wasteiq}
+      POSTGRES_USER: ${POSTGRES_USER:-wasteiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    # Secrets come from the orchestrating environment, not backend/.env.
+    env_file: !reset []
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wasteiq}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wasteiq}
+      ENVIRONMENT: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set}
+      ADMIN_REGISTRATION_CODE: ${ADMIN_REGISTRATION_CODE:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PHONE: ${BOOTSTRAP_ADMIN_PHONE:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Waste-IQ}
+      VERIFICATION_TOKEN_EXPIRE_MINUTES: ${VERIFICATION_TOKEN_EXPIRE_MINUTES:-1440}
+      ENABLE_BACKGROUND_JOBS: ${ENABLE_BACKGROUND_JOBS:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      RELEASE: ${RELEASE:-unknown}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Temporary upload-processing directory. Persisted so an in-flight
+      # upload survives container replacement; durable image storage is
+      # Cloudinary (see docs/DEPLOYMENT_GUIDE.md).
+      - uploads_data:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Vite bakes these into the JS bundle and the CSP at build time.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_APP_NAME: ${VITE_APP_NAME:-Waste-IQ}
+        VITE_SITE_URL: ${VITE_SITE_URL:-http://localhost:5173}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+  agent:
+    # Dev-only service; excluded from the default production stack.
+    profiles:
+      - dev
+
+volumes:
+  uploads_data:

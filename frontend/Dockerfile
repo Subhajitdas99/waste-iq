@@ -6,6 +6,17 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+
+# Vite bakes VITE_* variables into the JS bundle and the CSP at build time.
+# Defaults preserve the existing local dev behavior; production overrides
+# these via Compose build args or --build-arg.
+ARG VITE_API_URL=http://localhost:8000
+ARG VITE_APP_NAME=Waste-IQ
+ARG VITE_SITE_URL=http://localhost:5173
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_APP_NAME=$VITE_APP_NAME \
+    VITE_SITE_URL=$VITE_SITE_URL
+
 RUN npm run build
 
 FROM nginx:1.27-alpine
