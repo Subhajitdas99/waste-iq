@@ -18,6 +18,8 @@
 11. [Security](#11-security)
 12. [Future AI Modules](#12-future-ai-modules)
 
+> Section 10.5 documents the [CI Pipeline & PR Gate](#105-ci-pipeline--pr-gate-wiq-v1-010) enforcement model.
+
 ---
 
 ## 1. Overview
@@ -737,6 +739,58 @@ flowchart TB
 | Docker | Uvicorn (Docker) | Nginx (Docker) | PostgreSQL 16 (Docker) |
 | CI/Testing | Pytest (GitHub Actions) | npm build | PostgreSQL 16 (Actions service) |
 | Production | Uvicorn (Render Web Service) | Static files (Render/CDN) | Render Managed PostgreSQL |
+
+---
+
+## 10.5 CI Pipeline & PR Gate (WIQ-V1-010)
+
+### Specialized Workflows Stay Path-Filtered
+
+Four specialized workflows run only when their declared `paths` filters match, which keeps expensive suites off irrelevant PRs:
+
+| Workflow | Runs when the change set touches | Jobs |
+|----------|----------------------------------|------|
+| Backend CI (`backend-ci.yml`) | `backend/**`, `.github/workflows/backend-ci.yml` | Lint (Ruff/Black), MyPy, migrations, Pytest ≥ 80 % coverage |
+| Frontend CI (`frontend-ci.yml`) | `frontend/**`, `.github/workflows/frontend-ci.yml` | ESLint, tests, production build |
+| Agent CI (`agent-ci.yml`) | `agent/**`, `.github/workflows/agent-ci.yml` | Ruff/Black, MyPy, Pytest ≥ 95 % coverage |
+| Docker CI (`docker-ci.yml`) | `backend/**`, `frontend/**`, compose files, `backend/.dockerignore`, `.github/workflows/docker-ci.yml` | Backend + frontend image builds, Compose config validation |
+
+Docker CI intentionally covers both application trees because both Docker images depend on them.
+
+### The PR Gate Is the Enforcement Check
+
+Because path-filtered workflows legitimately produce **no check at all** for docs-only or unrelated PRs, they cannot be used directly as required status checks in branch protection. Instead, `.github/workflows/pr-gate.yml` provides a single always-running check named **`PR Gate`** on every pull request targeting `main` or `develop`. It:
+
+1. recomputes the changed file set from the merge-base diff of the PR,
+2. classifies it into areas (backend / frontend / agent / docker) using rules that mirror the specialized workflows' filters exactly (`scripts/ci/pr_gate.py`),
+3. queries the GitHub Actions API for workflow runs on the same head SHA and requires every matching specialized workflow to have completed **successfully**, polling while runs are pending and failing if any required run failed, was cancelled, or never appeared,
+4. passes immediately for docs-only or otherwise irrelevant change sets without invoking any specialized suite.
+
+The gate is not an "always green" check: a failed Backend/Frontend/Agent/Docker CI run fails the gate, and a required workflow that was skipped or never ran for a relevant area also fails the gate after the polling window.
+
+### Change-Detection Matrix
+
+| Change set | Required workflows | Gate result when all succeed |
+|------------|--------------------|------------------------------|
+| `docs/**`, `*.md`, README, LICENSE, etc. | none | pass (no CI demanded) |
+| `backend/**` (incl. `backend/.dockerignore`) | Backend CI + Docker CI | pass |
+| `frontend/**` | Frontend CI + Docker CI | pass |
+| `agent/**` | Agent CI | pass |
+| `docker-compose.yml` / `docker-compose.prod.yml` | Docker CI | pass |
+| backend + frontend mixed | Backend CI + Frontend CI + Docker CI | pass |
+| `.github/workflows/backend-ci.yml` | Backend CI (self-validation) | pass |
+| `.github/workflows/frontend-ci.yml` / `agent-ci.yml` / `docker-ci.yml` | the corresponding workflow | pass |
+| `.github/workflows/pr-gate.yml`, `scripts/ci/**` | none (gate self-validates by running) | pass |
+| any required workflow failed/cancelled/timed out | — | **fail** |
+
+### Why Not Require Each Specialized Check Directly?
+
+- Path-filtered workflows produce no check run for non-matching PRs; a required check that never appears blocks merging forever.
+- Backend CI and Agent CI share the ambiguous job display name "Lint, Type-Check & Test", so job names are unsafe identifiers. The gate identifies workflows by their stable file path via the Actions API and exposes exactly one unique check name: **`PR Gate`**.
+
+### Permissions & Security
+
+The gate requests read-only permissions — `contents: read` (checkout), `checks: read` and `actions: read` (workflow-run correlation). No secrets are referenced. As with the existing CI workflows, the gate executes repository scripts from the checked-out merge commit on an ephemeral runner with no write access, so a malicious PR gains nothing beyond what existing CI already permits.
 
 ---
 

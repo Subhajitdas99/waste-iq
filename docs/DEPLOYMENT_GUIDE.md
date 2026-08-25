@@ -268,7 +268,7 @@ BACKEND_PORT=8000 / FRONTEND_PORT=8080     # host-side ports
 docker compose -f docker-compose.yml -f docker-compose.prod.yml build
 ```
 
-CI validates that both images build on every relevant PR (see `.github/workflows/docker-ci.yml`); images are not pushed by CI.
+CI validates that both images build on every relevant PR (see `.github/workflows/docker-ci.yml`); images are not pushed by CI. Enforcement is centralized in the **PR Gate** check (`.github/workflows/pr-gate.yml`), which branch protection on `main`/`develop` requires on every PR: it demands a green Docker CI run whenever backend, frontend, or Compose files change, while letting docs-only PRs pass without building anything (see `docs/SYSTEM_ARCHITECTURE.md § 10.5`).
 
 #### Starting the Stack
 
