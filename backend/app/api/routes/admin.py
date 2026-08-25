@@ -1,9 +1,13 @@
+from datetime import datetime
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_roles
 from app.models.user import User
 from app.schemas.admin import AnalyticsRead
+from app.schemas.audit import AdminLoginHistoryEntryRead, AdminLoginHistoryPageRead
 from app.schemas.dealer import (
     AdminDealerDetailRead,
     AdminDealerListPageRead,
@@ -16,12 +20,14 @@ from app.schemas.notification import (
 )
 from app.schemas.user import UserRead
 from app.services.admin import get_analytics, list_users
+from app.services.audit import AuditService
 from app.services.dealer_approval import AdminDealerApprovalService
 from app.services.notifications import NotificationBroadcaster
 
 router = APIRouter()
 
 _admin_dealer_approval_service = AdminDealerApprovalService()
+_audit_service = AuditService()
 _notification_broadcaster = NotificationBroadcaster()
 
 
@@ -114,4 +120,38 @@ def admin_broadcast_notification(
 ) -> NotificationBroadcastRead:
     return _notification_broadcaster.broadcast(
         db, payload=payload, broadcast_type=payload.type, actor=current_user
+    )
+
+
+@router.get("/login-history", response_model=AdminLoginHistoryPageRead)
+def admin_list_login_history(
+    actor_user_id: int | None = Query(default=None),
+    outcome: Literal["success", "failure"] | None = Query(default=None),
+    created_after: datetime | None = Query(default=None),
+    created_before: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> AdminLoginHistoryPageRead:
+    """Login attempts across all users (WIQ-V1-019), newest first.
+
+    Unknown-email failures stay unattributed (``actor_user_id``/``actor_email``
+    are null); the submitted address is never recorded or exposed.
+    """
+    items, total_items, total_pages = _audit_service.login_history(
+        db,
+        actor_user_id=actor_user_id,
+        outcome=outcome,
+        created_after=created_after,
+        created_before=created_before,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminLoginHistoryPageRead(
+        items=[AdminLoginHistoryEntryRead.model_validate(item) for item in items],
+        page=page,
+        page_size=page_size,
+        total_items=total_items,
+        total_pages=total_pages,
     )
