@@ -30,6 +30,29 @@ export interface AuthResponse {
   user: UserProfile;
 }
 
+export type LoginHistoryOutcome = "success" | "failure";
+
+export interface LoginHistoryEntry {
+  id: number;
+  outcome: LoginHistoryOutcome;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
+export interface LoginHistoryResponse {
+  items: LoginHistoryEntry[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
+
+export interface LoginHistoryParams {
+  page?: number;
+  page_size?: number;
+}
+
 export interface LoginPayload {
   email: string;
   password: string;

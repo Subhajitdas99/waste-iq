@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { UserProfile } from "@/types/auth";
+import type { LoginHistoryEntry, UserProfile } from "@/types/auth";
 import type { PickupRequest, PickupStatus } from "@/types/pickup";
 import type { CollectorLocation } from "@/types/map";
 import type { AppNotification } from "@/types/notification";
@@ -65,6 +65,23 @@ export function profileForUser(user: UserProfile): UserProfile {
       }
     : user;
 }
+
+const loginHistoryStore: LoginHistoryEntry[] = [
+  {
+    id: 9001,
+    outcome: "success",
+    ip_address: "203.0.113.10",
+    user_agent: "Mozilla/5.0 Waste-IQ Test Browser",
+    created_at: "2026-01-12T10:30:00Z",
+  },
+  {
+    id: 9002,
+    outcome: "failure",
+    ip_address: "198.51.100.8",
+    user_agent: "curl/8.0",
+    created_at: "2026-01-11T08:15:00Z",
+  },
+];
 
 function decodeTokenSubject(token: string | null): number | null {
   if (!token) {
@@ -426,6 +443,27 @@ export const handlers = [
     }
 
     return HttpResponse.json(profileForUser(user));
+  }),
+
+  http.get("*/auth/login-history", ({ request }) => {
+    const user = requireAuthorization(request);
+
+    if (!user) {
+      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(url.searchParams.get("page_size") ?? 10);
+    const { items, totalItems } = paginate(loginHistoryStore, page, pageSize);
+
+    return HttpResponse.json({
+      items,
+      page,
+      page_size: pageSize,
+      total_items: totalItems,
+      total_pages: Math.ceil(totalItems / pageSize),
+    });
   }),
 
   http.post("*/auth/verify-email", async ({ request }) => {

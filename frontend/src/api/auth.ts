@@ -3,6 +3,8 @@ import apiClient, { type ApiRequestConfig } from "@/api/client";
 import type {
   ActionMessageResponse,
   AuthResponse,
+  LoginHistoryParams,
+  LoginHistoryResponse,
   LoginPayload,
   RegisterPayload,
   UserProfile,
@@ -43,6 +45,19 @@ export async function register(payload: RegisterPayload): Promise<AuthResponse> 
 
 export async function getProfile(): Promise<UserProfile> {
   const response = await apiClient.get<UserProfile>("/auth/me");
+  return response.data;
+}
+
+export async function getLoginHistory(
+  params: LoginHistoryParams = {},
+): Promise<LoginHistoryResponse> {
+  const response = await apiClient.get<LoginHistoryResponse>("/auth/login-history", {
+    params: {
+      page: 1,
+      page_size: 10,
+      ...params,
+    },
+  });
   return response.data;
 }
 
