@@ -168,6 +168,12 @@ export function LoginPage() {
               Remember me
             </label>
           </div>
+          <Link
+            to="/forgot-password"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Forgot password?
+          </Link>
         </div>
 
         <Button

@@ -66,3 +66,12 @@ export interface RegisterPayload {
   role: UserRole;
   adminCode?: string;
 }
+
+export interface ForgotPasswordPayload {
+  email: string;
+}
+
+export interface ResetPasswordPayload {
+  token: string;
+  newPassword: string;
+}

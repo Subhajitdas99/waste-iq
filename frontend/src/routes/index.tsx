@@ -28,6 +28,12 @@ const RegisterPage = lazy(() =>
 const VerifyEmailPage = lazy(() =>
   import("../pages/auth/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage }))
 );
+const ForgotPasswordPage = lazy(() =>
+  import("../pages/auth/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage }))
+);
+const ResetPasswordPage = lazy(() =>
+  import("../pages/auth/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage }))
+);
 const NotFoundPage = lazy(() =>
   import("../pages/public/NotFoundPage").then((m) => ({ default: m.NotFoundPage }))
 );
@@ -172,10 +178,22 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "forgot-password",
+        element: (
+          <GuestRoute>{lazyPage(ForgotPasswordPage)}</GuestRoute>
+        ),
+      },
+      {
         // Intentionally not wrapped in GuestRoute: logged-in users must be
         // able to complete verification from a link too.
         path: "verify-email",
         element: lazyPage(VerifyEmailPage),
+      },
+      {
+        // Intentionally not wrapped in GuestRoute either: reset links arrive
+        // by email and must work whatever the caller's session state is.
+        path: "reset-password",
+        element: lazyPage(ResetPasswordPage),
       },
     ],
   },

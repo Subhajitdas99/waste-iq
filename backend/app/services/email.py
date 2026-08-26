@@ -167,6 +167,12 @@ def build_verification_link(token: str) -> str:
     return f"{base_url}/verify-email?{urlencode({'token': token})}"
 
 
+def build_password_reset_link(token: str) -> str:
+    """Absolute link to the frontend's reset-password page."""
+    base_url = settings.frontend_url.rstrip("/")
+    return f"{base_url}/reset-password?{urlencode({'token': token})}"
+
+
 def send_verification_email(user: User, token: str) -> None:
     """Render and deliver the verification email for ``user``.
 
@@ -193,6 +199,40 @@ def send_verification_email(user: User, token: str) -> None:
         OutgoingEmail(
             to_email=user.email,
             subject="Verify your Waste-IQ email address",
+            html_body=html_body,
+            text_body=text_body,
+        )
+    )
+
+
+def send_password_reset_email(user: User, token: str) -> None:
+    """Render and deliver the password-reset email for ``user`` (WIQ-V1-015).
+
+    Raises :class:`EmailDeliveryError` when the configured provider cannot
+    deliver; the token is part of the rendered link only and never logged.
+    """
+    reset_url = build_password_reset_link(token)
+    expires_in_minutes = settings.password_reset_token_expire_minutes
+
+    html_body = _TEMPLATE_ENV.get_template("password_reset_email.html").render(
+        name=user.name,
+        reset_url=reset_url,
+        expires_in_minutes=expires_in_minutes,
+    )
+    text_body = (
+        f"Hi {user.name},\n\n"
+        f"We received a request to reset your Waste-IQ password. Open this link "
+        f"to choose a new password:\n"
+        f"{reset_url}\n\n"
+        f"The link expires in {expires_in_minutes} minute(s) and can be used only "
+        "once. If you did not request a password reset, you can safely ignore "
+        "this email — your current password keeps working."
+    )
+
+    send_email(
+        OutgoingEmail(
+            to_email=user.email,
+            subject="Reset your Waste-IQ password",
             html_body=html_body,
             text_body=text_body,
         )

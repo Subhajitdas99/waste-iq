@@ -306,5 +306,179 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(decision["decision"], {0: "pass", 1: "fail", 2: "retry"}[expected])
 
 
+class PullRequest100RegressionTests(unittest.TestCase):
+    """Regression tests for the PR #100 gate outage of 2026-08-26.
+
+    Backend CI, Frontend CI and Docker CI all completed successfully for the
+    PR head commit ``20fb16d…`` while PR Gate polled the Actions API with
+    ``b3a65d9…`` — the ephemeral ``refs/pull/100/merge`` test-merge commit
+    exposed as ``github.sha`` in pull_request events. The server-side
+    ``head_sha`` filter matched zero runs, so every poll returned
+    "no workflow run found yet" until the gate timed out and failed after
+    ~40 minutes despite fully green specialized CI.
+
+    The fixture below mirrors the real API response for
+    ``repos/Subhajitdas99/waste-iq/actions/runs?head_sha=20fb16d…`` exactly.
+    """
+
+    PR_HEAD = "20fb16d20dea38fb41595fc707af17dac2d654c9"
+    MERGE_COMMIT = "b3a65d9a82ad014963bf8ca7d1b5462bdb00daad"
+    OLDER_COMMIT = "0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0"
+    OTHER_BRANCH_COMMIT = "1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1"
+    HEAD_BRANCH = "feature/wiq-v1-015-forgot-reset-password"
+
+    BACKEND = ".github/workflows/backend-ci.yml"
+    DOCKER = ".github/workflows/docker-ci.yml"
+    FRONTEND = ".github/workflows/frontend-ci.yml"
+    REQUIRED = [BACKEND, DOCKER, FRONTEND]
+
+    def _pull_request_ref(self):
+        return {
+            "base": {
+                "ref": "develop",
+                "repo": {"id": 1268196675, "name": "waste-iq"},
+                "sha": "e1cc69d60e026660fea09e7d4a24f4bbb9b04441",
+            },
+            "head": {
+                "ref": self.HEAD_BRANCH,
+                "repo": {"id": 1268196675, "name": "waste-iq"},
+                "sha": self.PR_HEAD,
+            },
+            "id": 4364793184,
+            "number": 100,
+        }
+
+    def _fixture_run(self, run_id, name, path, conclusion):
+        return {
+            "id": run_id,
+            "name": name,
+            "path": path,
+            "event": "pull_request",
+            "status": "completed",
+            "conclusion": conclusion,
+            "head_sha": self.PR_HEAD,
+            "head_branch": self.HEAD_BRANCH,
+            "run_attempt": 1,
+            "created_at": "2026-08-26T07:15:17Z",
+            "pull_requests": [self._pull_request_ref()],
+        }
+
+    def _fixture_runs(self):
+        """The four workflow runs GitHub actually recorded for PR #100."""
+        return [
+            self._fixture_run(32941864358, "PR Gate", ".github/workflows/pr-gate.yml", "failure"),
+            self._fixture_run(32941864230, "Backend CI", self.BACKEND, "success"),
+            self._fixture_run(32941864282, "Frontend CI", self.FRONTEND, "success"),
+            self._fixture_run(32941864319, "Docker CI", self.DOCKER, "success"),
+        ]
+
+    def _payload(self, runs=None):
+        runs = self._fixture_runs() if runs is None else runs
+        return {"total_count": len(runs), "workflow_runs": runs}
+
+    def _verify(self, head_sha, runs=None):
+        return pr_gate.verify_required_workflows(
+            list(self.REQUIRED), self._payload(runs), head_sha
+        )
+
+    def test_fixture_matches_real_pr100_identity_fields(self):
+        for run in self._fixture_runs():
+            with self.subTest(run=run["name"]):
+                self.assertEqual(run["event"], "pull_request")
+                self.assertEqual(run["head_sha"], self.PR_HEAD)
+                self.assertEqual(run["head_branch"], self.HEAD_BRANCH)
+                self.assertEqual(run["pull_requests"][0]["number"], 100)
+
+    def test_querying_with_merge_commit_reproduces_the_outage(self):
+        """The pre-fix behaviour: github.sha (= merge commit) finds nothing."""
+        decision = self._verify(self.MERGE_COMMIT)
+        self.assertEqual(decision["decision"], "retry")
+        self.assertEqual(decision["head_sha"], self.MERGE_COMMIT)
+        states = {wf: res["state"] for wf, res in decision["required"].items()}
+        self.assertEqual(states, {wf: "retry" for wf in self.REQUIRED})
+
+    def test_merge_commit_query_diagnoses_the_discovery_mismatch(self):
+        decision = self._verify(self.MERGE_COMMIT)
+        backend_detail = decision["required"][self.BACKEND]["detail"]
+        self.assertIn("no workflow run found yet", backend_detail)
+        # The green runs ARE visible in the payload — under their own SHA,
+        # so the diagnostic must surface that commit prefix.
+        self.assertIn(self.PR_HEAD[:12], backend_detail)
+        self.assertTrue(
+            all(res["state"] != "pass" for res in decision["required"].values()),
+            "merge-commit query must never satisfy the gate",
+        )
+
+    def test_querying_with_pr_head_sha_discovers_green_runs_and_passes(self):
+        decision = self._verify(self.PR_HEAD)
+        self.assertEqual(decision["decision"], "pass")
+        states = {wf: res["state"] for wf, res in decision["required"].items()}
+        self.assertEqual(states, {wf: "pass" for wf in self.REQUIRED})
+        self.assertIn("run_id=32941864230", decision["required"][self.BACKEND]["detail"])
+        self.assertIn("run_id=32941864282", decision["required"][self.FRONTEND]["detail"])
+        self.assertIn("run_id=32941864319", decision["required"][self.DOCKER]["detail"])
+
+    def test_only_an_older_commits_success_never_passes(self):
+        runs = [
+            dict(run, head_sha=self.OLDER_COMMIT)
+            for run in self._fixture_runs()
+            if run["path"] in self.REQUIRED
+        ]
+        decision = self._verify(self.PR_HEAD, runs)
+        self.assertEqual(decision["decision"], "retry")
+
+    def test_only_another_branchs_success_never_passes(self):
+        runs = [
+            dict(run, head_sha=self.OTHER_BRANCH_COMMIT)
+            for run in self._fixture_runs()
+            if run["path"] in self.REQUIRED
+        ]
+        decision = self._verify(self.PR_HEAD, runs)
+        self.assertEqual(decision["decision"], "retry")
+        self.assertNotEqual(
+            {res["state"] for res in decision["required"].values()}, {"pass"}
+        )
+
+    def test_cli_exit_codes_reproduce_incident_and_fix(self):
+        import contextlib
+        import io
+        import tempfile
+
+        plan = {"required_workflows": list(self.REQUIRED)}
+        cases = (
+            # (queried SHA, expected exit code) — merge commit retried into
+            # timeout pre-fix; PR head commit passes post-fix.
+            (self.MERGE_COMMIT, 2),
+            (self.PR_HEAD, 0),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            plan_path = os.path.join(tmp, "plan.json")
+            runs_path = os.path.join(tmp, "runs.json")
+            with open(plan_path, "w", encoding="utf-8") as handle:
+                json.dump(plan, handle)
+            with open(runs_path, "w", encoding="utf-8") as handle:
+                json.dump(self._payload(), handle)
+
+            for head_sha, expected in cases:
+                with self.subTest(head_sha=head_sha[:12]):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        exit_code = pr_gate.main(
+                            [
+                                "verify",
+                                "--plan",
+                                plan_path,
+                                "--runs",
+                                runs_path,
+                                "--head-sha",
+                                head_sha,
+                            ]
+                        )
+                    self.assertEqual(exit_code, expected)
+                    decision = json.loads(stdout.getvalue())
+                    expected_decision = {2: "retry", 0: "pass"}[expected]
+                    self.assertEqual(decision["decision"], expected_decision)
+
+
 if __name__ == "__main__":
     unittest.main()

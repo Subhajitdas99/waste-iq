@@ -51,6 +51,19 @@ class ResendVerificationRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=8, max_length=64)
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
 class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str

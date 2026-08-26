@@ -19,10 +19,12 @@ from app.schemas.audit import LoginHistoryEntryRead, LoginHistoryPageRead
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     VerifyEmailRequest,
 )
 from app.schemas.user import UserRead
@@ -40,6 +42,11 @@ from app.services.email_verification import (
     complete_verification_email_delivery,
     EmailVerificationError,
     verify_email as verify_email_service,
+)
+from app.services.password_reset import (
+    complete_password_reset_email_delivery,
+    PasswordResetError,
+    reset_password as reset_password_service,
 )
 from app.services.refresh_token import InvalidRefreshTokenError, RefreshTokenService
 
@@ -188,6 +195,49 @@ def resend_verification(
     return {
         "message": "If the email is registered and unverified, a verification email has been sent."
     }
+
+
+@router.post("/forgot-password")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Request a password-reset email (WIQ-V1-015).
+
+    Public and rate-limited per IP. The response is identical whether or not
+    the email is registered, so the endpoint cannot be used for account
+    enumeration. Delivery is dispatched as a background task off the request
+    path; the reset token is generated inside the task and never appears in
+    any response or log.
+    """
+    check_rate_limit(request, "forgot_password")
+    user = get_user_by_email(db, normalize_email(payload.email))
+    if user is not None:
+        background_tasks.add_task(complete_password_reset_email_delivery, user.id)
+    return {"message": "If the email is registered, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Reset the password with a signed one-time token (WIQ-V1-015).
+
+    Public. Invalid, expired, malformed, reused, and stale tokens all produce
+    the same generic 400 response so the endpoint reveals nothing about
+    accounts or tokens. On success every refresh session of the account is
+    revoked (all devices must sign in again).
+    """
+    try:
+        reset_password_service(db, payload.token, payload.new_password)
+    except PasswordResetError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"message": "Password has been reset successfully"}
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
