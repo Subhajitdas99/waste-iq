@@ -424,10 +424,39 @@ pytest tests/ -k "pickup" -v
 
 - ✅ Must target `develop` (not `main`) unless it is a hotfix or release
 - ✅ Must pass all CI checks (backend lint/test + frontend lint/build)
+- ✅ Must pass the **PR Gate** check (see below)
 - ✅ Must have at least **1 approved review** from a maintainer
 - ✅ Must not have unresolved review comments
 - ✅ Must be up-to-date with `develop` before merging
 - ❌ Do not force-push to a PR branch after review has started
+
+### CI Enforcement — the PR Gate
+
+The specialized workflows (`Backend CI`, `Frontend CI`, `Agent CI`, `Docker CI`) stay
+path-filtered, so a docs-only PR legitimately runs none of them. Enforcement therefore
+happens through one always-running check, **`PR Gate`** (`.github/workflows/pr-gate.yml`),
+which is the status check required by branch protection on `main` and `develop`.
+
+How it works:
+
+1. The gate recomputes which areas the PR changed (backend / frontend / agent / docker /
+   compose) using rules that mirror the path filters of the specialized workflows.
+2. It then requires every *relevant* specialized workflow to have completed successfully
+   for the same commit. Irrelevant workflows are allowed to remain skipped.
+3. Docs-only PRs (e.g. `docs/*` branches) pass without running any expensive suite.
+
+| Changed area | Required to succeed |
+|--------------|---------------------|
+| `backend/**` | Backend CI + Docker CI |
+| `frontend/**` | Frontend CI + Docker CI |
+| `agent/**` | Agent CI |
+| `docker-compose*.yml`, `backend/.dockerignore` | Docker CI |
+| `.github/workflows/*.yml` (CI changes) | the corresponding workflow (the gate validates itself) |
+| docs / markdown only | nothing — gate passes |
+
+A failed required workflow fails the PR Gate; there is no "always green" bypass. See
+[`docs/SYSTEM_ARCHITECTURE.md § 10.5`](docs/SYSTEM_ARCHITECTURE.md#105-ci-pipeline--pr-gate-wiq-v1-010)
+for details.
 
 ---
 
@@ -491,6 +520,7 @@ A contribution is considered complete when **all** of the following are true:
 - [ ] At least 1 maintainer has approved the PR
 - [ ] All review comments are resolved
 - [ ] CI pipeline (backend + frontend) passes on the PR branch
+- [ ] The **PR Gate** check passes (it enforces whichever specialized CI is relevant to the change set; docs-only PRs pass without them)
 - [ ] Branch is up to date with `develop`
 - [ ] No merge conflicts
 

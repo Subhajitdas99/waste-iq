@@ -1,0 +1,131 @@
+name: PR Gate
+
+# Single stable enforcement check for branch protection on main/develop.
+# Specialized workflows (Backend/Frontend/Agent/Docker CI) stay path-filtered;
+# this gate always runs, recomputes which areas changed, and then requires the
+# matching specialized workflows to have completed successfully for the same
+# head SHA. Docs-only PRs pass without triggering expensive CI.
+#
+# Decision logic lives in scripts/ci/pr_gate.py (offline unit tested).
+"on":
+  pull_request:
+    branches:
+      - main
+      - develop
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  # checks:read + actions:read are required to query the Actions API for
+  # workflow-run results of the specialized CI workflows on this PR's head
+  # SHA. No write access and no secrets are involved.
+  checks: read
+  actions: read
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: PR Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed areas and required workflows
+        id: plan
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BASE_SHA="$(git merge-base "origin/${BASE_REF}" "${HEAD_SHA}")"
+          git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | sort -u > /tmp/gate-changed-files.txt
+          python3 scripts/ci/pr_gate.py classify \
+            --changed-files /tmp/gate-changed-files.txt \
+            --output /tmp/gate-plan.json
+          REQUIRED_COUNT="$(python3 -c 'import json; print(len(json.load(open("/tmp/gate-plan.json"))["required_workflows"]))')"
+          echo "required_count=${REQUIRED_COUNT}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### PR Gate plan"
+            echo ""
+            echo '```json'
+            cat /tmp/gate-plan.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Skip specialized CI verification (no relevant areas changed)
+        if: ${{ steps.plan.outputs.required_count == '0' }}
+        run: echo "Change set does not touch application/Docker/CI areas; nothing further to enforce."
+
+      - name: Verify required CI workflows succeeded
+        if: ${{ steps.plan.outputs.required_count != '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          POLL_INTERVAL_SECONDS: "20"
+          POLL_TIMEOUT_SECONDS: "2400"
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + POLL_TIMEOUT_SECONDS))
+          while true; do
+            if ! gh api "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" > /tmp/gate-runs.json; then
+              echo "GitHub API request failed; retrying."
+              [ "${SECONDS}" -lt "${deadline}" ] || { echo "::error::Timed out querying workflow runs."; exit 1; }
+              sleep "${POLL_INTERVAL_SECONDS}"
+              continue
+            fi
+            TOTAL_COUNT="$(python3 -c 'import json; print(json.load(open("/tmp/gate-runs.json"))["total_count"])')"
+            RUN_COUNT="$(python3 -c 'import json; print(len(json.load(open("/tmp/gate-runs.json"))["workflow_runs"]))')"
+            if [ "${TOTAL_COUNT}" -gt "${RUN_COUNT}" ]; then
+              echo "::warning::More than 100 runs for this head SHA; oldest runs were truncated."
+            fi
+            set +e
+            python3 scripts/ci/pr_gate.py verify \
+              --plan /tmp/gate-plan.json \
+              --runs /tmp/gate-runs.json \
+              --head-sha "${HEAD_SHA}" > /tmp/gate-decision.json
+            VERIFY_STATUS=$?
+            set -e
+            case "${VERIFY_STATUS}" in
+              0)
+                {
+                  echo "### PR Gate result"
+                  echo ""
+                  echo '```json'
+                  cat /tmp/gate-decision.json
+                  echo '```'
+                } >> "$GITHUB_STEP_SUMMARY"
+                echo "All required CI workflows succeeded."
+                exit 0
+                ;;
+              1)
+                echo "::error::One or more required CI workflows failed or were cancelled:"
+                cat /tmp/gate-decision.json
+                exit 1
+                ;;
+              2)
+                if [ "${SECONDS}" -ge "${deadline}" ]; then
+                  echo "::error::Timed out waiting for required CI workflows to complete:"
+                  cat /tmp/gate-decision.json
+                  exit 1
+                fi
+                echo "Required CI workflows still pending; retrying in ${POLL_INTERVAL_SECONDS}s."
+                sleep "${POLL_INTERVAL_SECONDS}"
+                ;;
+              *)
+                echo "::error::Unexpected verify exit code: ${VERIFY_STATUS}"
+                cat /tmp/gate-decision.json
+                exit 1
+                ;;
+            esac
+          done
