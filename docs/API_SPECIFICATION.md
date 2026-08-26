@@ -92,6 +92,14 @@ Authentication endpoints are protected by an in-memory sliding-window rate limit
 - Login is **not** gated on verification; unverified users may use the platform (the UI surfaces a resend banner).
 - **Email delivery:** `EMAIL_BACKEND=console` (default) logs a redacted delivery summary to the application log (token material is never logged); `EMAIL_BACKEND=smtp` sends real mail via the configured SMTP host. See `SYSTEM_ARCHITECTURE.md`.
 
+### Password Reset (WIQ-V1-015)
+
+- **Reset tokens** are signed JWTs (`HS256`, same secret as access tokens) carrying `purpose: "password_reset"`, a random `jti`, and `exp` defaulting to `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` (30 min). They are never stored server-side.
+- **Single-use without storage:** each token embeds a fingerprint (truncated SHA-256) of the user's password hash at issuance. A successful reset changes the hash, so a replayed token — and every other outstanding reset token — fails validation. A regular change-password invalidates outstanding reset tokens the same way. No database table or migration is involved.
+- On success, `POST /auth/reset-password` revokes **every** refresh session of the account (all devices must sign in again), records a `password_reset` audit event, and rejects re-using the current password as the new one.
+- **Enumeration safety:** `POST /auth/forgot-password` always returns the identical `200` message whether or not the email exists, and is rate-limited per IP (`FORGOT_PASSWORD_RATE_LIMIT_MAX`). Every unusable reset token returns the identical `400 {"detail": "Invalid or expired reset token"}`.
+- Reset emails are dispatched as background tasks off the request path; delivery failure never fails the request and token material is never logged.
+
 ---
 
 ## 2. Data Types & Common Schemas
@@ -520,6 +528,89 @@ whether or not the email belongs to an unverified account.
 | `200` | Always (when request body is valid) — no information is leaked about whether the account exists or is already verified |
 | `422` | Missing/invalid request body |
 | `429` | Rate limit exceeded (`RESEND_VERIFICATION_RATE_LIMIT_MAX` per IP, with `Retry-After` header) |
+
+---
+
+### `POST /auth/forgot-password`
+
+Request a password-reset email. Enumeration-safe: the response is identical
+whether or not the email belongs to a registered account. The reset token is
+generated inside the background delivery task and never appears in any
+response or log.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "email": "riya@example.com"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `email` | string | Yes | Valid email format |
+
+**Response `200 OK`:**
+
+```json
+{
+  "message": "If the email is registered, a password reset link has been sent."
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Always (when request body is valid) — no information is leaked about whether the account exists |
+| `422` | Missing/invalid request body |
+| `429` | Rate limit exceeded (`FORGOT_PASSWORD_RATE_LIMIT_MAX` per IP, with `Retry-After` header) |
+
+---
+
+### `POST /auth/reset-password`
+
+Reset the password using a signed one-time token from the reset email. Public.
+Invalid, expired, malformed, reused, and stale tokens all produce the same
+generic `400`. On success every refresh session of the account is revoked
+(all devices must sign in again) and access tokens remain valid only until
+they expire.
+
+| Field | Value |
+|-------|-------|
+| **Auth Required** | No (public) |
+| **Content-Type** | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "new_password": "NewSecurePassword456!"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `token` | string | Yes | Signed JWT with `purpose: "password_reset"`; expires after `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`; single-use |
+| `new_password` | string | Yes | 8–64 characters, must differ from the current password |
+
+**Response `200 OK`:**
+
+```json
+{
+  "message": "Password has been reset successfully"
+}
+```
+
+| Status | Scenario |
+|--------|----------|
+| `200` | Password changed; every refresh session revoked; `password_reset` audit event recorded |
+| `400` | Invalid/expired/malformed/reused token, or new password equals the current password |
+| `422` | Missing/invalid request body (missing fields, password out of 8–64 range) |
 
 ---
 

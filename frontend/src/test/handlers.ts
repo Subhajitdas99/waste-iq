@@ -509,6 +509,48 @@ export const handlers = [
     });
   }),
 
+  http.post("*/auth/forgot-password", async ({ request }) => {
+    const body = (await request.json()) as { email?: string };
+
+    if (body.email === "rate-limited@example.com") {
+      return HttpResponse.json(
+        { detail: "Rate limit exceeded" },
+        { status: 429, headers: { "Retry-After": "300" } },
+      );
+    }
+    if (body.email === "network-error@example.com") {
+      return new HttpResponse(null, { status: 500 });
+    }
+
+    // Identical response whether or not the account exists (enumeration-safe).
+    return HttpResponse.json({
+      message: "If the email is registered, a password reset link has been sent.",
+    });
+  }),
+
+  http.post("*/auth/reset-password", async ({ request }) => {
+    const body = (await request.json()) as {
+      token?: string;
+      new_password?: string;
+    };
+
+    if (!body.new_password || body.new_password.length < 8) {
+      return HttpResponse.json(
+        { detail: "Invalid request body" },
+        { status: 422 },
+      );
+    }
+
+    if (body.token === "reset-token-expired" || !body.token) {
+      return HttpResponse.json(
+        { detail: "Invalid or expired reset token" },
+        { status: 400 },
+      );
+    }
+
+    return HttpResponse.json({ message: "Password has been reset successfully" });
+  }),
+
   http.get("*/pickup-requests", () => {
     return HttpResponse.json([
       createPickupRequest({ id: 1, status: "pending" }),

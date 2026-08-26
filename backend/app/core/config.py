@@ -150,6 +150,12 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    password_reset_token_expire_minutes: int = Field(
+        default=30,
+        alias="PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",
+        gt=0,
+    )
+
     rate_limit_window_seconds: int = Field(
         default=60,
         alias="RATE_LIMIT_WINDOW_SECONDS",

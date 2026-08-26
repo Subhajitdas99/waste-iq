@@ -3,10 +3,12 @@ import apiClient, { type ApiRequestConfig } from "@/api/client";
 import type {
   ActionMessageResponse,
   AuthResponse,
+  ForgotPasswordPayload,
   LoginHistoryParams,
   LoginHistoryResponse,
   LoginPayload,
   RegisterPayload,
+  ResetPasswordPayload,
   UserProfile,
 } from "@/types/auth";
 
@@ -93,5 +95,29 @@ export async function resendVerification(
     ActionMessageResponse,
     AxiosResponse<ActionMessageResponse>
   >("/auth/resend-verification", { email }, publicRequestConfig);
+  return response.data;
+}
+
+export async function forgotPassword(
+  payload: ForgotPasswordPayload
+): Promise<ActionMessageResponse> {
+  const response = await apiClient.post<
+    ActionMessageResponse,
+    AxiosResponse<ActionMessageResponse>
+  >("/auth/forgot-password", payload, publicRequestConfig);
+  return response.data;
+}
+
+export async function resetPassword(
+  payload: ResetPasswordPayload
+): Promise<ActionMessageResponse> {
+  const response = await apiClient.post<
+    ActionMessageResponse,
+    AxiosResponse<ActionMessageResponse>
+  >(
+    "/auth/reset-password",
+    { token: payload.token, new_password: payload.newPassword },
+    publicRequestConfig
+  );
   return response.data;
 }
