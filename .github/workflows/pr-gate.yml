@@ -68,10 +68,14 @@ jobs:
 
       - name: Verify required CI workflows succeeded
         if: ${{ steps.plan.outputs.required_count != '0' }}
+        # Workflow runs record the PR head commit as head_sha; github.sha on
+        # pull_request events is instead the ephemeral refs/pull/N/merge
+        # test-merge commit (PR #100 outage: querying by it matched zero runs
+        # and the gate timed out while Backend/Frontend/Docker CI were green).
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           POLL_INTERVAL_SECONDS: "20"
           POLL_TIMEOUT_SECONDS: "2400"
         run: |

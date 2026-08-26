@@ -151,6 +151,25 @@ def _latest_runs_for(runs: List[dict], workflow_path: str, head_sha: str) -> Opt
     return max(candidates, key=lambda r: int(r.get("id") or 0))
 
 
+def _other_head_shas(runs: List[dict], head_sha: str, limit: int = 5) -> List[str]:
+    """Return short prefixes of commits other than ``head_sha`` in ``runs``.
+
+    Diagnostic helper only: when no run matches the verified SHA, listing the
+    commits that ARE visible turns a silent discovery mismatch (e.g. polling
+    with the pull_request merge commit instead of the PR head commit, as in
+    the PR #100 outage) into an immediately readable log line.
+    """
+    excluded = head_sha.lower()
+    seen: List[str] = []
+    for run in runs:
+        sha = (run.get("head_sha") or "").lower()
+        if sha and sha != excluded and sha not in seen:
+            seen.append(sha)
+            if len(seen) >= limit:
+                break
+    return [sha[:12] for sha in seen]
+
+
 def verify_required_workflows(
     required_workflows: List[str],
     runs_payload: dict,
@@ -170,7 +189,15 @@ def verify_required_workflows(
         latest = _latest_runs_for(runs, workflow_path, head_sha)
         if latest is None:
             state = "retry"
-            detail = "no workflow run found yet"
+            others = _other_head_shas(runs, head_sha)
+            if runs and others:
+                detail = (
+                    f"no workflow run found yet; {len(runs)} run(s) visible "
+                    f"for other commits ({', '.join(others)}) - verify the "
+                    f"queried SHA is the PR head commit"
+                )
+            else:
+                detail = "no workflow run found yet"
         else:
             status = latest.get("status")
             conclusion = latest.get("conclusion")
