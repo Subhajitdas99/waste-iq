@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_roles
+from app.core.dependencies import get_db, require_roles, require_verified_roles
 from app.models.user import User
 from app.schemas.collector import CollectorCompleteRequest
 from app.schemas.pickup_request import (
@@ -69,7 +69,7 @@ def pickup_detail(
 def accept_pickup(
     pickup_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return accept_pickup_request(db, current_user, pickup_id)
 
@@ -78,7 +78,7 @@ def accept_pickup(
 def start_pickup(
     pickup_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return mark_pickup_request_on_the_way(db, current_user, pickup_id)
 
@@ -87,7 +87,7 @@ def start_pickup(
 def collect_pickup(
     pickup_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return mark_pickup_request_collected(db, current_user, pickup_id)
 
@@ -97,7 +97,7 @@ def complete_pickup(
     pickup_id: int,
     payload: CollectorCompleteRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return complete_pickup_request(db, current_user, pickup_id, payload.weight_kg)
 
@@ -106,7 +106,7 @@ def complete_pickup(
 def cancel_pickup(
     pickup_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return cancel_pickup_request_assignment(db, current_user, pickup_id)
 
@@ -145,7 +145,7 @@ def assigned_requests(
 def accept_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return accept_pickup_request(db, current_user, request_id)
 
@@ -154,7 +154,7 @@ def accept_request(
 def start_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return mark_pickup_request_on_the_way(db, current_user, request_id)
 
@@ -163,7 +163,7 @@ def start_request(
 def collect_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return mark_pickup_request_collected(db, current_user, request_id)
 
@@ -173,6 +173,6 @@ def complete_request(
     request_id: int,
     payload: CollectorCompleteRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return complete_pickup_request(db, current_user, request_id, payload.weight_kg)

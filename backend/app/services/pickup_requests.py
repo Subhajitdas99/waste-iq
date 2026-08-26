@@ -41,14 +41,33 @@ def _serialize_assignment(pickup_request: PickupRequest) -> CollectorAssignmentR
     )
 
 
-def _to_schema(pickup_request: PickupRequest) -> PickupRequestRead:
+def _should_expose_phone(pickup_request: PickupRequest, viewer: User | None) -> bool:
+    if viewer is None:
+        return False
+    if getattr(viewer, "role", None) == "admin":
+        return True
+    if viewer.id == pickup_request.user_id:
+        return True
+    if (
+        getattr(viewer, "role", None) == "collector"
+        and pickup_request.assignment is not None
+        and pickup_request.assignment.collector_id == viewer.id
+    ):
+        return True
+    return False
+
+
+def _to_schema(pickup_request: PickupRequest, viewer: User | None = None) -> PickupRequestRead:
     assignment = _serialize_assignment(pickup_request)
+    citizen_phone = (
+        pickup_request.citizen.phone if _should_expose_phone(pickup_request, viewer) else None
+    )
 
     return PickupRequestRead(
         id=pickup_request.id,
         user_id=pickup_request.user_id,
         citizen_name=pickup_request.citizen.name,
-        citizen_phone=pickup_request.citizen.phone,
+        citizen_phone=citizen_phone,
         waste_type=pickup_request.waste_type,
         category=pickup_request.category,
         confidence=pickup_request.confidence,
@@ -67,14 +86,18 @@ def _to_schema(pickup_request: PickupRequest) -> PickupRequestRead:
     )
 
 
-def _to_nearby_schema(pickup_request: PickupRequest, distance_km: float) -> NearbyPickupRequestRead:
+def _to_nearby_schema(
+    pickup_request: PickupRequest, distance_km: float, viewer: User | None = None
+) -> NearbyPickupRequestRead:
     return NearbyPickupRequestRead(
-        **_to_schema(pickup_request).model_dump(), distance_km=distance_km
+        **_to_schema(pickup_request, viewer=viewer).model_dump(), distance_km=distance_km
     )
 
 
-def _to_detail_schema(pickup_request: PickupRequest) -> PickupRequestDetailRead:
-    base = _to_schema(pickup_request)
+def _to_detail_schema(
+    pickup_request: PickupRequest, viewer: User | None = None
+) -> PickupRequestDetailRead:
+    base = _to_schema(pickup_request, viewer=viewer)
     timeline = [
         PickupRequestTimelineEventRead(
             id=event.id,
@@ -167,7 +190,7 @@ def create_pickup_request(
     )
     _dispatcher.notify_pickup_created(db, pickup_request)
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
 
 
 def list_pickup_requests_for_user(db: Session, user: User) -> list[PickupRequestRead]:
@@ -184,7 +207,7 @@ def list_pickup_requests_for_user(db: Session, user: User) -> list[PickupRequest
         )
 
     requests = db.execute(statement).unique().scalars().all()
-    return [_to_schema(item) for item in requests]
+    return [_to_schema(item, viewer=user) for item in requests]
 
 
 def list_available_pickup_requests_for_collector(db: Session) -> list[PickupRequestRead]:
@@ -195,7 +218,7 @@ def list_available_pickup_requests_for_collector(db: Session) -> list[PickupRequ
     )
 
     requests = db.execute(statement).unique().scalars().all()
-    return [_to_schema(item) for item in requests]
+    return [_to_schema(item, viewer=None) for item in requests]
 
 
 def list_nearby_pickup_requests_for_collector(
@@ -207,7 +230,7 @@ def list_nearby_pickup_requests_for_collector(
     nearby_requests = _repository.nearby_pickups_with_distance(db, latitude, longitude, radius_km)
 
     return [
-        _to_nearby_schema(pickup_request, distance_km)
+        _to_nearby_schema(pickup_request, distance_km, viewer=None)
         for pickup_request, distance_km in nearby_requests
     ]
 
@@ -233,7 +256,7 @@ def list_assigned_pickup_requests_for_collector(
     )
 
     requests = db.execute(statement).unique().scalars().all()
-    return [_to_schema(item) for item in requests]
+    return [_to_schema(item, viewer=collector) for item in requests]
 
 
 def get_pickup_request_for_user(
@@ -244,7 +267,7 @@ def get_pickup_request_for_user(
         return None
 
     _enforce_request_access(pickup_request, user)
-    return _to_detail_schema(pickup_request)
+    return _to_detail_schema(pickup_request, viewer=user)
 
 
 def get_pickup_request_for_collector(
@@ -262,7 +285,7 @@ def get_pickup_request_for_collector(
         )
 
     _enforce_request_access(pickup_request, collector)
-    return _to_detail_schema(pickup_request)
+    return _to_detail_schema(pickup_request, viewer=collector)
 
 
 def cancel_pickup_request_assignment(
@@ -292,7 +315,7 @@ def cancel_pickup_request_assignment(
         actor=collector,
     )
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
 
 def get_citizen_request_summary(db: Session, citizen: User) -> CitizenRequestSummaryRead:
@@ -353,7 +376,7 @@ def update_pickup_request(
         )
 
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=user)
 
 
 def accept_pickup_request(db: Session, collector: User, request_id: int) -> PickupRequestRead:
@@ -384,7 +407,7 @@ def accept_pickup_request(db: Session, collector: User, request_id: int) -> Pick
     )
     _dispatcher.notify_pickup_accepted(db, pickup_request, collector)
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
 
 def mark_pickup_request_on_the_way(
@@ -403,7 +426,7 @@ def mark_pickup_request_on_the_way(
     )
     _dispatcher.notify_pickup_started(db, pickup_request, collector)
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
 
 def mark_pickup_request_collected(
@@ -426,7 +449,7 @@ def mark_pickup_request_collected(
     )
     _dispatcher.notify_pickup_collected(db, pickup_request, collector)
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
 
 def complete_pickup_request(
@@ -451,7 +474,7 @@ def complete_pickup_request(
     )
     _dispatcher.notify_pickup_completed(db, pickup_request, weight_kg)
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
 
 def cancel_pickup_request(
@@ -481,4 +504,4 @@ def cancel_pickup_request(
         actor=citizen,
     )
     db.commit()
-    return _to_schema(_reload_pickup_or_500(db, pickup_request.id))
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)

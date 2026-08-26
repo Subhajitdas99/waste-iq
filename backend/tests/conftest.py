@@ -140,7 +140,13 @@ def client(db_session):
 
 
 def _create_user(
-    db_session, *, role: UserRole, email: str, name: str = "Test User", phone: str = "9000000001"
+    db_session,
+    *,
+    role: UserRole,
+    email: str,
+    name: str = "Test User",
+    phone: str = "9000000001",
+    email_verified: bool = True,
 ) -> User:
     user = User(
         name=name,
@@ -148,6 +154,7 @@ def _create_user(
         phone=phone,
         password_hash=hash_password("Test@1234"),
         role=role,
+        email_verified_at=datetime.now(timezone.utc) if email_verified else None,
     )
     db_session.add(user)
     db_session.commit()
@@ -235,9 +242,21 @@ def make_user(db_session):
     """Factory for creating arbitrary extra users (default password "Test@1234")."""
 
     def _factory(
-        *, role: UserRole, email: str, name: str = "Test User", phone: str = "9000000001"
+        *,
+        role: UserRole,
+        email: str,
+        name: str = "Test User",
+        phone: str = "9000000001",
+        email_verified: bool = True,
     ) -> User:
-        return _create_user(db_session, role=role, email=email, name=name, phone=phone)
+        return _create_user(
+            db_session,
+            role=role,
+            email=email,
+            name=name,
+            phone=phone,
+            email_verified=email_verified,
+        )
 
     return _factory
 

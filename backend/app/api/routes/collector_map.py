@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_roles
+from app.core.dependencies import get_db, require_roles, require_verified_roles
 from app.models.user import User
 from app.schemas.collector import (
     CollectorLocationRead,
@@ -46,7 +46,7 @@ def collector_location(
 def report_collector_location(
     payload: CollectorLocationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("collector")),
+    current_user: User = Depends(require_verified_roles("collector")),
 ) -> CollectorLocationRead:
     return update_collector_location(db, current_user, payload)
 

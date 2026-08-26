@@ -65,6 +65,25 @@ def require_roles(*roles: str):
     return dependency
 
 
+def require_verified_user(user: User = Depends(get_current_user)) -> User:
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required"
+        )
+    return user
+
+
+def require_verified_roles(*roles: str):
+    def dependency(user: User = Depends(require_verified_user)) -> User:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+            )
+        return user
+
+    return dependency
+
+
 def get_ai_classifier() -> AIClassifierProvider:
     return get_classifier()
 
