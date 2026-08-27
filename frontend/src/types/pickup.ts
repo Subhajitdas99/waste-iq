@@ -80,3 +80,12 @@ export interface PickupFilters {
   status: "all" | PickupStatus;
   sort: "newest" | "oldest" | "status";
 }
+
+export interface ContactSessionRead {
+  session_id: string;
+  pickup_id: number;
+  status: string;
+  masked_number: string | null;
+  instructions: string;
+  expires_at: string | null;
+}

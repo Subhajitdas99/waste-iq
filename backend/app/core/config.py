@@ -43,6 +43,21 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str | None = Field(default=None, alias="CLOUDINARY_API_SECRET")
 
     # ------------------------------------------------------------------
+    # Masked Communication (WIQ-V1-047)
+    # ------------------------------------------------------------------
+
+    communication_provider: Literal["mock", "twilio", "disabled"] = Field(
+        default="mock",
+        alias="COMMUNICATION_PROVIDER",
+    )
+    communication_provider_api_key: str | None = Field(
+        default=None, alias="COMMUNICATION_PROVIDER_API_KEY"
+    )
+    communication_provider_service_sid: str | None = Field(
+        default=None, alias="COMMUNICATION_PROVIDER_SERVICE_SID"
+    )
+
+    # ------------------------------------------------------------------
     # Background Jobs (WIQ-V1-021)
     # ------------------------------------------------------------------
 

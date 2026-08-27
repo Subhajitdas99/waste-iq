@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock3, MapPinned, Truck } from "lucide-react";
+import { ArrowLeft, Clock3, MapPinned, PhoneCall, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -11,6 +11,7 @@ import { Timeline } from "@/components/dashboard/Timeline";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { ConfirmationDialog } from "@/components/dashboard/ConfirmationDialog";
+import { MaskedContactModal } from "@/components/dashboard/MaskedContactModal";
 import {
   useCancelCitizenPickup,
   useCitizenPickupDetail,
@@ -22,10 +23,15 @@ export function PickupDetailsPage() {
   const params = useParams();
   const requestId = Number(params.id ?? 0);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const pickupQuery = useCitizenPickupDetail(requestId);
   const cancelPickupMutation = useCancelCitizenPickup();
 
   const request = pickupQuery.data;
+  const isEligibleForContact =
+    request &&
+    request.assignment !== null &&
+    ["accepted", "on_the_way", "collected"].includes(request.status);
 
   return (
     <>
@@ -60,11 +66,19 @@ export function PickupDetailsPage() {
             title={request.waste_type}
             description={`Submitted on ${formatDateTime(request.created_at)}`}
             actions={
-              request.can_cancel ? (
-                <Button variant="destructive" onClick={() => setIsCancelDialogOpen(true)}>
-                  Cancel Request
-                </Button>
-              ) : null
+              <div className="flex flex-wrap items-center gap-2">
+                {isEligibleForContact ? (
+                  <Button variant="outline" onClick={() => setIsContactModalOpen(true)}>
+                    <PhoneCall className="mr-2 h-4 w-4" />
+                    Contact Collector
+                  </Button>
+                ) : null}
+                {request.can_cancel ? (
+                  <Button variant="destructive" onClick={() => setIsCancelDialogOpen(true)}>
+                    Cancel Request
+                  </Button>
+                ) : null}
+              </div>
             }
           >
             <div className="space-y-4">
@@ -169,9 +183,17 @@ export function PickupDetailsPage() {
               <DashboardCard title="Collector and Delivery Flow" description="Assignment details returned by the backend.">
                 <div className="space-y-4">
                   <div className="rounded-2xl bg-muted/20 p-4">
-                    <div className="flex items-center gap-2 font-medium">
-                      <Truck className="h-4 w-4 text-primary" />
-                      Collector
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Truck className="h-4 w-4 text-primary" />
+                        Collector
+                      </div>
+                      {isEligibleForContact ? (
+                        <Button size="sm" variant="ghost" className="text-primary text-xs" onClick={() => setIsContactModalOpen(true)}>
+                          <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
+                          Contact Collector
+                        </Button>
+                      ) : null}
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {request.assigned_collector_name ?? "No collector assigned yet."}
@@ -248,6 +270,13 @@ export function PickupDetailsPage() {
           await cancelPickupMutation.mutateAsync(requestId);
           setIsCancelDialogOpen(false);
         }}
+      />
+
+      <MaskedContactModal
+        isOpen={isContactModalOpen}
+        onClose={() => setIsContactModalOpen(false)}
+        requestId={requestId}
+        targetRole="collector"
       />
     </>
   );

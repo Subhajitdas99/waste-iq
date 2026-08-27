@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile,
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
+    get_communication_service,
     get_current_user,
     get_db,
     get_image_uploader,
@@ -12,12 +13,14 @@ from app.core.dependencies import (
     require_verified_user,
 )
 from app.models.user import User
+from app.schemas.communication import ContactSessionRead
 from app.schemas.pickup_request import (
     CitizenRequestSummaryRead,
     PickupRequestDetailRead,
     PickupRequestRead,
     PickupRequestUpdate,
 )
+from app.services.communication import CommunicationService
 from app.services.pickup_requests import (
     cancel_pickup_request,
     get_citizen_request_summary,
@@ -121,3 +124,15 @@ def cancel_request(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
         )
     return request
+
+
+@router.post("/{request_id}/contact", response_model=ContactSessionRead)
+def initiate_contact(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_verified_user),
+    communication_service: CommunicationService = Depends(get_communication_service),
+) -> ContactSessionRead:
+    return communication_service.initiate_masked_contact(
+        db=db, pickup_id=request_id, requester=current_user
+    )

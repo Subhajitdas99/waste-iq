@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock3, MapPinned, Truck } from "lucide-react";
+import { ArrowLeft, Clock3, MapPinned, PhoneCall, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,6 +11,7 @@ import { Timeline } from "@/components/dashboard/Timeline";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { CollectorPickupActions } from "@/components/dashboard/CollectorPickupActions";
+import { MaskedContactModal } from "@/components/dashboard/MaskedContactModal";
 import { useCollectorPickupDetail } from "@/hooks/useCollectorRequests";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime, formatWeight } from "@/lib/pickup";
@@ -17,9 +19,14 @@ import { formatDateTime, formatWeight } from "@/lib/pickup";
 export function CollectorPickupDetailsPage() {
   const params = useParams();
   const requestId = Number(params.id ?? 0);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const pickupQuery = useCollectorPickupDetail(requestId);
 
   const request = pickupQuery.data;
+  const isEligibleForContact =
+    request &&
+    request.assignment !== null &&
+    ["accepted", "on_the_way", "collected"].includes(request.status);
 
   return (
     <>
@@ -33,12 +40,20 @@ export function CollectorPickupDetailsPage() {
         title={`Pickup Request #${requestId}`}
         description="Review the request details and advance it through the pickup lifecycle."
         actions={
-          <Button asChild variant="outline">
-            <Link to="/collector/overview">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Dashboard
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            {isEligibleForContact ? (
+              <Button variant="outline" onClick={() => setIsContactModalOpen(true)}>
+                <PhoneCall className="mr-2 h-4 w-4" />
+                Contact Citizen
+              </Button>
+            ) : null}
+            <Button asChild variant="outline">
+              <Link to="/collector/overview">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Dashboard
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -73,13 +88,23 @@ export function CollectorPickupDetailsPage() {
               <DashboardCard title="Pickup Details" description="Backend-provided request metadata.">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-2xl bg-muted/20 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      Citizen
-                    </p>
-                    <p className="mt-2 font-medium">
-                      {request.citizen_name}
-                      {request.citizen_phone ? ` · ${request.citizen_phone}` : ""}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Citizen
+                      </p>
+                      {isEligibleForContact ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-primary text-xs -mr-2"
+                          onClick={() => setIsContactModalOpen(true)}
+                        >
+                          <PhoneCall className="mr-1 h-3.5 w-3.5" />
+                          Contact Citizen
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 font-medium">{request.citizen_name}</p>
                   </div>
                   <div className="rounded-2xl bg-muted/20 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -228,6 +253,13 @@ export function CollectorPickupDetailsPage() {
           description="The request may not exist or you may not have access to it."
         />
       )}
+
+      <MaskedContactModal
+        isOpen={isContactModalOpen}
+        onClose={() => setIsContactModalOpen(false)}
+        requestId={requestId}
+        targetRole="citizen"
+      />
     </>
   );
 }
