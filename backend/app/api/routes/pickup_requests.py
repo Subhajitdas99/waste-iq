@@ -8,6 +8,8 @@ from app.core.dependencies import (
     get_db,
     get_image_uploader,
     get_pickup_request_creation_service,
+    require_verified_roles,
+    require_verified_user,
 )
 from app.models.user import User
 from app.schemas.pickup_request import (
@@ -40,14 +42,9 @@ def create_request(
     notes: str | None = Form(default=None, max_length=2000),
     image: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_roles("citizen")),
     creation_service: PickupRequestCreationService = Depends(get_pickup_request_creation_service),
 ) -> PickupRequestRead:
-    if current_user.role != "citizen":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only citizens can create requests"
-        )
-
     return creation_service.create(
         db=db,
         citizen=current_user,
@@ -101,7 +98,7 @@ def patch_request(
     request_id: int,
     payload: PickupRequestUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_user),
 ) -> PickupRequestRead:
     request = update_pickup_request(db, request_id, current_user, payload)
     if request is None:
@@ -115,14 +112,9 @@ def patch_request(
 def cancel_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified_roles("citizen")),
     uploader: ImageUploader = Depends(get_image_uploader),
 ) -> PickupRequestRead:
-    if current_user.role != "citizen":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only citizens can cancel requests"
-        )
-
     request = cancel_pickup_request(db, current_user, request_id, uploader)
     if request is None:
         raise HTTPException(

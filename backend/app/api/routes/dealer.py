@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_roles
+from app.core.dependencies import get_db, require_roles, require_verified_roles
 from app.models.user import User
 from app.schemas.dealer import (
     DealerApprovalEventRead,
@@ -36,7 +36,7 @@ _dealer_profile_service = DealerProfileService()
 def create_profile(
     payload: DealerProfileCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerProfileRead:
     return _dealer_profile_service.create_profile(db, current_user, payload)
 
@@ -59,7 +59,7 @@ def get_profile(
 def update_profile(
     payload: DealerProfileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerProfileRead:
     profile = _dealer_profile_service.update_profile(db, current_user, payload)
     if profile is None:
@@ -72,7 +72,7 @@ def update_profile(
 @router.post("/profile/submit", response_model=DealerProfileRead)
 def submit_profile(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerProfileRead:
     return _dealer_profile_service.submit_profile(db, current_user)
 
@@ -115,7 +115,7 @@ def get_inventory(
 def create_inventory(
     payload: DealerInventoryCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerInventoryRead:
     return create_dealer_inventory(db, current_user, payload)
 
@@ -125,7 +125,7 @@ def update_inventory(
     inventory_id: int,
     payload: DealerInventoryUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerInventoryRead:
     return update_dealer_inventory(db, current_user, inventory_id, payload)
 
@@ -134,7 +134,7 @@ def update_inventory(
 def delete_inventory(
     inventory_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> None:
     delete_dealer_inventory(db, current_user, inventory_id)
 
@@ -143,7 +143,7 @@ def delete_inventory(
 def reserve(
     inventory_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerInventoryRead:
     return reserve_inventory(db, current_user, inventory_id)
 
@@ -152,7 +152,7 @@ def reserve(
 def release(
     inventory_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerInventoryRead:
     return release_inventory(db, current_user, inventory_id)
 
@@ -161,6 +161,6 @@ def release(
 def mark_sold(
     inventory_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> DealerInventoryRead:
     return mark_inventory_sold(db, current_user, inventory_id)

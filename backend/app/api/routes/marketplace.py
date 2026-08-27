@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_roles
+from app.core.dependencies import get_db, require_roles, require_verified_roles
 from app.models.user import User
 from app.schemas.marketplace import (
     MarketplaceInventoryPageRead,
@@ -57,7 +57,7 @@ def marketplace_get_inventory(
 def marketplace_reserve_inventory(
     lot_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> MarketplaceInventoryRead:
     return marketplace.reserve_marketplace_inventory(db, current_user, lot_id)
 
@@ -70,7 +70,7 @@ def marketplace_reserve_inventory(
 def marketplace_cancel_reservation(
     lot_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> MarketplaceInventoryRead:
     return marketplace.cancel_marketplace_reservation(db, current_user, lot_id)
 
@@ -83,7 +83,7 @@ def marketplace_cancel_reservation(
 def marketplace_purchase_inventory(
     lot_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_verified_roles("dealer")),
 ) -> MarketplaceOrderDetailRead:
     return marketplace.purchase_marketplace_inventory(db, current_user, lot_id)
 
