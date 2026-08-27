@@ -184,18 +184,29 @@ def test_assigned_pickup_redacts_citizen_phone_for_collector_and_blocks_other_co
         "/pickup-requests", data=valid_pickup_payload, headers=citizen_headers
     ).json()
 
-    # Collector 1 accepts
-    client.post(f"/collector/pickups/{created['id']}/accept", headers=collector_headers)
+    # Collector 1 accepts the pickup.
+    accept_resp = client.post(
+        f"/collector/pickups/{created['id']}/accept",
+        headers=collector_headers,
+    )
+    assert accept_resp.status_code in (200, 201)
 
-    # Collector 1 views assigned detail (citizen_phone is redacted in favor of masked communication)
-    assigned_detail = client.get(
-        f"/collector/pickups/{created['id']}", headers=collector_headers
-    ).json()
+    # Collector 1 can view the assigned pickup, but the citizen's
+    # real phone number remains redacted. Contact must use the
+    # masked communication boundary from WIQ-V1-047.
+    assigned_detail_resp = client.get(
+        f"/collector/pickups/{created['id']}",
+        headers=collector_headers,
+    )
+    assert assigned_detail_resp.status_code == 200
+
+    assigned_detail = assigned_detail_resp.json()
     assert assigned_detail["citizen_phone"] is None
 
-    # Collector 2 cannot view assigned pickup (403 IDOR boundary)
+    # Collector 2 cannot access Collector 1's assigned pickup.
     second_resp = client.get(
-        f"/collector/pickups/{created['id']}", headers=second_collector_headers
+        f"/collector/pickups/{created['id']}",
+        headers=second_collector_headers,
     )
     assert second_resp.status_code == 403
 
