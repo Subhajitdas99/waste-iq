@@ -48,12 +48,6 @@ def _should_expose_phone(pickup_request: PickupRequest, viewer: User | None) -> 
         return True
     if viewer.id == pickup_request.user_id:
         return True
-    if (
-        getattr(viewer, "role", None) == "collector"
-        and pickup_request.assignment is not None
-        and pickup_request.assignment.collector_id == viewer.id
-    ):
-        return True
     return False
 
 

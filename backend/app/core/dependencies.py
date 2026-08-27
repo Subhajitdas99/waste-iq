@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from typing import TYPE_CHECKING
+
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -13,6 +15,10 @@ from app.services.ai_classifier import AIClassifierProvider, get_classifier
 from app.services.pickup_request_creation import PickupRequestCreationService
 from app.services.pickup_request_images import PickupRequestImageService
 from app.services.upload import CloudinaryUploadConfig, CloudinaryUploader
+
+if TYPE_CHECKING:
+    from app.services.communication import CommunicationService
+
 
 security = HTTPBearer(auto_error=False)
 
@@ -110,3 +116,12 @@ def get_pickup_request_creation_service(
     image_service: PickupRequestImageService = Depends(get_pickup_request_image_service),
 ) -> PickupRequestCreationService:
     return PickupRequestCreationService(image_service=image_service)
+
+
+def get_communication_service(
+    settings: Settings = Depends(get_settings),
+) -> "CommunicationService":
+    from app.services.communication import CommunicationService, get_communication_provider
+
+    provider = get_communication_provider(settings)
+    return CommunicationService(provider=provider)

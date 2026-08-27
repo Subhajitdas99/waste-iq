@@ -2,6 +2,7 @@ import type { AxiosProgressEvent } from "axios";
 import apiClient from "@/api/client";
 import type {
   CitizenRequestSummary,
+  ContactSessionRead,
   CreatePickupRequestPayload,
   PickupRequest,
   PickupRequestDetail,
@@ -85,5 +86,10 @@ export async function updatePickupRequest(
 
 export async function cancelPickupRequest(requestId: number): Promise<PickupRequest> {
   const response = await apiClient.post<PickupRequest>(`/pickup-requests/${requestId}/cancel`);
+  return response.data;
+}
+
+export async function initiateContact(requestId: number): Promise<ContactSessionRead> {
+  const response = await apiClient.post<ContactSessionRead>(`/pickup-requests/${requestId}/contact`);
   return response.data;
 }

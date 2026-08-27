@@ -21,6 +21,13 @@ SENSITIVE_KEYS = frozenset(
         "secret",
         "secret_key",
         "authorization",
+        "phone",
+        "citizen_phone",
+        "collector_phone",
+        "masked_phone",
+        "provider_secret",
+        "provider_token",
+        "api_key",
     }
 )
 

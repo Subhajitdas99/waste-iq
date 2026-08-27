@@ -173,7 +173,7 @@ def test_unassigned_pickup_detail_redacts_citizen_phone_for_collector(
     assert detail_resp.json()["citizen_phone"] is None
 
 
-def test_assigned_pickup_exposes_citizen_phone_only_to_assigned_collector(
+def test_assigned_pickup_redacts_citizen_phone_for_collector_and_blocks_other_collector(
     client,
     citizen_headers,
     collector_headers,
@@ -187,11 +187,11 @@ def test_assigned_pickup_exposes_citizen_phone_only_to_assigned_collector(
     # Collector 1 accepts
     client.post(f"/collector/pickups/{created['id']}/accept", headers=collector_headers)
 
-    # Collector 1 views assigned detail
+    # Collector 1 views assigned detail (citizen_phone is redacted in favor of masked communication)
     assigned_detail = client.get(
         f"/collector/pickups/{created['id']}", headers=collector_headers
     ).json()
-    assert assigned_detail["citizen_phone"] is not None
+    assert assigned_detail["citizen_phone"] is None
 
     # Collector 2 cannot view assigned pickup (403 IDOR boundary)
     second_resp = client.get(
