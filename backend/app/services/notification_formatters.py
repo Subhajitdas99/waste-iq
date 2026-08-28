@@ -82,6 +82,54 @@ def format_pickup_collected(
     )
 
 
+def format_weight_verification_pending(
+    pickup_request: PickupRequest, weight_kg: float
+) -> NotificationContent:
+    return (
+        "Weight recorded — review your pickup",
+        (
+            f"Your pickup #{pickup_request.id} has been recorded at {weight_kg:.2f} kg. "
+            "Please confirm or dispute the weight."
+        ),
+        _pickup_link(pickup_request),
+        {"pickup_request_id": pickup_request.id, "weight_kg": weight_kg},
+    )
+
+
+def format_weight_confirmed(pickup_request: PickupRequest, weight_kg: float) -> NotificationContent:
+    return (
+        "Weight confirmed",
+        f"You confirmed the weight for pickup #{pickup_request.id}: {weight_kg:.2f} kg.",
+        _pickup_link(pickup_request),
+        {"pickup_request_id": pickup_request.id, "weight_kg": weight_kg},
+    )
+
+
+def format_weight_disputed(pickup_request: PickupRequest) -> NotificationContent:
+    return (
+        "Weight disputed — review required",
+        f"Citizen disputed the weight for pickup #{pickup_request.id}. Please review.",
+        None,
+        {"pickup_request_id": pickup_request.id},
+    )
+
+
+def format_dispute_resolved(
+    pickup_request: PickupRequest, resolution: str, weight_kg: float | None
+) -> NotificationContent:
+    weight_note = f" {weight_kg:.2f} kg" if weight_kg is not None else ""
+    message = (
+        f"Your dispute for pickup #{pickup_request.id} has been resolved: "
+        f"{resolution}.{weight_note}"
+    )
+    return (
+        "Dispute resolved",
+        message,
+        _pickup_link(pickup_request),
+        {"pickup_request_id": pickup_request.id, "resolution": resolution, "weight_kg": weight_kg},
+    )
+
+
 def format_pickup_completed(
     pickup_request: PickupRequest, weight_kg: float | None
 ) -> NotificationContent:

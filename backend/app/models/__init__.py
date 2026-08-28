@@ -14,6 +14,7 @@ from app.models.marketplace_transaction import (
 from app.models.material_category import MaterialCategory
 from app.models.notification import Notification, NotificationStatus, NotificationType
 from app.models.pickup_request import PickupRequest, PickupStatus
+from app.models.pickup_dispute import DisputeResolution, PickupDispute
 from app.models.pricing_rule import PricingRule
 from app.models.pickup_request_event import PickupRequestEvent
 from app.models.refresh_token import RefreshToken
@@ -42,6 +43,8 @@ __all__ = [
     "PickupRequest",
     "PickupStatus",
     "PickupRequestEvent",
+    "PickupDispute",
+    "DisputeResolution",
     "RefreshToken",
     "CollectorAssignment",
     "CollectorLocation",

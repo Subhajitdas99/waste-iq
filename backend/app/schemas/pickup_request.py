@@ -13,6 +13,20 @@ class CollectorAssignmentRead(BaseModel):
     weight_kg: float | None
 
 
+class PickupDisputeRead(BaseModel):
+    id: int
+    request_id: int
+    reason: str
+    disputed_at: datetime
+    resolved_at: datetime | None
+    resolution: str | None
+    resolved_weight_kg: float | None
+    resolution_notes: str | None
+    resolved_by_id: int | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PickupRequestCreate(BaseModel):
     waste_type: str = Field(min_length=2, max_length=100)
     address: str = Field(min_length=8, max_length=500)
@@ -22,8 +36,6 @@ class PickupRequestCreate(BaseModel):
     preferred_time: datetime | None = None
     notes: str | None = Field(default=None, max_length=2000)
     image_url: str | None = None
-    # Provider asset identifier (e.g. Cloudinary public_id), set server-side
-    # only; never accepted from clients and never exposed in responses.
     image_public_id: str | None = None
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -41,6 +53,7 @@ class PickupRequestUpdate(BaseModel):
             "on_the_way",
             "collected",
             "weight_recorded",
+            "disputed",
             "completed",
             "cancelled",
         ]
@@ -89,6 +102,7 @@ class PickupRequestTimelineEventRead(BaseModel):
 
 class PickupRequestDetailRead(PickupRequestRead):
     timeline: list[PickupRequestTimelineEventRead]
+    dispute: PickupDisputeRead | None = None
 
 
 class CitizenRequestSummaryRead(BaseModel):
@@ -98,9 +112,18 @@ class CitizenRequestSummaryRead(BaseModel):
     completed_requests: int
 
 
-# NEW: Collector analytics summary
 class CollectorSummaryRead(BaseModel):
     total_assigned: int
     active_jobs: int
     completed_jobs: int
     total_weight_kg: float
+
+
+class WeightDisputeRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=2000)
+
+
+class WeightDisputeResolveRequest(BaseModel):
+    resolution: Literal["upheld", "corrected"]
+    resolved_weight_kg: float | None = Field(default=None, ge=0, le=10000)
+    notes: str | None = Field(default=None, max_length=2000)

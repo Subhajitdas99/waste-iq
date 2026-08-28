@@ -10,6 +10,7 @@ export const PICKUP_STATUS_FLOW: PickupStatus[] = [
   "on_the_way",
   "collected",
   "weight_recorded",
+  "disputed",
   "completed",
 ];
 
@@ -46,6 +47,12 @@ export const pickupStatusConfig: Record<
     badgeClassName:
       "border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
     dotClassName: "bg-indigo-500",
+  },
+  disputed: {
+    label: "Under Review",
+    badgeClassName:
+      "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    dotClassName: "bg-amber-500",
   },
   completed: {
     label: "Completed",
@@ -104,8 +111,10 @@ export function buildPickupActivityText(request: PickupRequest): string {
   switch (request.status) {
     case "completed":
       return `Pickup completed for ${request.waste_type}.`;
+    case "disputed":
+      return `Weight disputed. Under admin review.`;
     case "weight_recorded":
-      return `Weight recorded. Awaiting final confirmation.`;
+      return `Weight recorded. Awaiting your confirmation.`;
     case "collected":
       return `Waste collected and awaiting final confirmation.`;
     case "on_the_way":

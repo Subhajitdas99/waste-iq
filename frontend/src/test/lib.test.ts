@@ -63,11 +63,12 @@ describe("getPickupProgress", () => {
   });
 
   it("returns progress for known statuses", () => {
-    expect(getPickupProgress("pending")).toBe(17);
-    expect(getPickupProgress("accepted")).toBe(33);
-    expect(getPickupProgress("on_the_way")).toBe(50);
-    expect(getPickupProgress("collected")).toBe(67);
-    expect(getPickupProgress("weight_recorded")).toBe(83);
+    expect(getPickupProgress("pending")).toBe(14);
+    expect(getPickupProgress("accepted")).toBe(29);
+    expect(getPickupProgress("on_the_way")).toBe(43);
+    expect(getPickupProgress("collected")).toBe(57);
+    expect(getPickupProgress("weight_recorded")).toBe(71);
+    expect(getPickupProgress("disputed")).toBe(86);
     expect(getPickupProgress("completed")).toBe(100);
   });
 });
@@ -106,6 +107,12 @@ describe("buildPickupActivityText", () => {
     );
     expect(buildPickupActivityText({ ...base, status: "pending" })).toBe(
       "Pickup request submitted for Plastic bottles.",
+    );
+    expect(buildPickupActivityText({ ...base, status: "disputed" })).toBe(
+      "Weight disputed. Under admin review.",
+    );
+    expect(buildPickupActivityText({ ...base, status: "weight_recorded" })).toBe(
+      "Weight recorded. Awaiting your confirmation.",
     );
   });
 });

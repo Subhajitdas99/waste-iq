@@ -18,11 +18,19 @@ from app.schemas.notification import (
     NotificationBroadcastRead,
     NotificationBroadcastRequest,
 )
+from app.schemas.pickup_request import (
+    PickupRequestRead,
+    WeightDisputeResolveRequest,
+)
 from app.schemas.user import UserRead
 from app.services.admin import get_analytics, list_users
 from app.services.audit import AuditService
 from app.services.dealer_approval import AdminDealerApprovalService
 from app.services.notifications import NotificationBroadcaster
+from app.services.pickup_requests import (
+    list_disputed_pickup_requests,
+    resolve_weight_dispute,
+)
 
 router = APIRouter()
 
@@ -155,3 +163,36 @@ def admin_list_login_history(
         total_items=total_items,
         total_pages=total_pages,
     )
+
+
+# ─── WIQ-V1-046: Weight dispute review/resolution ─────────────────────────────
+
+
+@router.get("/disputes/pickups", response_model=dict)
+def admin_list_disputed_pickups(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> dict:
+    items, total = list_disputed_pickup_requests(db, page=page, page_size=page_size)
+    return {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total_items": total,
+        "total_pages": max(1, (total + page_size - 1) // page_size) if total else 0,
+    }
+
+
+@router.post(
+    "/disputes/pickups/{request_id}/resolve",
+    response_model=PickupRequestRead,
+)
+def admin_resolve_dispute(
+    request_id: int,
+    payload: WeightDisputeResolveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> PickupRequestRead:
+    return resolve_weight_dispute(db, current_user, request_id, payload)

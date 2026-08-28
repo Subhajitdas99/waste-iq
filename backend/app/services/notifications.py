@@ -265,6 +265,74 @@ class NotificationDispatcher:
             metadata_json=metadata,
         )
 
+    def notify_weight_verification_pending(
+        self, db, pickup_request: PickupRequest, weight_kg: float
+    ) -> None:
+        title, message, link, metadata = fmt.format_weight_verification_pending(
+            pickup_request, weight_kg
+        )
+        self._notify(
+            db,
+            user_id=pickup_request.user_id,
+            type=NotificationType.weight_recorded,
+            title=title,
+            message=message,
+            link=link,
+            metadata_json=metadata,
+        )
+
+    def notify_weight_confirmed(self, db, pickup_request: PickupRequest, weight_kg: float) -> None:
+        title, message, link, metadata = fmt.format_weight_confirmed(pickup_request, weight_kg)
+        self._notify(
+            db,
+            user_id=pickup_request.user_id,
+            type=NotificationType.weight_confirmed,
+            title=title,
+            message=message,
+            link=link,
+            metadata_json=metadata,
+        )
+
+    def notify_weight_disputed(self, db, pickup_request: PickupRequest) -> None:
+        title, message, link, metadata = fmt.format_weight_disputed(pickup_request)
+        self._notify(
+            db,
+            user_id=pickup_request.user_id,
+            type=NotificationType.weight_disputed,
+            title=title,
+            message=message,
+            link=link,
+            metadata_json=metadata,
+        )
+
+    def notify_dispute_resolved(
+        self, db, pickup_request: PickupRequest, resolution: str, weight_kg: float | None
+    ) -> None:
+        title, message, link, metadata = fmt.format_dispute_resolved(
+            pickup_request, resolution, weight_kg
+        )
+        self._notify(
+            db,
+            user_id=pickup_request.user_id,
+            type=NotificationType.dispute_resolved,
+            title=title,
+            message=message,
+            link=link,
+            metadata_json=metadata,
+        )
+
+    def notify_collector_dispute_filed(self, db, pickup_request: PickupRequest) -> None:
+        title, message, link, metadata = fmt.format_weight_disputed(pickup_request)
+        self._notify(
+            db,
+            user_id=pickup_request.assignment.collector_id,
+            type=NotificationType.weight_disputed,
+            title=title,
+            message=message,
+            link=link,
+            metadata_json=metadata,
+        )
+
     # ─── Dealer approval workflow ────────────────────────────────────────────
 
     def notify_dealer_profile_submitted(self, db, profile: DealerProfile) -> None:

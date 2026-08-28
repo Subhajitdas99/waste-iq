@@ -26,7 +26,7 @@ export function CollectorPickupDetailsPage() {
   const isEligibleForContact =
     request &&
     request.assignment !== null &&
-    ["accepted", "on_the_way", "collected"].includes(request.status);
+    ["accepted", "on_the_way", "collected", "weight_recorded", "disputed"].includes(request.status);
 
   return (
     <>

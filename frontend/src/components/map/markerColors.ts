@@ -6,6 +6,7 @@ export const PICKUP_MARKER_COLORS: Record<PickupStatus, string> = {
   on_the_way: "#06b6d4",
   collected: "#14b8a6",
   weight_recorded: "#6366f1",
+  disputed: "#f59e0b",
   completed: "#10b981",
   cancelled: "#f43f5e",
 };

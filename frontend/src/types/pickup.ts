@@ -4,6 +4,7 @@ export type PickupStatus =
   | "on_the_way"
   | "collected"
   | "weight_recorded"
+  | "disputed"
   | "completed"
   | "cancelled";
 
@@ -14,6 +15,18 @@ export interface CollectorAssignment {
   accepted_at: string;
   completed_at: string | null;
   weight_kg: number | null;
+}
+
+export interface PickupDispute {
+  id: number;
+  request_id: number;
+  reason: string;
+  disputed_at: string;
+  resolved_at: string | null;
+  resolution: "upheld" | "corrected" | null;
+  resolved_weight_kg: number | null;
+  resolution_notes: string | null;
+  resolved_by_id: number | null;
 }
 
 export interface PickupRequest {
@@ -49,6 +62,7 @@ export interface PickupTimelineEvent {
 
 export interface PickupRequestDetail extends PickupRequest {
   timeline: PickupTimelineEvent[];
+  dispute?: PickupDispute | null;
 }
 
 export interface CitizenRequestSummary {
@@ -89,4 +103,22 @@ export interface ContactSessionRead {
   masked_number: string | null;
   instructions: string;
   expires_at: string | null;
+}
+
+export interface WeightDisputeRequest {
+  reason: string;
+}
+
+export interface WeightDisputeResolveRequest {
+  resolution: "upheld" | "corrected";
+  resolved_weight_kg?: number | null;
+  notes?: string | null;
+}
+
+export interface DisputedPickupsPage {
+  items: PickupRequest[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Clock3, MapPinned, PhoneCall, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock3, MapPinned, PhoneCall, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
@@ -12,9 +14,12 @@ import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { ConfirmationDialog } from "@/components/dashboard/ConfirmationDialog";
 import { MaskedContactModal } from "@/components/dashboard/MaskedContactModal";
+import { Modal } from "@/components/Modal";
 import {
   useCancelCitizenPickup,
   useCitizenPickupDetail,
+  useConfirmPickupWeight,
+  useDisputePickupWeight,
 } from "@/hooks/useCitizenPickups";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime, formatWeight } from "@/lib/pickup";
@@ -24,14 +29,22 @@ export function PickupDetailsPage() {
   const requestId = Number(params.id ?? 0);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const pickupQuery = useCitizenPickupDetail(requestId);
   const cancelPickupMutation = useCancelCitizenPickup();
+  const confirmWeightMutation = useConfirmPickupWeight();
+  const disputeWeightMutation = useDisputePickupWeight();
 
   const request = pickupQuery.data;
   const isEligibleForContact =
     request &&
     request.assignment !== null &&
-    ["accepted", "on_the_way", "collected"].includes(request.status);
+    ["accepted", "on_the_way", "collected", "weight_recorded", "disputed"].includes(request.status);
+  const isVerificationOpen = request?.status === "weight_recorded";
+  const isDisputed = request?.status === "disputed";
+  const isCompleted = request?.status === "completed";
 
   return (
     <>
@@ -228,6 +241,97 @@ export function PickupDetailsPage() {
                   </div>
                 </div>
               </DashboardCard>
+
+              {(isVerificationOpen || isDisputed || isCompleted) && request.assignment?.weight_kg != null ? (
+                <DashboardCard
+                  title="Weight Verification"
+                  description="Review the collector-recorded weight and confirm or dispute it."
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between rounded-2xl bg-muted/20 p-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Recorded Weight
+                        </p>
+                        <p className="mt-1 text-2xl font-bold">
+                          {formatWeight(request.assignment.weight_kg)}
+                        </p>
+                      </div>
+                      <StatusBadge status={request.status} />
+                    </div>
+
+                    {isVerificationOpen ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                          Please confirm that the recorded weight is accurate, or file a dispute
+                          if you believe the weight is incorrect.
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                          <Button
+                            onClick={() =>
+                              void confirmWeightMutation.mutateAsync(requestId).then(() => {
+                                setActionError(null);
+                              }).catch((e) => {
+                                setActionError(getApiErrorMessage(e, "Confirmation failed."));
+                              })
+                            }
+                            disabled={
+                              confirmWeightMutation.isPending ||
+                              disputeWeightMutation.isPending
+                            }
+                          >
+                            {confirmWeightMutation.isPending ? "Confirming..." : "Confirm Weight"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setActionError(null);
+                              setDisputeReason("");
+                              setIsDisputeModalOpen(true);
+                            }}
+                            disabled={
+                              confirmWeightMutation.isPending ||
+                              disputeWeightMutation.isPending
+                            }
+                          >
+                            Dispute Weight
+                          </Button>
+                        </div>
+                        {actionError ? (
+                          <p role="alert" className="text-sm text-destructive">
+                            {actionError}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {isDisputed && request.dispute ? (
+                      <div className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                        <div>
+                          <p className="font-medium text-amber-700 dark:text-amber-300">
+                            Weight Disputed
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {request.dispute.reason}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Filed on {formatDateTime(request.dispute.disputed_at)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {isCompleted && !isDisputed ? (
+                      <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                        <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                          Weight confirmed and pickup completed.
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                </DashboardCard>
+              ) : null}
             </div>
 
             <div className="space-y-6">
@@ -271,6 +375,71 @@ export function PickupDetailsPage() {
           setIsCancelDialogOpen(false);
         }}
       />
+
+      <Modal
+        isOpen={isDisputeModalOpen}
+        onClose={() => setIsDisputeModalOpen(false)}
+        title="Dispute the reported weight"
+        description="Please provide a reason for the dispute. An admin will review your case and notify you once it's resolved."
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDisputeModalOpen(false)}
+              disabled={disputeWeightMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                disputeReason.trim().length < 5 || disputeWeightMutation.isPending
+              }
+              onClick={() => {
+                setActionError(null);
+                void disputeWeightMutation
+                  .mutateAsync({
+                    requestId,
+                    payload: { reason: disputeReason.trim() },
+                  })
+                  .then(() => {
+                    setIsDisputeModalOpen(false);
+                    setDisputeReason("");
+                  })
+                  .catch((e) => {
+                    setActionError(getApiErrorMessage(e, "Dispute submission failed."));
+                  });
+              }}
+            >
+              {disputeWeightMutation.isPending ? "Submitting..." : "Submit Dispute"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="dispute-reason">Reason</Label>
+          <Input
+            id="dispute-reason"
+            value={disputeReason}
+            onChange={(event) => setDisputeReason(event.target.value)}
+            placeholder="Describe why the weight is incorrect"
+            minLength={5}
+            maxLength={2000}
+          />
+          {disputeReason && disputeReason.trim().length < 5 ? (
+            <p className="text-sm text-destructive">
+              Provide at least 5 characters describing the dispute.
+            </p>
+          ) : null}
+          {actionError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {actionError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
 
       <MaskedContactModal
         isOpen={isContactModalOpen}

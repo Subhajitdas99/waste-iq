@@ -19,10 +19,13 @@ from app.schemas.pickup_request import (
     PickupRequestDetailRead,
     PickupRequestRead,
     PickupRequestUpdate,
+    WeightDisputeRequest,
 )
 from app.services.communication import CommunicationService
 from app.services.pickup_requests import (
     cancel_pickup_request,
+    confirm_pickup_weight,
+    dispute_pickup_weight,
     get_citizen_request_summary,
     get_pickup_request_for_user,
     list_pickup_requests_for_user,
@@ -136,3 +139,25 @@ def initiate_contact(
     return communication_service.initiate_masked_contact(
         db=db, pickup_id=request_id, requester=current_user
     )
+
+
+# ─── WIQ-V1-046: Citizen weight verification & dispute ───────────────────────
+
+
+@router.post("/{request_id}/weight/confirm", response_model=PickupRequestRead)
+def confirm_weight(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_verified_roles("citizen")),
+) -> PickupRequestRead:
+    return confirm_pickup_weight(db, current_user, request_id)
+
+
+@router.post("/{request_id}/weight/dispute", response_model=PickupRequestRead)
+def dispute_weight(
+    request_id: int,
+    payload: WeightDisputeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_verified_roles("citizen")),
+) -> PickupRequestRead:
+    return dispute_pickup_weight(db, current_user, request_id, payload.reason)
