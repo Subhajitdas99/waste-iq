@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Trash2, UploadCloud } from "lucide-react";
+import { AlertCircle, ImagePlus, Trash2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -46,16 +46,18 @@ export function ImageUploader({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          if (!disabled) inputRef.current?.click();
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            inputRef.current?.click();
+            if (!disabled) inputRef.current?.click();
           }
         }}
         onDragOver={(event) => {
           event.preventDefault();
-          setIsDragging(true);
+          if (!disabled) setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={(event) => {
@@ -72,14 +74,16 @@ export function ImageUploader({
           error && "border-destructive/60",
           disabled && "cursor-not-allowed opacity-70",
         )}
-        aria-label="Upload waste image"
+        aria-label="Upload waste image. Drag and drop or click to browse."
+        aria-disabled={disabled}
       >
         <input
           ref={inputRef}
           type="file"
           accept="image/jpeg,image/jpg,image/png,image/webp"
-          className="hidden"
+          className="sr-only"
           disabled={disabled}
+          aria-label="Choose waste image file"
           onChange={(event) => {
             handleFileSelection(event.target.files);
             event.target.value = "";
@@ -87,14 +91,24 @@ export function ImageUploader({
         />
 
         <div className="flex flex-col items-center justify-center text-center">
-          <div className="rounded-full bg-primary/10 p-4 text-primary">
+          <div className="rounded-full bg-primary/10 p-4 text-primary" aria-hidden="true">
             <UploadCloud className="h-6 w-6" />
           </div>
-          <h3 className="mt-4 text-lg font-semibold">Drop an image here or browse</h3>
+          <h3 className="mt-4 text-lg font-semibold">Add a photo of your waste (optional)</h3>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Accepted formats: JPG, JPEG, PNG, WEBP. Maximum upload size: 10 MB.
+            Drag and drop an image here, or tap to browse your device. Accepted formats: JPG, JPEG,
+            PNG, WEBP. Maximum size: 10 MB.
           </p>
-          <Button type="button" variant="outline" className="mt-5 gap-2" disabled={disabled}>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-5 gap-2"
+            disabled={disabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+          >
             <ImagePlus className="h-4 w-4" />
             Choose Image
           </Button>
@@ -102,15 +116,20 @@ export function ImageUploader({
       </div>
 
       {value && previewUrl ? (
-        <div className="overflow-hidden rounded-3xl border bg-card/60 shadow-sm">
+        <div
+          className="overflow-hidden rounded-3xl border bg-card/60 shadow-sm"
+          aria-label="Image preview"
+        >
           <img
             src={previewUrl}
-            alt="Selected waste preview"
+            alt={`Selected waste preview: ${value.name}`}
             className="h-64 w-full object-cover"
           />
           <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-medium">{value.name}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium" title={value.name}>
+                {value.name}
+              </p>
               <p className="text-sm text-muted-foreground">
                 {(value.size / (1024 * 1024)).toFixed(2)} MB
               </p>
@@ -121,6 +140,7 @@ export function ImageUploader({
               className="gap-2 text-destructive hover:text-destructive"
               onClick={() => onChange(null)}
               disabled={disabled}
+              aria-label="Remove selected image"
             >
               <Trash2 className="h-4 w-4" />
               Remove
@@ -130,9 +150,16 @@ export function ImageUploader({
       ) : null}
 
       {uploadProgress > 0 && uploadProgress < 100 ? (
-        <div className="space-y-2">
+        <div
+          className="space-y-2"
+          role="progressbar"
+          aria-valuenow={uploadProgress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Image upload progress: ${uploadProgress}%`}
+        >
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">Uploading image</span>
+            <span className="font-medium">Uploading image...</span>
             <span className="text-muted-foreground">{uploadProgress}%</span>
           </div>
           <div className="h-2 rounded-full bg-muted">
@@ -144,7 +171,15 @@ export function ImageUploader({
         </div>
       ) : null}
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

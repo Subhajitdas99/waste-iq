@@ -46,7 +46,7 @@ describe("collector dashboard", () => {
     await renderApp("/collector/overview");
 
     expect(
-      await screen.findByText("No pickup requests are available"),
+      await screen.findByText("No pickup requests available right now"),
     ).toBeInTheDocument();
   });
 });
