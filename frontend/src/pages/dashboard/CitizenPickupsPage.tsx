@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Plus, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
@@ -13,7 +14,6 @@ import { Pagination } from "@/components/dashboard/Pagination";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { ConfirmationDialog } from "@/components/dashboard/ConfirmationDialog";
 import { useCancelCitizenPickup, useCitizenPickups } from "@/hooks/useCitizenPickups";
-import { getApiErrorMessage } from "@/lib/api-error";
 import { matchesPickupQuery, sortPickupRequests } from "@/lib/pickup";
 import type { PickupFilters } from "@/types/pickup";
 
@@ -45,6 +45,8 @@ export function CitizenPickupsPage() {
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const paginatedRequests = filteredRequests.slice(pageStart, pageStart + PAGE_SIZE);
 
+  const isFilterActive = filters.query.trim() !== "" || filters.status !== "all";
+
   useEffect(() => {
     setCurrentPage(1);
   }, [filters.query, filters.sort, filters.status]);
@@ -61,15 +63,20 @@ export function CitizenPickupsPage() {
         title="My Pickup Requests"
         description="Review all requests, open request details, and cancel pending pickups before assignment."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="outline"
               className="gap-2"
               onClick={() => pickupsQuery.refetch()}
+              disabled={pickupsQuery.isFetching}
+              aria-busy={pickupsQuery.isFetching}
             >
-              <RefreshCcw className="h-4 w-4" />
-              Refresh
+              <RefreshCcw
+                className={`h-4 w-4 ${pickupsQuery.isFetching ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {pickupsQuery.isFetching ? "Refreshing..." : "Refresh"}
             </Button>
             <Button asChild className="gap-2">
               <Link to="/dashboard/pickups/new">
@@ -104,8 +111,14 @@ export function CitizenPickupsPage() {
           <LoadingSkeleton count={3} />
         </div>
       ) : pickupsQuery.isError ? (
-        <div className="mt-6 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {getApiErrorMessage(pickupsQuery.error, "Unable to load your pickup requests.")}
+        <div className="mt-6">
+          <ErrorState
+            error={pickupsQuery.error}
+            fallback="Unable to load your pickup requests."
+            onRetry={() => pickupsQuery.refetch()}
+            isRetrying={pickupsQuery.isFetching}
+            title="Unable to load pickup requests"
+          />
         </div>
       ) : filteredRequests.length > 0 ? (
         <div className="mt-6 space-y-4">
@@ -138,15 +151,35 @@ export function CitizenPickupsPage() {
             onPageChange={setCurrentPage}
           />
         </div>
+      ) : requests.length === 0 ? (
+        <div className="mt-6">
+          <EmptyState
+            title="You haven't created a pickup yet"
+            description="Submit a new recyclable waste pickup request to track it here. You can also attach a photo for AI classification."
+            action={
+              <Button asChild>
+                <Link to="/dashboard/pickups/new">Create Your First Pickup</Link>
+              </Button>
+            }
+          />
+        </div>
       ) : (
         <div className="mt-6">
           <EmptyState
-            title="No pickup requests found"
-            description="Adjust your filters or create a new pickup request to start tracking collections."
+            title="No matching pickups"
+            description="Try changing your search term or status filter to see more results."
             action={
-              <Button asChild>
-                <Link to="/dashboard/pickups/new">Create Pickup</Link>
-              </Button>
+              isFilterActive ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setFilters({ query: "", status: "all", sort: filters.sort })
+                  }
+                >
+                  Clear filters
+                </Button>
+              ) : null
             }
           />
         </div>
@@ -155,8 +188,9 @@ export function CitizenPickupsPage() {
       <ConfirmationDialog
         isOpen={pickupToCancel !== null}
         title="Cancel pickup request"
-        description="Only pending pickup requests can be cancelled. This action cannot be undone."
-        confirmLabel="Cancel Pickup"
+        description="Only pending pickup requests can be cancelled. After cancellation, you cannot undo this action."
+        confirmLabel="Yes, Cancel Pickup"
+        cancelLabel="Keep Request"
         isPending={cancelPickupMutation.isPending}
         onClose={() => setPickupToCancel(null)}
         onConfirm={async () => {

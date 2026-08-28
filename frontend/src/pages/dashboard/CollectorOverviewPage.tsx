@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ClipboardList, Image, Layers3, PackageCheck, RefreshCcw, Timer, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
@@ -14,7 +15,6 @@ import {
   useAvailableCollectorRequests,
   useCollectorSummary,
 } from "@/hooks/useCollectorRequests";
-import { getApiErrorMessage } from "@/lib/api-error";
 
 function RefreshButton({
   isFetching,
@@ -30,8 +30,12 @@ function RefreshButton({
       className="gap-2"
       disabled={isFetching}
       onClick={onRefresh}
+      aria-busy={isFetching}
     >
-      <RefreshCcw className="h-4 w-4" />
+      <RefreshCcw
+        className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+        aria-hidden="true"
+      />
       {isFetching ? "Refreshing..." : "Refresh"}
     </Button>
   );
@@ -84,7 +88,7 @@ export function CollectorOverviewPage() {
         actions={<RefreshButton isFetching={isFetching} onRefresh={refresh} />}
       />
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
         <StatsCard
           label="Available Now"
           value={availableRequestsQuery.data ? String(availableRequests.length) : "-"}
@@ -126,20 +130,18 @@ export function CollectorOverviewPage() {
       <section className="mt-8">
         <DashboardCard
           title="Collector Queue"
-          description="This list is backed by GET /collector/pickups/available and excludes assigned or non-pending requests."
+          description="This list shows unassigned pickup requests. Accept one to start working on it."
         >
           {availableRequestsQuery.isPending && !availableRequestsQuery.data ? (
             <LoadingSkeleton count={3} />
           ) : availableRequestsQuery.isError ? (
-            <div
-              role="alert"
-              className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-            >
-              {getApiErrorMessage(
-                availableRequestsQuery.error,
-                "Unable to load available pickup requests. Please try again.",
-              )}
-            </div>
+            <ErrorState
+              error={availableRequestsQuery.error}
+              fallback="Unable to load available pickup requests. Please try again."
+              onRetry={() => availableRequestsQuery.refetch()}
+              isRetrying={availableRequestsQuery.isFetching}
+              title="Unable to load available requests"
+            />
           ) : availableRequests.length > 0 ? (
             <div className="space-y-4">
               {availableRequests.map((request) => (
@@ -158,8 +160,17 @@ export function CollectorOverviewPage() {
             </div>
           ) : (
             <EmptyState
-              title="No pickup requests are available"
-              description="New unassigned pickup requests will appear here as citizens submit them."
+              title="No pickup requests available right now"
+              description="New unassigned pickup requests will appear here as citizens submit them. Pull to refresh or check back in a few minutes."
+              action={
+                <Button type="button" variant="outline" onClick={refresh} disabled={isFetching}>
+                  <RefreshCcw
+                    className={`mr-1.5 h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+                    aria-hidden="true"
+                  />
+                  {isFetching ? "Refreshing..." : "Refresh now"}
+                </Button>
+              }
             />
           )}
         </DashboardCard>
@@ -168,20 +179,18 @@ export function CollectorOverviewPage() {
       <section className="mt-8">
         <DashboardCard
           title="My Active Pickups"
-          description="This list is backed by GET /collector/pickups/assigned and shows requests you are currently working on."
+          description="Requests you are currently working on. Continue with the next available action."
         >
           {assignedRequestsQuery.isPending && !assignedRequestsQuery.data ? (
             <LoadingSkeleton count={2} />
           ) : assignedRequestsQuery.isError ? (
-            <div
-              role="alert"
-              className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-            >
-              {getApiErrorMessage(
-                assignedRequestsQuery.error,
-                "Unable to load your assigned pickup requests. Please try again.",
-              )}
-            </div>
+            <ErrorState
+              error={assignedRequestsQuery.error}
+              fallback="Unable to load your assigned pickup requests. Please try again."
+              onRetry={() => assignedRequestsQuery.refetch()}
+              isRetrying={assignedRequestsQuery.isFetching}
+              title="Unable to load your active pickups"
+            />
           ) : assignedRequests.length > 0 ? (
             <div className="space-y-4">
               {assignedRequests.map((request) => (
@@ -200,8 +209,8 @@ export function CollectorOverviewPage() {
             </div>
           ) : (
             <EmptyState
-              title="No active pickups"
-              description="Accept a request from the collector queue above to start working on it."
+              title="No active pickups yet"
+              description="Accept a request from the collector queue above to start working on it. Your in-progress pickups will appear here."
             />
           )}
         </DashboardCard>

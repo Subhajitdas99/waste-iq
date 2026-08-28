@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Clock3, MapPinned, PhoneCall, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
@@ -13,7 +14,6 @@ import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { CollectorPickupActions } from "@/components/dashboard/CollectorPickupActions";
 import { MaskedContactModal } from "@/components/dashboard/MaskedContactModal";
 import { useCollectorPickupDetail } from "@/hooks/useCollectorRequests";
-import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime, formatWeight } from "@/lib/pickup";
 
 export function CollectorPickupDetailsPage() {
@@ -38,9 +38,9 @@ export function CollectorPickupDetailsPage() {
 
       <PageHeader
         title={`Pickup Request #${requestId}`}
-        description="Review the request details and advance it through the pickup lifecycle."
+        description="Review the request details, view citizen information, and advance through the pickup lifecycle."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isEligibleForContact ? (
               <Button variant="outline" onClick={() => setIsContactModalOpen(true)}>
                 <PhoneCall className="mr-2 h-4 w-4" />
@@ -60,9 +60,13 @@ export function CollectorPickupDetailsPage() {
       {pickupQuery.isPending && !request ? (
         <LoadingSkeleton variant="detail" />
       ) : pickupQuery.isError ? (
-        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {getApiErrorMessage(pickupQuery.error, "Unable to load this pickup request.")}
-        </div>
+        <ErrorState
+          error={pickupQuery.error}
+          fallback="Unable to load this pickup request. Please try again."
+          onRetry={() => pickupQuery.refetch()}
+          isRetrying={pickupQuery.isFetching}
+          title="Unable to load pickup details"
+        />
       ) : request ? (
         <div className="space-y-6">
           <DashboardCard

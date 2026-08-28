@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { PickupCard } from "@/components/dashboard/PickupCard";
@@ -25,7 +26,6 @@ import {
 import { useCitizenNotifications } from "@/hooks/useCitizenNotifications";
 import { buildPickupActivityText, formatDateTime } from "@/lib/pickup";
 import { computeRecyclingImpact } from "@/lib/recycling";
-import { getApiErrorMessage } from "@/lib/api-error";
 
 const quickActions = [
   {
@@ -166,28 +166,16 @@ export function DashboardOverviewPage() {
       </section>
 
       {dashboardError ? (
-        <section
-          role="alert"
-          className="mt-6 flex flex-col gap-4 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
-        >
-          <span>
-            {getApiErrorMessage(
-              dashboardError,
-              "Unable to load your pickup dashboard. Please try again.",
-            )}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="self-start border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-auto"
-            disabled={isRefreshing}
-            onClick={() => {
+        <section className="mt-6">
+          <ErrorState
+            error={dashboardError}
+            fallback="Unable to load your pickup dashboard. Please try again."
+            onRetry={() => {
               void Promise.all([pickupsQuery.refetch(), summaryQuery.refetch()]);
             }}
-          >
-            {isRefreshing ? "Retrying..." : "Try again"}
-          </Button>
+            isRetrying={isRefreshing}
+            title="Unable to load dashboard"
+          />
         </section>
       ) : null}
 

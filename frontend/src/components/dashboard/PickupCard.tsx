@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown, MapPin, Route, Truck } from "lucide-react";
+import { ChevronDown, ImageOff, MapPin, Route, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import {
@@ -34,10 +34,10 @@ export function PickupCard({
       <CardHeader className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-sm font-medium text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Request status">
+              <span className="text-sm font-medium text-muted-foreground">
                 Request #{request.id}
-              </p>
+              </span>
               <StatusBadge status={request.status} />
             </div>
             <h3 className="mt-3 text-xl font-semibold">{request.waste_type}</h3>
@@ -63,7 +63,7 @@ export function PickupCard({
           ) : null}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label={`Progress: ${progress}%`}>
           <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
             <span>Progress</span>
             <span>{progress}%</span>
@@ -78,27 +78,29 @@ export function PickupCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-2xl bg-muted/40 p-4">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <MapPin className="h-4 w-4 text-primary" />
-              Address
+              <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span>Address</span>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">{request.address}</p>
+            <p className="mt-2 text-sm text-muted-foreground truncate" title={request.address}>
+              {request.address}
+            </p>
           </div>
           <div className="rounded-2xl bg-muted/40 p-4">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Truck className="h-4 w-4 text-primary" />
-              Collector
+              <Truck className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span>Collector</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
               {request.assigned_collector_name ?? "Awaiting assignment"}
             </p>
           </div>
-          <div className="rounded-2xl bg-muted/40 p-4">
+          <div className="rounded-2xl bg-muted/40 p-4 sm:col-span-2 lg:col-span-1">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Route className="h-4 w-4 text-primary" />
-              Weight
+              <Route className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span>Weight</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
               {formatWeight(request.assignment?.weight_kg ?? request.estimated_weight_kg)}
@@ -144,10 +146,17 @@ export function PickupCard({
             {request.image_url ? (
               <img
                 src={request.image_url}
-                alt={request.waste_type}
+                alt={`Waste image for ${request.waste_type} pickup request`}
                 className="h-28 w-full rounded-2xl object-cover lg:w-40"
               />
-            ) : null}
+            ) : (
+              <div
+                className="flex h-28 w-full items-center justify-center rounded-2xl border border-dashed bg-muted/20 lg:w-40"
+                aria-label="No image available"
+              >
+                <ImageOff className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+              </div>
+            )}
           </div>
         )}
 

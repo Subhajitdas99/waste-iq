@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Clock3, MapPinned, PhoneCall, Truck } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, Clock3, HelpCircle, Info, MapPinned, PhoneCall, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
@@ -56,7 +57,7 @@ export function PickupDetailsPage() {
 
       <PageHeader
         title={`Pickup Request #${requestId}`}
-        description="Track status transitions, collector assignment, and all backend-provided pickup metadata."
+        description="Track your pickup status, view collector details, and verify the recorded weight."
         actions={
           <Button asChild variant="outline">
             <Link to="/dashboard/pickups">
@@ -70,9 +71,13 @@ export function PickupDetailsPage() {
       {pickupQuery.isPending && !request ? (
         <LoadingSkeleton variant="detail" />
       ) : pickupQuery.isError ? (
-        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {getApiErrorMessage(pickupQuery.error, "Unable to load this pickup request.")}
-        </div>
+        <ErrorState
+          error={pickupQuery.error}
+          fallback="Unable to load this pickup request. Please try again."
+          onRetry={() => pickupQuery.refetch()}
+          isRetrying={pickupQuery.isFetching}
+          title="Unable to load pickup details"
+        />
       ) : request ? (
         <div className="space-y-6">
           <DashboardCard
@@ -248,6 +253,27 @@ export function PickupDetailsPage() {
                   description="Review the collector-recorded weight and confirm or dispute it."
                 >
                   <div className="space-y-4">
+                    {request.estimated_weight_kg != null ? (
+                      <div className="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Your Estimated Weight
+                          </p>
+                          <p className="mt-1 text-lg font-semibold">
+                            {formatWeight(request.estimated_weight_kg)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Collector Recorded
+                          </p>
+                          <p className="mt-1 text-lg font-semibold text-primary">
+                            {formatWeight(request.assignment.weight_kg)}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="flex items-center justify-between rounded-2xl bg-muted/20 p-4">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -262,6 +288,18 @@ export function PickupDetailsPage() {
 
                     {isVerificationOpen ? (
                       <div className="space-y-3">
+                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 text-sm text-primary">
+                          <div className="flex items-start gap-2">
+                            <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <div>
+                              <p className="font-medium">Confirming accepts the recorded weight.</p>
+                              <p className="mt-1 text-xs opacity-90">
+                                Disputing does not change the weight — it sends the pickup to an
+                                admin for review. You will be notified once a decision is made.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           Please confirm that the recorded weight is accurate, or file a dispute
                           if you believe the weight is incorrect.
@@ -272,13 +310,14 @@ export function PickupDetailsPage() {
                               void confirmWeightMutation.mutateAsync(requestId).then(() => {
                                 setActionError(null);
                               }).catch((e) => {
-                                setActionError(getApiErrorMessage(e, "Confirmation failed."));
+                                setActionError(getApiErrorMessage(e, "Confirmation failed. Please try again."));
                               })
                             }
                             disabled={
                               confirmWeightMutation.isPending ||
                               disputeWeightMutation.isPending
                             }
+                            aria-busy={confirmWeightMutation.isPending}
                           >
                             {confirmWeightMutation.isPending ? "Confirming..." : "Confirm Weight"}
                           </Button>
@@ -298,32 +337,48 @@ export function PickupDetailsPage() {
                           </Button>
                         </div>
                         {actionError ? (
-                          <p role="alert" className="text-sm text-destructive">
-                            {actionError}
-                          </p>
+                          <div
+                            role="alert"
+                            className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                          >
+                            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <span>{actionError}</span>
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
 
                     {isDisputed && request.dispute ? (
-                      <div className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                        <div>
-                          <p className="font-medium text-amber-700 dark:text-amber-300">
-                            Weight Disputed
-                          </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {request.dispute.reason}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Filed on {formatDateTime(request.dispute.disputed_at)}
-                          </p>
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                          <div>
+                            <p className="font-medium text-amber-700 dark:text-amber-300">
+                              Weight Disputed
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {request.dispute.reason}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Filed on {formatDateTime(request.dispute.disputed_at)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border bg-muted/20 p-3 text-sm text-muted-foreground">
+                          <div className="flex items-start gap-2">
+                            <HelpCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <p>
+                              Your dispute has been submitted and is being reviewed by an admin.
+                              We will notify you once a resolution is available.
+                            </p>
+                          </div>
                         </div>
                       </div>
                     ) : null}
 
                     {isCompleted && !isDisputed ? (
                       <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                         <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                           Weight confirmed and pickup completed.
                         </p>
@@ -378,15 +433,23 @@ export function PickupDetailsPage() {
 
       <Modal
         isOpen={isDisputeModalOpen}
-        onClose={() => setIsDisputeModalOpen(false)}
+        onClose={() => {
+          if (!disputeWeightMutation.isPending) {
+            setIsDisputeModalOpen(false);
+            setDisputeReason("");
+          }
+        }}
         title="Dispute the reported weight"
-        description="Please provide a reason for the dispute. An admin will review your case and notify you once it's resolved."
+        description="Disputing does NOT change the recorded weight. Your pickup will be sent to an admin for review, and you will be notified once resolved."
         footer={
           <>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsDisputeModalOpen(false)}
+              onClick={() => {
+                setIsDisputeModalOpen(false);
+                setDisputeReason("");
+              }}
               disabled={disputeWeightMutation.isPending}
             >
               Cancel
@@ -397,6 +460,7 @@ export function PickupDetailsPage() {
               disabled={
                 disputeReason.trim().length < 5 || disputeWeightMutation.isPending
               }
+              aria-busy={disputeWeightMutation.isPending}
               onClick={() => {
                 setActionError(null);
                 void disputeWeightMutation
@@ -409,7 +473,7 @@ export function PickupDetailsPage() {
                     setDisputeReason("");
                   })
                   .catch((e) => {
-                    setActionError(getApiErrorMessage(e, "Dispute submission failed."));
+                    setActionError(getApiErrorMessage(e, "Dispute submission failed. Please try again."));
                   });
               }}
             >
@@ -418,26 +482,50 @@ export function PickupDetailsPage() {
           </>
         }
       >
-        <div className="space-y-2">
-          <Label htmlFor="dispute-reason">Reason</Label>
-          <Input
-            id="dispute-reason"
-            value={disputeReason}
-            onChange={(event) => setDisputeReason(event.target.value)}
-            placeholder="Describe why the weight is incorrect"
-            minLength={5}
-            maxLength={2000}
-          />
-          {disputeReason && disputeReason.trim().length < 5 ? (
-            <p className="text-sm text-destructive">
-              Provide at least 5 characters describing the dispute.
-            </p>
-          ) : null}
-          {actionError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {actionError}
-            </p>
-          ) : null}
+        <div className="space-y-3">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <p>
+                Provide a clear reason why you believe the recorded weight is incorrect. An admin
+                will review your case.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="dispute-reason">
+              Reason <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="dispute-reason"
+              value={disputeReason}
+              onChange={(event) => setDisputeReason(event.target.value)}
+              placeholder="e.g., The amount seems too high — I had about 5 kg of cardboard."
+              minLength={5}
+              maxLength={2000}
+              aria-invalid={disputeReason.length > 0 && disputeReason.trim().length < 5}
+              aria-describedby="dispute-reason-help dispute-reason-error"
+              disabled={disputeWeightMutation.isPending}
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span id="dispute-reason-help">Minimum 5 characters required.</span>
+              <span>{disputeReason.length} / 2000</span>
+            </div>
+            {disputeReason && disputeReason.trim().length < 5 ? (
+              <p id="dispute-reason-error" className="text-sm text-destructive">
+                Provide at least 5 characters describing the dispute.
+              </p>
+            ) : null}
+            {actionError ? (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            ) : null}
+          </div>
         </div>
       </Modal>
 
