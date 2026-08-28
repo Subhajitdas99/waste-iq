@@ -11,6 +11,7 @@ from app.schemas.analytics import (
     DealerPerformance,
     MaterialBreakdown,
     MonthlyStat,
+    PilotMetrics,
 )
 from app.services.analytics import (
     generate_insights,
@@ -20,6 +21,7 @@ from app.services.analytics import (
     get_material_breakdown,
     get_monthly_analytics,
     get_overview_analytics,
+    get_pilot_metrics,
 )
 
 router = APIRouter()
@@ -79,3 +81,11 @@ def analytics_insights(
     current_user: User = Depends(require_roles("admin")),
 ) -> list[AnalyticsInsight]:
     return generate_insights(db)
+
+
+@router.get("/pilot", response_model=PilotMetrics)
+def analytics_pilot(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> PilotMetrics:
+    return get_pilot_metrics(db)

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveAdminDealer,
   getAdminAnalytics,
+  getPilotMetrics,
   listAdminDealers,
   listAdminUsers,
   listPendingAdminDealers,
@@ -12,6 +13,7 @@ import type { AdminDealerListQuery } from "@/types/admin";
 export const adminDashboardQueryKeys = {
   all: ["admin"] as const,
   analytics: ["admin", "analytics"] as const,
+  pilot: ["admin", "analytics", "pilot"] as const,
   users: ["admin", "users"] as const,
   dealers: ["admin", "dealers"] as const,
   dealerList: (query: AdminDealerListQuery = {}) =>
@@ -24,6 +26,13 @@ export function useAdminAnalytics() {
   return useQuery({
     queryKey: adminDashboardQueryKeys.analytics,
     queryFn: getAdminAnalytics,
+  });
+}
+
+export function usePilotMetrics() {
+  return useQuery({
+    queryKey: adminDashboardQueryKeys.pilot,
+    queryFn: getPilotMetrics,
   });
 }
 
