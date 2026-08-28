@@ -5,11 +5,17 @@ import type {
   AdminDealerListPage,
   AdminDealerListQuery,
   AdminUser,
+  PilotMetrics,
 } from "@/types/admin";
 import type { DealerApprovalAction } from "@/types/dealer";
 
 export async function getAdminAnalytics(): Promise<AdminAnalytics> {
   const response = await apiClient.get<AdminAnalytics>("/admin/analytics");
+  return response.data;
+}
+
+export async function getPilotMetrics(): Promise<PilotMetrics> {
+  const response = await apiClient.get<PilotMetrics>("/admin/analytics/pilot");
   return response.data;
 }
 

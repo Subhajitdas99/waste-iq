@@ -1,14 +1,16 @@
 """Analytics business logic: SQL aggregations and deterministic, rule-based insights."""
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from statistics import median
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.collector_assignment import CollectorAssignment
-from app.models.dealer_profile import DealerProfile
+from app.models.dealer_profile import DealerApprovalStatus, DealerProfile
 from app.models.inventory_lot import InventoryLot, InventoryLotStatus
+from app.models.pickup_dispute import DisputeResolution, PickupDispute
 from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.user import User, UserRole
 from app.schemas.analytics import (
@@ -19,6 +21,13 @@ from app.schemas.analytics import (
     DealerPerformance,
     MaterialBreakdown,
     MonthlyStat,
+    PilotActivity,
+    PilotCollectionKpis,
+    PilotMetrics,
+    PilotReliability,
+    PilotTiming,
+    PilotWeightQuality,
+    PilotWindow,
 )
 from app.services.stats import count_pickups, count_users, sum_collected_weight
 
@@ -407,3 +416,305 @@ def generate_insights(db: Session) -> list[AnalyticsInsight]:
         )
 
     return insights
+
+
+# ─── Pilot metrics (WIQ-V1-052) ───────────────────────────────────────────────
+
+PILOT_WINDOW_DAYS = 30
+
+
+def _median_or_none(values: list[float]) -> float | None:
+    return round(float(median(values)), 2) if values else None
+
+
+def _mean_or_none(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def _isoformat_or_none(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return normalized.isoformat()
+
+
+def _resolve_pilot_window(
+    db: Session,
+) -> tuple[datetime, datetime, int]:
+    """Return (start, end, days) for the pilot reporting window.
+
+    Uses the earliest pickup request as the start so the window reflects the
+    actual pilot history (never empty). The end is "now" (UTC). Falls back to
+    the configured default length when no requests exist yet.
+    """
+    end = datetime.now(timezone.utc)
+    earliest = db.scalar(select(func.min(PickupRequest.created_at)))
+    if earliest is None:
+        start = end - timedelta(days=PILOT_WINDOW_DAYS)
+        return start, end, PILOT_WINDOW_DAYS
+
+    if earliest.tzinfo is None:
+        earliest = earliest.replace(tzinfo=timezone.utc)
+    days = max((end - earliest).days, 1)
+    return earliest, end, days
+
+
+def _get_pilot_collection_kpis(db: Session) -> PilotCollectionKpis:
+    total = count_pickups(db)
+    completed = count_pickups(db, PickupStatus.completed)
+    cancelled = count_pickups(db, PickupStatus.cancelled)
+    total_weight = float(sum_collected_weight(db))
+    completion_rate = round(completed / total * 100, 2) if total else 0.0
+    average_weight = round(total_weight / completed, 2) if completed else 0.0
+
+    active_citizens = int(
+        db.scalar(
+            select(func.count(func.distinct(PickupRequest.user_id))).where(
+                PickupRequest.user_id.is_not(None)
+            )
+        )
+        or 0
+    )
+    active_collectors = int(
+        db.scalar(
+            select(func.count(func.distinct(CollectorAssignment.collector_id))).where(
+                CollectorAssignment.collector_id.is_not(None)
+            )
+        )
+        or 0
+    )
+
+    return PilotCollectionKpis(
+        total_pickups=total,
+        completed_pickups=completed,
+        cancelled_pickups=cancelled,
+        completion_rate=completion_rate,
+        total_weight_kg=round(total_weight, 2),
+        average_weight_kg=average_weight,
+        active_citizens=active_citizens,
+        active_collectors=active_collectors,
+    )
+
+
+def _get_pilot_timing(db: Session) -> PilotTiming:
+    rows = db.execute(
+        select(
+            PickupRequest.created_at,
+            CollectorAssignment.accepted_at,
+            CollectorAssignment.completed_at,
+            PickupRequest.status,
+        ).join(CollectorAssignment, CollectorAssignment.request_id == PickupRequest.id)
+    ).all()
+
+    request_to_accept: list[float] = []
+    accept_to_complete: list[float] = []
+    request_to_complete: list[float] = []
+
+    for created_at, accepted_at, completed_at, status in rows:
+        if created_at is None or accepted_at is None:
+            continue
+        accept_delta = (_utc_naive(accepted_at) - _utc_naive(created_at)).total_seconds()
+        if accept_delta < 0:
+            continue
+        request_to_accept.append(accept_delta / 3600)
+
+        if status == PickupStatus.completed and completed_at is not None:
+            completion_delta = (_utc_naive(completed_at) - _utc_naive(created_at)).total_seconds()
+            if completion_delta >= 0:
+                request_to_complete.append(completion_delta / 3600)
+
+            collection_delta = (_utc_naive(completed_at) - _utc_naive(accepted_at)).total_seconds()
+            if collection_delta >= 0:
+                accept_to_complete.append(collection_delta / 3600)
+
+    return PilotTiming(
+        median_request_to_acceptance_hours=_median_or_none(request_to_accept),
+        median_acceptance_to_completion_hours=_median_or_none(accept_to_complete),
+        median_request_to_completion_hours=_median_or_none(request_to_complete),
+        average_request_to_acceptance_hours=_mean_or_none(request_to_accept),
+        average_acceptance_to_completion_hours=_mean_or_none(accept_to_complete),
+        sample_size=len(request_to_accept),
+    )
+
+
+def _get_pilot_weight_quality(db: Session) -> PilotWeightQuality:
+    rows = db.execute(
+        select(
+            PickupRequest.estimated_weight_kg,
+            CollectorAssignment.weight_kg,
+            PickupRequest.id,
+        )
+        .outerjoin(CollectorAssignment, CollectorAssignment.request_id == PickupRequest.id)
+        .where(PickupRequest.status == PickupStatus.completed)
+    ).all()
+
+    pickups_with_estimate = 0
+    pickups_with_recorded_weight = 0
+    ratios: list[float] = []
+    deltas: list[float] = []
+    for estimate, recorded, _ in rows:
+        if estimate is not None and estimate > 0:
+            pickups_with_estimate += 1
+        if recorded is not None and recorded > 0:
+            pickups_with_recorded_weight += 1
+        if estimate is not None and recorded is not None and estimate > 0 and recorded > 0:
+            ratios.append(recorded / estimate)
+            deltas.append(abs(recorded - estimate))
+
+    dispute_count = int(db.scalar(select(func.count(PickupDispute.id))) or 0)
+    upheld = int(
+        db.scalar(
+            select(func.count(PickupDispute.id)).where(
+                PickupDispute.resolution == DisputeResolution.upheld
+            )
+        )
+        or 0
+    )
+    corrected = int(
+        db.scalar(
+            select(func.count(PickupDispute.id)).where(
+                PickupDispute.resolution == DisputeResolution.corrected
+            )
+        )
+        or 0
+    )
+
+    return PilotWeightQuality(
+        pickups_with_estimate=pickups_with_estimate,
+        pickups_with_recorded_weight=pickups_with_recorded_weight,
+        estimate_vs_actual_ratio=(round(sum(ratios) / len(ratios), 2) if ratios else None),
+        median_absolute_estimate_delta_kg=_median_or_none(deltas),
+        disputed_pickups=dispute_count,
+        disputes_upheld=upheld,
+        disputes_corrected=corrected,
+    )
+
+
+def _get_pilot_activity(db: Session, now: datetime) -> PilotActivity:
+    seven_days_ago = now - timedelta(days=7)
+    thirty_days_ago = now - timedelta(days=30)
+
+    pickups_last_7 = int(
+        db.scalar(
+            select(func.count(PickupRequest.id)).where(PickupRequest.created_at >= seven_days_ago)
+        )
+        or 0
+    )
+    pickups_last_30 = int(
+        db.scalar(
+            select(func.count(PickupRequest.id)).where(PickupRequest.created_at >= thirty_days_ago)
+        )
+        or 0
+    )
+    completed_last_7 = int(
+        db.scalar(
+            select(func.count(PickupRequest.id)).where(
+                PickupRequest.created_at >= seven_days_ago,
+                PickupRequest.status == PickupStatus.completed,
+            )
+        )
+        or 0
+    )
+    completed_last_30 = int(
+        db.scalar(
+            select(func.count(PickupRequest.id)).where(
+                PickupRequest.created_at >= thirty_days_ago,
+                PickupRequest.status == PickupStatus.completed,
+            )
+        )
+        or 0
+    )
+    lots_listed = int(
+        db.scalar(
+            select(func.count(InventoryLot.id)).where(
+                InventoryLot.status.in_([InventoryLotStatus.available, InventoryLotStatus.reserved])
+            )
+        )
+        or 0
+    )
+    lots_sold = int(
+        db.scalar(
+            select(func.count(InventoryLot.id)).where(
+                InventoryLot.status == InventoryLotStatus.sold
+            )
+        )
+        or 0
+    )
+    pending_dealers = int(
+        db.scalar(
+            select(func.count(DealerProfile.id)).where(
+                DealerProfile.approval_status == DealerApprovalStatus.submitted
+            )
+        )
+        or 0
+    )
+
+    return PilotActivity(
+        pickups_last_7_days=pickups_last_7,
+        pickups_last_30_days=pickups_last_30,
+        completed_last_7_days=completed_last_7,
+        completed_last_30_days=completed_last_30,
+        lots_listed=lots_listed,
+        lots_sold=lots_sold,
+        pending_dealer_applications=pending_dealers,
+    )
+
+
+def _get_pilot_reliability(db: Session) -> PilotReliability:
+    """Compute reliability signals we can derive from authoritative state.
+
+    The audit log captures administrative actions, not API request/response
+    outcomes, so it cannot be used to compute an API error rate. Notification
+    records are written synchronously and have no failure status, and
+    background jobs only record their last successful run. Uptime cannot be
+    derived from the database. For each of these we set ``available=False``
+    and return ``None`` plus a note so the UI can render "N/A" rather than
+    misleading zeros. See docs/WIQ_V1_052_PILOT_METRICS.md.
+    """
+
+    return PilotReliability(
+        api_error_rate=None,
+        api_error_rate_available=False,
+        api_error_rate_note=(
+            "API request outcomes are not captured in the audit log; "
+            "tracking requires middleware-based instrumentation."
+        ),
+        notification_failure_rate=None,
+        notification_failure_rate_available=False,
+        notification_failure_rate_note=(
+            "Notifications are created synchronously and have no failure "
+            "status; failure tracking requires a delivery pipeline."
+        ),
+        background_job_failures=None,
+        background_job_failures_available=False,
+        background_job_failures_note=(
+            "Background jobs only persist their last successful run; "
+            "failure counts require a dedicated job history table."
+        ),
+        background_job_last_runs={
+            "reservation_sweep": _isoformat_or_none(None),
+            "aging_pickups": _isoformat_or_none(None),
+        },
+        platform_uptime_seconds=None,
+        platform_uptime_available=False,
+        platform_uptime_note=(
+            "Platform uptime is not tracked; this metric requires an external "
+            "monitoring service."
+        ),
+    )
+
+
+def get_pilot_metrics(db: Session) -> PilotMetrics:
+    start, end, days = _resolve_pilot_window(db)
+    return PilotMetrics(
+        window=PilotWindow(
+            start=_isoformat_or_none(start),
+            end=_isoformat_or_none(end),
+            days=days,
+        ),
+        collection=_get_pilot_collection_kpis(db),
+        timing=_get_pilot_timing(db),
+        weight_quality=_get_pilot_weight_quality(db),
+        activity=_get_pilot_activity(db, end),
+        reliability=_get_pilot_reliability(db),
+    )
