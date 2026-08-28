@@ -8,6 +8,7 @@ import {
   getCollectorSummary,
   listAssignedCollectorRequests,
   listAvailableCollectorRequests,
+  recordWeightCollectorPickup,
   startCollectorPickup,
 } from "@/api/collector";
 import type { PickupRequest, PickupRequestDetail } from "@/types/pickup";
@@ -185,6 +186,70 @@ export function useCollectCollectorPickup() {
   return useCollectorTransition(collectCollectorPickup, (request) =>
     patchRequest(request, { status: "collected" }),
   );
+}
+
+export function useRecordWeightCollectorPickup() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    PickupRequest,
+    Error,
+    { requestId: number; weightKg: number },
+    CollectorMutationContext
+  >({
+    mutationFn: ({ requestId, weightKg }) => recordWeightCollectorPickup(requestId, weightKg),
+    onMutate: async ({ requestId, weightKg }) => {
+      await cancelInFlightQueries(queryClient, requestId);
+
+      const previousAvailable = queryClient.getQueryData<PickupRequest[]>(
+        collectorQueryKeys.available,
+      );
+      const previousAssigned = queryClient.getQueryData<PickupRequest[]>(
+        collectorQueryKeys.assigned,
+      );
+      const previousDetail = queryClient.getQueryData<PickupRequestDetail>(
+        collectorQueryKeys.detail(requestId),
+      );
+
+      const markWeightRecorded = <T extends PickupRequest>(request: T): T =>
+        patchRequest(request, {
+          status: "weight_recorded",
+          assignment: request.assignment
+            ? { ...request.assignment, weight_kg: weightKg }
+            : request.assignment,
+        });
+
+      if (previousAvailable) {
+        queryClient.setQueryData<PickupRequest[]>(
+          collectorQueryKeys.available,
+          previousAvailable.map((request) =>
+            request.id === requestId ? markWeightRecorded(request) : request,
+          ),
+        );
+      }
+      if (previousAssigned) {
+        queryClient.setQueryData<PickupRequest[]>(
+          collectorQueryKeys.assigned,
+          previousAssigned.map((request) =>
+            request.id === requestId ? markWeightRecorded(request) : request,
+          ),
+        );
+      }
+      if (previousDetail) {
+        queryClient.setQueryData<PickupRequestDetail>(
+          collectorQueryKeys.detail(requestId),
+          markWeightRecorded(previousDetail),
+        );
+      }
+
+      return { previousAvailable, previousAssigned, previousDetail };
+    },
+    onError: (_error, variables, context) =>
+      restoreOnError(queryClient, variables.requestId, context),
+    onSettled: (_data, _error, variables) => {
+      void invalidatePickupQueries(queryClient, variables.requestId);
+    },
+  });
 }
 
 export function useCompleteCollectorPickup() {

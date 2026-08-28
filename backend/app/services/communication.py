@@ -15,6 +15,7 @@ _ELIGIBLE_COMMUNICATION_STATUSES = {
     PickupStatus.accepted,
     PickupStatus.on_the_way,
     PickupStatus.collected,
+    PickupStatus.weight_recorded,
 }
 
 

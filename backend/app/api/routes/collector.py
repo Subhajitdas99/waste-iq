@@ -21,6 +21,7 @@ from app.services.pickup_requests import (
     list_nearby_pickup_requests_for_collector,
     mark_pickup_request_collected,
     mark_pickup_request_on_the_way,
+    record_weight,
 )
 
 router = APIRouter()
@@ -90,6 +91,16 @@ def collect_pickup(
     current_user: User = Depends(require_verified_roles("collector")),
 ) -> PickupRequestRead:
     return mark_pickup_request_collected(db, current_user, pickup_id)
+
+
+@router.post("/pickups/{pickup_id}/record-weight", response_model=PickupRequestRead)
+def record_weight_endpoint(
+    pickup_id: int,
+    payload: CollectorCompleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_verified_roles("collector")),
+) -> PickupRequestRead:
+    return record_weight(db, current_user, pickup_id, payload.weight_kg)
 
 
 @router.post("/pickups/{pickup_id}/complete", response_model=PickupRequestRead)

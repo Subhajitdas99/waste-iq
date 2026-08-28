@@ -700,11 +700,11 @@ export const handlers = [
     return applyTransition(request, pickup.id, "collected");
   }),
 
-  http.post("*/collector/pickups/:id/complete", async ({ request, params }) => {
+  http.post("*/collector/pickups/:id/record-weight", async ({ request, params }) => {
     const pickup = pickupById(Number(params.id));
 
     if (!pickup || pickup.status !== "collected") {
-      return HttpResponse.json({ detail: "Only collected requests can be completed" }, { status: 400 });
+      return HttpResponse.json({ detail: "Only collected requests can have a weight recorded" }, { status: 400 });
     }
 
     const body = (await request.json()) as { weight_kg?: number };
@@ -716,6 +716,26 @@ export const handlers = [
         { status: 422 },
       );
     }
+
+    return applyTransition(request, pickup.id, "weight_recorded", {
+      assignment: pickup.assignment
+        ? {
+            ...pickup.assignment,
+            weight_kg: weightKg,
+          }
+        : pickup.assignment,
+    });
+  }),
+
+  http.post("*/collector/pickups/:id/complete", async ({ request, params }) => {
+    const pickup = pickupById(Number(params.id));
+
+    if (!pickup || pickup.status !== "weight_recorded") {
+      return HttpResponse.json({ detail: "Pickup must be collected before completion" }, { status: 400 });
+    }
+
+    const body = (await request.json()) as { weight_kg?: number };
+    const weightKg = body.weight_kg ?? 0;
 
     return applyTransition(request, pickup.id, "completed", {
       can_cancel: false,

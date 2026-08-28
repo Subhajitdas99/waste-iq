@@ -63,10 +63,11 @@ describe("getPickupProgress", () => {
   });
 
   it("returns progress for known statuses", () => {
-    expect(getPickupProgress("pending")).toBe(20);
-    expect(getPickupProgress("accepted")).toBe(40);
-    expect(getPickupProgress("on_the_way")).toBe(60);
-    expect(getPickupProgress("collected")).toBe(80);
+    expect(getPickupProgress("pending")).toBe(17);
+    expect(getPickupProgress("accepted")).toBe(33);
+    expect(getPickupProgress("on_the_way")).toBe(50);
+    expect(getPickupProgress("collected")).toBe(67);
+    expect(getPickupProgress("weight_recorded")).toBe(83);
     expect(getPickupProgress("completed")).toBe(100);
   });
 });

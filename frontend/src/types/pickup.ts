@@ -3,6 +3,7 @@ export type PickupStatus =
   | "accepted"
   | "on_the_way"
   | "collected"
+  | "weight_recorded"
   | "completed"
   | "cancelled";
 

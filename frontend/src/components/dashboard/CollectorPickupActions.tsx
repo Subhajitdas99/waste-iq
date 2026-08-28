@@ -9,6 +9,7 @@ import {
   useCancelCollectorPickup,
   useCollectCollectorPickup,
   useCompleteCollectorPickup,
+  useRecordWeightCollectorPickup,
   useStartCollectorPickup,
 } from "@/hooks/useCollectorRequests";
 import { getApiErrorMessage } from "@/lib/api-error";
@@ -20,13 +21,14 @@ interface CollectorPickupActionsProps {
 
 export function CollectorPickupActions({ request }: CollectorPickupActionsProps) {
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [weightInput, setWeightInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
   const acceptMutation = useAcceptCollectorPickup();
   const startMutation = useStartCollectorPickup();
   const collectMutation = useCollectCollectorPickup();
+  const recordWeightMutation = useRecordWeightCollectorPickup();
   const completeMutation = useCompleteCollectorPickup();
   const cancelMutation = useCancelCollectorPickup();
 
@@ -34,6 +36,7 @@ export function CollectorPickupActions({ request }: CollectorPickupActionsProps)
     acceptMutation.isPending ||
     startMutation.isPending ||
     collectMutation.isPending ||
+    recordWeightMutation.isPending ||
     completeMutation.isPending ||
     cancelMutation.isPending;
 
@@ -105,10 +108,20 @@ export function CollectorPickupActions({ request }: CollectorPickupActionsProps)
             onClick={() => {
               setActionError(null);
               setWeightInput("");
-              setIsCompleteDialogOpen(true);
+              setIsWeightDialogOpen(true);
             }}
           >
-            Complete Pickup
+            Record Weight
+          </Button>
+        ) : null}
+
+        {request.status === "weight_recorded" ? (
+          <Button
+            type="button"
+            disabled={isWorking}
+            onClick={() => void run(() => completeMutation.mutateAsync({ requestId: request.id, weightKg: request.assignment?.weight_kg ?? 0 }))}
+          >
+            {completeMutation.isPending ? "Finalizing..." : "Mark as Completed"}
           </Button>
         ) : null}
       </div>
@@ -143,43 +156,43 @@ export function CollectorPickupActions({ request }: CollectorPickupActionsProps)
       />
 
       <Modal
-        isOpen={isCompleteDialogOpen}
-        onClose={() => setIsCompleteDialogOpen(false)}
-        title="Complete pickup"
-        description="Record the final measured weight of the collected waste."
+        isOpen={isWeightDialogOpen}
+        onClose={() => setIsWeightDialogOpen(false)}
+        title="Record weight"
+        description="Record the measured weight of the collected waste. The pickup will then wait for final confirmation."
         footer={
           <>
             <Button
               type="button"
               variant="outline"
-              disabled={completeMutation.isPending}
-              onClick={() => setIsCompleteDialogOpen(false)}
+              disabled={recordWeightMutation.isPending}
+              onClick={() => setIsWeightDialogOpen(false)}
             >
               Cancel
             </Button>
             <Button
               type="button"
-              disabled={!isWeightValid || completeMutation.isPending}
+              disabled={!isWeightValid || recordWeightMutation.isPending}
               onClick={() => {
                 setActionError(null);
                 void run(async () => {
-                  await completeMutation.mutateAsync({
+                  await recordWeightMutation.mutateAsync({
                     requestId: request.id,
                     weightKg: numericWeight,
                   });
-                  setIsCompleteDialogOpen(false);
+                  setIsWeightDialogOpen(false);
                 });
               }}
             >
-              {completeMutation.isPending ? "Completing..." : "Confirm Weight"}
+              {recordWeightMutation.isPending ? "Recording..." : "Confirm Weight"}
             </Button>
           </>
         }
       >
         <div className="space-y-2">
-          <Label htmlFor="final-weight">Final weight (kg)</Label>
+          <Label htmlFor="weight">Final weight (kg)</Label>
           <Input
-            id="final-weight"
+            id="weight"
             type="number"
             min="0"
             step="0.1"

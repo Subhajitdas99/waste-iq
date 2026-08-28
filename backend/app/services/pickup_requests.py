@@ -18,6 +18,7 @@ from app.schemas.pickup_request import (
     PickupRequestTimelineEventRead,
     PickupRequestUpdate,
 )
+from app.services.audit import AuditService
 from app.services.notifications import NotificationDispatcher
 from app.services.pickup_request_images import cleanup_pickup_request_images
 from app.services.stats import count_pickups_for_user
@@ -25,6 +26,7 @@ from app.services.upload import ImageUploader
 
 _repository = PickupRequestRepository()
 _dispatcher = NotificationDispatcher()
+_audit_service = AuditService()
 
 
 def _serialize_assignment(pickup_request: PickupRequest) -> CollectorAssignmentRead | None:
@@ -165,6 +167,26 @@ def _require_status(pickup_request: PickupRequest, expected: PickupStatus, detai
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
+def _record_audit(
+    db: Session,
+    actor: User,
+    action: str,
+    pickup_request: PickupRequest,
+    *,
+    after: dict | None = None,
+    before: dict | None = None,
+) -> None:
+    _audit_service.record(
+        db,
+        actor_user_id=actor.id,
+        action=action,
+        resource="pickup_request",
+        resource_id=str(pickup_request.id),
+        before=before,
+        after=after,
+    )
+
+
 def create_pickup_request(
     db: Session,
     citizen: User,
@@ -183,6 +205,13 @@ def create_pickup_request(
         db, pickup_request, PickupStatus.pending, "Pickup request created.", actor=citizen
     )
     _dispatcher.notify_pickup_created(db, pickup_request)
+    _record_audit(
+        db,
+        citizen,
+        "pickup_created",
+        pickup_request,
+        after={"status": PickupStatus.pending.value},
+    )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
 
@@ -242,6 +271,7 @@ def list_assigned_pickup_requests_for_collector(
                     PickupStatus.accepted,
                     PickupStatus.on_the_way,
                     PickupStatus.collected,
+                    PickupStatus.weight_recorded,
                     PickupStatus.completed,
                 ]
             ),
@@ -291,7 +321,21 @@ def cancel_pickup_request_assignment(
     deleted, the pickup returns to `pending`, and the release is recorded on the
     timeline with the collector as actor.
     """
-    pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+    pickup_request = _repository.get_by_id(db, request_id)
+    if pickup_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
+
+    is_assigned_to_collector = (
+        pickup_request.assignment is not None
+        and pickup_request.assignment.collector_id == collector.id
+    )
+    if not is_assigned_to_collector:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="This request is not assigned to you"
+        )
+
     _require_status(
         pickup_request,
         PickupStatus.accepted,
@@ -307,6 +351,13 @@ def cancel_pickup_request_assignment(
         PickupStatus.pending,
         "Collector cancelled the assignment. Request is available again.",
         actor=collector,
+    )
+    _record_audit(
+        db,
+        collector,
+        "pickup_assignment_released",
+        pickup_request,
+        after={"status": PickupStatus.pending.value},
     )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
@@ -374,19 +425,36 @@ def update_pickup_request(
 
 
 def accept_pickup_request(db: Session, collector: User, request_id: int) -> PickupRequestRead:
+    """Collector accepts a pending pickup.
+
+    Idempotency / concurrency: re-checks the source state under the active
+    transaction. Two concurrent collectors cannot both win — the unique
+    ``collector_assignments.request_id`` constraint enforces single assignment.
+    Repeated calls from the assigned collector return the current resource
+    unchanged (no duplicate assignment, no duplicate notification/audit).
+    """
     pickup_request = _repository.get_by_id(db, request_id)
     if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
         )
-    if pickup_request.status != PickupStatus.pending:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Pickup request is no longer available"
-        )
+
     if pickup_request.user_id == collector.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Collectors cannot accept their own request",
+        )
+
+    if pickup_request.assignment is not None:
+        if pickup_request.assignment.collector_id == collector.id:
+            return _to_schema(pickup_request, viewer=collector)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Pickup request is no longer available"
+        )
+
+    if pickup_request.status != PickupStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Pickup request is no longer available"
         )
 
     assignment = CollectorAssignment(request_id=pickup_request.id, collector_id=collector.id)
@@ -400,6 +468,13 @@ def accept_pickup_request(db: Session, collector: User, request_id: int) -> Pick
         actor=collector,
     )
     _dispatcher.notify_pickup_accepted(db, pickup_request, collector)
+    _record_audit(
+        db,
+        collector,
+        "pickup_accepted",
+        pickup_request,
+        after={"status": PickupStatus.accepted.value},
+    )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
@@ -407,7 +482,15 @@ def accept_pickup_request(db: Session, collector: User, request_id: int) -> Pick
 def mark_pickup_request_on_the_way(
     db: Session, collector: User, request_id: int
 ) -> PickupRequestRead:
+    """Transition accepted -> on_the_way.
+
+    Idempotent: returns current state if already on_the_way.
+    """
     pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+
+    if pickup_request.status == PickupStatus.on_the_way:
+        return _to_schema(pickup_request, viewer=collector)
+
     _require_status(pickup_request, PickupStatus.accepted, "Only accepted requests can be started")
 
     pickup_request.status = PickupStatus.on_the_way
@@ -419,6 +502,13 @@ def mark_pickup_request_on_the_way(
         actor=collector,
     )
     _dispatcher.notify_pickup_started(db, pickup_request, collector)
+    _record_audit(
+        db,
+        collector,
+        "pickup_started",
+        pickup_request,
+        after={"status": PickupStatus.on_the_way.value},
+    )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
@@ -426,7 +516,15 @@ def mark_pickup_request_on_the_way(
 def mark_pickup_request_collected(
     db: Session, collector: User, request_id: int
 ) -> PickupRequestRead:
+    """Transition on_the_way -> collected.
+
+    Idempotent: returns current state if already collected.
+    """
     pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+
+    if pickup_request.status == PickupStatus.collected:
+        return _to_schema(pickup_request, viewer=collector)
+
     _require_status(
         pickup_request,
         PickupStatus.on_the_way,
@@ -442,6 +540,72 @@ def mark_pickup_request_collected(
         actor=collector,
     )
     _dispatcher.notify_pickup_collected(db, pickup_request, collector)
+    _record_audit(
+        db,
+        collector,
+        "pickup_collected",
+        pickup_request,
+        after={"status": PickupStatus.collected.value},
+    )
+    db.commit()
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
+
+
+def record_weight(
+    db: Session, collector: User, request_id: int, weight_kg: float
+) -> PickupRequestRead:
+    """Transition collected -> weight_recorded.
+
+    Records the measured weight on the assignment. The pickup enters the
+    ``weight_recorded`` state, which is the integration boundary for
+    WIQ-V1-046 (citizen verification). Final completion is deferred until
+    the citizen confirms (or disputes) the recorded weight.
+
+    Idempotent: a second call with the same weight is a no-op; a call with
+    a different weight while already in ``weight_recorded`` is rejected to
+    prevent silent overwrite.
+    """
+    pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
+
+    if pickup_request.status == PickupStatus.weight_recorded:
+        existing = pickup_request.assignment.weight_kg if pickup_request.assignment else None
+        if existing is not None and abs(existing - weight_kg) < 1e-6:
+            return _to_schema(pickup_request, viewer=collector)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Weight already recorded for this pickup",
+        )
+
+    if pickup_request.status == PickupStatus.completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pickup is already completed",
+        )
+
+    _require_status(
+        pickup_request,
+        PickupStatus.collected,
+        "Only collected requests can have a weight recorded",
+    )
+
+    pickup_request.status = PickupStatus.weight_recorded
+    pickup_request.assignment.weight_kg = weight_kg
+    pickup_request.assignment.completed_at = datetime.now(timezone.utc)
+    _repository.add_status_event(
+        db,
+        pickup_request,
+        PickupStatus.weight_recorded,
+        f"Collector reported {round(weight_kg, 2)} kg. Awaiting citizen confirmation.",
+        actor=collector,
+    )
+    _dispatcher.notify_pickup_completed(db, pickup_request, weight_kg)
+    _record_audit(
+        db,
+        collector,
+        "pickup_weight_recorded",
+        pickup_request,
+        after={"status": PickupStatus.weight_recorded.value, "weight_kg": weight_kg},
+    )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
@@ -449,12 +613,26 @@ def mark_pickup_request_collected(
 def complete_pickup_request(
     db: Session, collector: User, request_id: int, weight_kg: float
 ) -> PickupRequestRead:
+    """Final completion transition.
+
+    This is preserved for admin/legacy paths. The canonical collector
+    workflow is now:
+
+        collected -> record_weight -> (WIQ-V1-046 citizen verification) -> completed
+
+    Accepts both `collected` (legacy) and `weight_recorded` (canonical) source
+    states for backward compatibility.
+    """
     pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
-    _require_status(
-        pickup_request,
-        PickupStatus.collected,
-        "Only collected requests can be completed",
-    )
+
+    if pickup_request.status == PickupStatus.completed:
+        return _to_schema(pickup_request, viewer=collector)
+
+    if pickup_request.status not in (PickupStatus.collected, PickupStatus.weight_recorded):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pickup must be collected before completion",
+        )
 
     pickup_request.status = PickupStatus.completed
     pickup_request.assignment.completed_at = datetime.now(timezone.utc)
@@ -467,6 +645,13 @@ def complete_pickup_request(
         actor=collector,
     )
     _dispatcher.notify_pickup_completed(db, pickup_request, weight_kg)
+    _record_audit(
+        db,
+        collector,
+        "pickup_completed",
+        pickup_request,
+        after={"status": PickupStatus.completed.value, "weight_kg": weight_kg},
+    )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
@@ -496,6 +681,13 @@ def cancel_pickup_request(
         PickupStatus.cancelled,
         "Citizen cancelled the pickup request.",
         actor=citizen,
+    )
+    _record_audit(
+        db,
+        citizen,
+        "pickup_cancelled",
+        pickup_request,
+        after={"status": PickupStatus.cancelled.value},
     )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
