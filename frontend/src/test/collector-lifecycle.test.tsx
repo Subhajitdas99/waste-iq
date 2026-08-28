@@ -62,14 +62,16 @@ describe("collector pickup lifecycle", () => {
 
     await user.click(screen.getByRole("button", { name: "Start Trip" }));
     await user.click(screen.getByRole("button", { name: "Mark as Collected" }));
-    await user.click(screen.getByRole("button", { name: "Complete Pickup" }));
+    await user.click(screen.getByRole("button", { name: "Record Weight" }));
 
-    const weightInput = screen.getByLabelText(/final weight/i);
+    const weightInput = screen.getByPlaceholderText(/e\.g\. 12\.5/i);
     await user.type(weightInput, "14.5");
     await user.click(screen.getByRole("button", { name: "Confirm Weight" }));
 
-    expect(await screen.findByText("14.5 kg")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Mark as Collected" })).not.toBeInTheDocument();
+    await screen.findByText("14.5 kg");
+    await user.click(screen.getByRole("button", { name: "Mark as Completed" }));
+
+    expect(screen.queryByRole("button", { name: "Record Weight" })).not.toBeInTheDocument();
   });
 
   it("releases an accepted request back to the available queue", async () => {

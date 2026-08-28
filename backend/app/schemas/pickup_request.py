@@ -35,7 +35,16 @@ class PickupRequestUpdate(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     status: (
-        Literal["pending", "accepted", "on_the_way", "collected", "completed", "cancelled"] | None
+        Literal[
+            "pending",
+            "accepted",
+            "on_the_way",
+            "collected",
+            "weight_recorded",
+            "completed",
+            "cancelled",
+        ]
+        | None
     ) = None
 
     model_config = ConfigDict(str_strip_whitespace=True)

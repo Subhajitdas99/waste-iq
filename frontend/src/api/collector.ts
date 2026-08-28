@@ -39,6 +39,16 @@ export async function collectCollectorPickup(requestId: number): Promise<PickupR
   return response.data;
 }
 
+export async function recordWeightCollectorPickup(
+  requestId: number,
+  weightKg: number,
+): Promise<PickupRequest> {
+  const response = await apiClient.post<PickupRequest>(`/collector/pickups/${requestId}/record-weight`, {
+    weight_kg: weightKg,
+  });
+  return response.data;
+}
+
 export async function completeCollectorPickup(
   requestId: number,
   weightKg: number,

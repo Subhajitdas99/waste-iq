@@ -13,6 +13,7 @@ class PickupStatus(str, enum.Enum):
     accepted = "accepted"
     on_the_way = "on_the_way"
     collected = "collected"
+    weight_recorded = "weight_recorded"
     completed = "completed"
     cancelled = "cancelled"
 
