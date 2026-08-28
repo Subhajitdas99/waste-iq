@@ -11,6 +11,7 @@ select = ["E", "F", "W"]
 [tool.ruff.lint.per-file-ignores]
 "**/alembic/versions/*.py" = ["E501", "E402"]
 "**/tests/conftest.py" = ["E402"]
+"**/tests/test_weight_verification.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

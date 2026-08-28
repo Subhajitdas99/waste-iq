@@ -48,7 +48,7 @@ describe("collector pickup lifecycle", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("starts, collects, and completes a pickup with a final weight", async () => {
+  it("starts, collects, and records weight — then shows awaiting confirmation state", async () => {
     const user = userEvent.setup();
     storeValidSession("collector");
     await renderApp("/collector/pickups/5");
@@ -69,9 +69,9 @@ describe("collector pickup lifecycle", () => {
     await user.click(screen.getByRole("button", { name: "Confirm Weight" }));
 
     await screen.findByText("14.5 kg");
-    await user.click(screen.getByRole("button", { name: "Mark as Completed" }));
-
+    await screen.findByText(/awaiting citizen confirmation/i);
     expect(screen.queryByRole("button", { name: "Record Weight" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark as Completed" })).not.toBeInTheDocument();
   });
 
   it("releases an accepted request back to the available queue", async () => {

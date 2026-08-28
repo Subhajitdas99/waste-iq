@@ -14,7 +14,7 @@ export function ProgressTracker({ currentStatus, className }: ProgressTrackerPro
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-4 md:grid-cols-7">
         {PICKUP_STATUS_FLOW.map((status, index) => {
           const isComplete = !isCancelled && currentIndex > index;
           const isCurrent = !isCancelled && currentIndex === index;

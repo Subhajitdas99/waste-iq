@@ -14,6 +14,7 @@ class PickupStatus(str, enum.Enum):
     on_the_way = "on_the_way"
     collected = "collected"
     weight_recorded = "weight_recorded"
+    disputed = "disputed"
     completed = "completed"
     cancelled = "cancelled"
 
@@ -62,6 +63,12 @@ class PickupRequest(Base):
     )
     inventory_lot = relationship(
         "InventoryLot",
+        back_populates="pickup_request",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    dispute = relationship(
+        "PickupDispute",
         back_populates="pickup_request",
         cascade="all, delete-orphan",
         uselist=False,

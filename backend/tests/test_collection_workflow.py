@@ -53,9 +53,15 @@ def test_valid_full_lifecycle_to_weight_recorded(
     ]
 
 
-def test_weight_recorded_to_completed_is_collector_only(
+def test_weight_recorded_to_completed_requires_citizen_confirmation(
     client, citizen_headers, collector_headers, valid_pickup_payload
 ):
+    """WIQ-V1-046: collector cannot bypass citizen verification via complete endpoint.
+
+    After weight is recorded, the pickup must go through citizen confirmation
+    (or dispute/admin resolution) — the collector's complete endpoint rejects
+    transitions from weight_recorded.
+    """
     request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
     client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
     client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -71,8 +77,11 @@ def test_weight_recorded_to_completed_is_collector_only(
         json={"weight_kg": 5.0},
         headers=collector_headers,
     )
-    assert response.status_code == 200
-    assert response.json()["status"] == "completed"
+    assert response.status_code == 400
+    assert "weight" in response.json()["detail"].lower()
+    client.post(f"/pickup-requests/{request['id']}/weight/confirm", headers=citizen_headers)
+    detail = client.get(f"/pickup-requests/{request['id']}", headers=citizen_headers).json()
+    assert detail["status"] == "completed"
 
 
 # ─── State machine: invalid transitions ───────────────────────────────────────
@@ -157,6 +166,7 @@ def test_cannot_complete_pending_request(
 def test_cannot_restart_a_completed_request(
     client, citizen_headers, collector_headers, valid_pickup_payload
 ):
+    """WIQ-V1-046: after citizen confirmation completes the pickup, restart is rejected."""
     request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
     client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
     client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -167,9 +177,8 @@ def test_cannot_restart_a_completed_request(
         headers=collector_headers,
     )
     client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 2.0},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
 
     response = client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -179,6 +188,7 @@ def test_cannot_restart_a_completed_request(
 def test_cannot_reaccept_a_completed_request(
     client, citizen_headers, collector_headers, valid_pickup_payload
 ):
+    """WIQ-V1-046: completed pickups cannot be reaccepted by any collector."""
     request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
     client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
     client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -189,14 +199,11 @@ def test_cannot_reaccept_a_completed_request(
         headers=collector_headers,
     )
     client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 2.0},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
 
     response = client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
-    # Replay is idempotent (the same collector cannot reassign an already-completed
-    # request). The state is preserved.
     assert response.status_code in (200, 400)
 
 
@@ -286,9 +293,10 @@ def test_repeated_weight_record_with_different_value_is_rejected(
     assert second.status_code == 409
 
 
-def test_double_complete_is_idempotent(
+def test_double_citizen_confirm_is_idempotent(
     client, citizen_headers, collector_headers, valid_pickup_payload
 ):
+    """WIQ-V1-046: repeated citizen confirm is idempotent."""
     request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
     client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
     client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -300,14 +308,12 @@ def test_double_complete_is_idempotent(
     )
 
     first = client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 3.0},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
     second = client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 3.0},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
     assert first.json()["status"] == "completed"
     assert second.json()["status"] == "completed"
@@ -408,7 +414,12 @@ def test_successful_transitions_emit_audit_events(
     admin_user,
     valid_pickup_payload,
 ):
-    """Successful lifecycle transitions emit distinct audit events."""
+    """WIQ-V1-046: Successful lifecycle transitions emit distinct audit events.
+
+    Final transition uses citizen weight confirmation, which records
+    ``pickup_weight_confirmed`` rather than the collector-driven
+    ``pickup_completed``.
+    """
     request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
     client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
     client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -419,9 +430,8 @@ def test_successful_transitions_emit_audit_events(
         headers=collector_headers,
     )
     client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 4.0},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
 
     from app.core.security import create_access_token
@@ -438,7 +448,7 @@ def test_successful_transitions_emit_audit_events(
     assert "pickup_started" in actions
     assert "pickup_collected" in actions
     assert "pickup_weight_recorded" in actions
-    assert "pickup_completed" in actions
+    assert "pickup_weight_confirmed" in actions
 
 
 def test_double_accept_does_not_duplicate_audit(
@@ -503,6 +513,12 @@ def test_full_lifecycle_emits_expected_notifications(
     collector_headers,
     valid_pickup_payload,
 ):
+    """WIQ-V1-046: full lifecycle completes via citizen weight confirmation.
+
+    The collector records weight (triggers weight_recorded notification to
+    citizen) and then the citizen confirms (triggers weight_confirmed
+    notification).
+    """
     request = _create_pending_request(client, citizen_headers, valid_pickup_payload)
     client.post(f"/collector/pickups/{request['id']}/accept", headers=collector_headers)
     client.post(f"/collector/pickups/{request['id']}/start", headers=collector_headers)
@@ -513,9 +529,8 @@ def test_full_lifecycle_emits_expected_notifications(
         headers=collector_headers,
     )
     client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 4.5},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
 
     response = client.get("/notifications?page=1&page_size=50", headers=citizen_headers)
@@ -523,7 +538,8 @@ def test_full_lifecycle_emits_expected_notifications(
     assert "pickup_accepted" in kinds
     assert "pickup_started" in kinds
     assert "pickup_collected" in kinds
-    assert "pickup_completed" in kinds
+    assert "weight_recorded" in kinds
+    assert "weight_confirmed" in kinds
 
 
 def test_double_accept_does_not_duplicate_acceptance_notification(
@@ -580,9 +596,8 @@ def test_masked_contact_blocked_in_completed_state(
         headers=collector_headers,
     )
     client.post(
-        f"/collector/pickups/{request['id']}/complete",
-        json={"weight_kg": 2.0},
-        headers=collector_headers,
+        f"/pickup-requests/{request['id']}/weight/confirm",
+        headers=citizen_headers,
     )
 
     response = client.post(f"/pickup-requests/{request['id']}/contact", headers=citizen_headers)

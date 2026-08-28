@@ -730,8 +730,19 @@ export const handlers = [
   http.post("*/collector/pickups/:id/complete", async ({ request, params }) => {
     const pickup = pickupById(Number(params.id));
 
-    if (!pickup || pickup.status !== "weight_recorded") {
-      return HttpResponse.json({ detail: "Pickup must be collected before completion" }, { status: 400 });
+    if (!pickup) {
+      return HttpResponse.json({ detail: "Pickup request not found" }, { status: 404 });
+    }
+
+    if (pickup.status === "completed") {
+      return HttpResponse.json(pickup);
+    }
+
+    if (pickup.status !== "collected") {
+      return HttpResponse.json(
+        { detail: "Pickup must be in collected state. Use citizen verification to complete after weight is recorded." },
+        { status: 400 },
+      );
     }
 
     const body = (await request.json()) as { weight_kg?: number };

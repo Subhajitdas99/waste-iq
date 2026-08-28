@@ -13,6 +13,7 @@ class PickupRequestRepository:
         statement = select(PickupRequest).options(
             selectinload(PickupRequest.citizen),
             selectinload(PickupRequest.assignment).selectinload(CollectorAssignment.collector),
+            selectinload(PickupRequest.dispute),
         )
         if include_timeline:
             statement = statement.options(

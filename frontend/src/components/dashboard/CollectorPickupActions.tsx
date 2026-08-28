@@ -116,13 +116,19 @@ export function CollectorPickupActions({ request }: CollectorPickupActionsProps)
         ) : null}
 
         {request.status === "weight_recorded" ? (
-          <Button
-            type="button"
-            disabled={isWorking}
-            onClick={() => void run(() => completeMutation.mutateAsync({ requestId: request.id, weightKg: request.assignment?.weight_kg ?? 0 }))}
-          >
-            {completeMutation.isPending ? "Finalizing..." : "Mark as Completed"}
-          </Button>
+          <div className="flex flex-col gap-2">
+            <span className="rounded-2xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-300">
+              Weight recorded — awaiting citizen confirmation
+            </span>
+          </div>
+        ) : null}
+
+        {request.status === "disputed" ? (
+          <div className="flex flex-col gap-2">
+            <span className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-700 dark:text-amber-300">
+              Weight disputed — under admin review
+            </span>
+          </div>
         ) : null}
       </div>
 

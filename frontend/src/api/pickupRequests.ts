@@ -7,6 +7,7 @@ import type {
   PickupRequest,
   PickupRequestDetail,
   PickupRequestUpdatePayload,
+  WeightDisputeRequest,
 } from "@/types/pickup";
 
 function buildPickupFormData(payload: CreatePickupRequestPayload): FormData {
@@ -91,5 +92,23 @@ export async function cancelPickupRequest(requestId: number): Promise<PickupRequ
 
 export async function initiateContact(requestId: number): Promise<ContactSessionRead> {
   const response = await apiClient.post<ContactSessionRead>(`/pickup-requests/${requestId}/contact`);
+  return response.data;
+}
+
+export async function confirmPickupWeight(requestId: number): Promise<PickupRequest> {
+  const response = await apiClient.post<PickupRequest>(
+    `/pickup-requests/${requestId}/weight/confirm`,
+  );
+  return response.data;
+}
+
+export async function disputePickupWeight(
+  requestId: number,
+  payload: WeightDisputeRequest,
+): Promise<PickupRequest> {
+  const response = await apiClient.post<PickupRequest>(
+    `/pickup-requests/${requestId}/weight/dispute`,
+    payload,
+  );
   return response.data;
 }

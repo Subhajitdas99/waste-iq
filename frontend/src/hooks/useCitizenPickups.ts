@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelPickupRequest,
+  confirmPickupWeight,
   createPickupRequest,
+  disputePickupWeight,
   getCitizenRequestSummary,
   getPickupRequestDetail,
   listPickupRequests,
@@ -13,6 +15,7 @@ import type {
   PickupRequest,
   PickupRequestDetail,
   PickupRequestUpdatePayload,
+  WeightDisputeRequest,
 } from "@/types/pickup";
 
 export const citizenPickupQueryKeys = {
@@ -35,6 +38,89 @@ interface CancelMutationContext {
   previousRequests?: PickupRequest[];
   previousSummary?: CitizenRequestSummary;
   previousDetail?: PickupRequestDetail;
+}
+
+export function useConfirmPickupWeight() {
+  const queryClient = useQueryClient();
+
+  return useMutation<PickupRequest, Error, number, CancelMutationContext>({
+    mutationFn: (requestId) => confirmPickupWeight(requestId),
+    onMutate: async (requestId) => {
+      await queryClient.cancelQueries({ queryKey: citizenPickupQueryKeys.detail(requestId) });
+      const previousDetail = queryClient.getQueryData<PickupRequestDetail>(
+        citizenPickupQueryKeys.detail(requestId),
+      );
+      if (previousDetail) {
+        queryClient.setQueryData<PickupRequestDetail>(
+          citizenPickupQueryKeys.detail(requestId),
+          {
+            ...previousDetail,
+            status: "completed",
+            can_cancel: false,
+          },
+        );
+      }
+      return { previousDetail };
+    },
+    onError: (_error, requestId, context) => {
+      if (context?.previousDetail) {
+        queryClient.setQueryData(
+          citizenPickupQueryKeys.detail(requestId),
+          context.previousDetail,
+        );
+      }
+    },
+    onSettled: async (_data, _error, requestId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: citizenPickupQueryKeys.all }),
+        queryClient.invalidateQueries({
+          queryKey: citizenPickupQueryKeys.detail(requestId),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useDisputePickupWeight() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    PickupRequest,
+    Error,
+    { requestId: number; payload: WeightDisputeRequest },
+    CancelMutationContext
+  >({
+    mutationFn: ({ requestId, payload }) => disputePickupWeight(requestId, payload),
+    onMutate: async ({ requestId }) => {
+      await queryClient.cancelQueries({ queryKey: citizenPickupQueryKeys.detail(requestId) });
+      const previousDetail = queryClient.getQueryData<PickupRequestDetail>(
+        citizenPickupQueryKeys.detail(requestId),
+      );
+      if (previousDetail) {
+        queryClient.setQueryData<PickupRequestDetail>(
+          citizenPickupQueryKeys.detail(requestId),
+          { ...previousDetail, status: "disputed" },
+        );
+      }
+      return { previousDetail };
+    },
+    onError: (_error, variables, context) => {
+      if (context?.previousDetail) {
+        queryClient.setQueryData(
+          citizenPickupQueryKeys.detail(variables.requestId),
+          context.previousDetail,
+        );
+      }
+    },
+    onSettled: async (_data, _error, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: citizenPickupQueryKeys.all }),
+        queryClient.invalidateQueries({
+          queryKey: citizenPickupQueryKeys.detail(variables.requestId),
+        }),
+      ]);
+    },
+  });
 }
 
 export function useCitizenPickupSummary() {

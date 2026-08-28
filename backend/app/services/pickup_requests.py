@@ -5,6 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.collector_assignment import CollectorAssignment
+from app.models.pickup_dispute import DisputeResolution, PickupDispute
 from app.models.pickup_request import PickupRequest, PickupStatus
 from app.models.user import User
 from app.repositories.pickup_requests import PickupRequestRepository
@@ -17,6 +18,8 @@ from app.schemas.pickup_request import (
     PickupRequestRead,
     PickupRequestTimelineEventRead,
     PickupRequestUpdate,
+    PickupDisputeRead,
+    WeightDisputeResolveRequest,
 )
 from app.services.audit import AuditService
 from app.services.notifications import NotificationDispatcher
@@ -105,7 +108,12 @@ def _to_detail_schema(
         )
         for event in pickup_request.events
     ]
-    return PickupRequestDetailRead(**base.model_dump(), timeline=timeline)
+    dispute = (
+        PickupDisputeRead.model_validate(pickup_request.dispute)
+        if pickup_request.dispute is not None
+        else None
+    )
+    return PickupRequestDetailRead(**base.model_dump(), timeline=timeline, dispute=dispute)
 
 
 def _enforce_request_access(pickup_request: PickupRequest, user: User) -> None:
@@ -598,7 +606,7 @@ def record_weight(
         f"Collector reported {round(weight_kg, 2)} kg. Awaiting citizen confirmation.",
         actor=collector,
     )
-    _dispatcher.notify_pickup_completed(db, pickup_request, weight_kg)
+    _dispatcher.notify_weight_verification_pending(db, pickup_request, weight_kg)
     _record_audit(
         db,
         collector,
@@ -613,25 +621,29 @@ def record_weight(
 def complete_pickup_request(
     db: Session, collector: User, request_id: int, weight_kg: float
 ) -> PickupRequestRead:
-    """Final completion transition.
+    """Final completion transition (legacy path).
 
-    This is preserved for admin/legacy paths. The canonical collector
-    workflow is now:
+    This path is preserved for admin or legacy scenarios only.
+    The canonical collector workflow now requires citizen verification:
 
         collected -> record_weight -> (WIQ-V1-046 citizen verification) -> completed
 
-    Accepts both `collected` (legacy) and `weight_recorded` (canonical) source
-    states for backward compatibility.
+    Only accepts `collected` (legacy) source state. Transitions from
+    `weight_recorded` or `disputed` are not permitted through this endpoint;
+    use the citizen verification or admin resolution flows instead.
     """
     pickup_request = _get_request_for_assigned_collector(db, request_id, collector)
 
     if pickup_request.status == PickupStatus.completed:
         return _to_schema(pickup_request, viewer=collector)
 
-    if pickup_request.status not in (PickupStatus.collected, PickupStatus.weight_recorded):
+    if pickup_request.status not in (PickupStatus.collected,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Pickup must be collected before completion",
+            detail=(
+                "Pickup must be in collected state. "
+                "Use citizen verification to complete after weight is recorded."
+            ),
         )
 
     pickup_request.status = PickupStatus.completed
@@ -691,3 +703,278 @@ def cancel_pickup_request(
     )
     db.commit()
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
+
+
+# ─── WIQ-V1-046: Citizen Weight Verification & Dispute ───────────────────────
+
+
+def _get_request_for_citizen(db: Session, request_id: int, citizen: User) -> PickupRequest:
+    pickup_request = _repository.get_by_id(db, request_id, include_timeline=True)
+    if pickup_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
+    if pickup_request.user_id != citizen.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot verify this pickup request",
+        )
+    return pickup_request
+
+
+def confirm_pickup_weight(db: Session, citizen: User, request_id: int) -> PickupRequestRead:
+    """Citizen confirms the collector-reported weight (WIQ-V1-046).
+
+    Idempotent: a repeat confirmation when the pickup is already ``completed``
+    returns the current resource without creating a new event, audit row, or
+    notification.
+    """
+    pickup_request = _get_request_for_citizen(db, request_id, citizen)
+
+    if pickup_request.status == PickupStatus.completed:
+        return _to_schema(pickup_request, viewer=citizen)
+
+    if pickup_request.status != PickupStatus.weight_recorded:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Weight has not been recorded yet",
+        )
+
+    if pickup_request.assignment is None or pickup_request.assignment.weight_kg is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recorded weight is missing",
+        )
+
+    recorded_weight = pickup_request.assignment.weight_kg
+    pickup_request.status = PickupStatus.completed
+    pickup_request.assignment.completed_at = datetime.now(timezone.utc)
+    _repository.add_status_event(
+        db,
+        pickup_request,
+        PickupStatus.completed,
+        f"Citizen confirmed the reported weight of {round(recorded_weight, 2)} kg.",
+        actor=citizen,
+    )
+    _dispatcher.notify_weight_confirmed(db, pickup_request, recorded_weight)
+    _record_audit(
+        db,
+        citizen,
+        "pickup_weight_confirmed",
+        pickup_request,
+        after={"status": PickupStatus.completed.value, "weight_kg": recorded_weight},
+    )
+    db.commit()
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
+
+
+def dispute_pickup_weight(
+    db: Session, citizen: User, request_id: int, reason: str
+) -> PickupRequestRead:
+    """Citizen disputes the collector-reported weight (WIQ-V1-046).
+
+    The original collector measurement on ``assignment.weight_kg`` is
+    preserved. A single ``pickup_disputes`` row records the dispute; the
+    pickup enters the ``disputed`` state and waits for admin review.
+
+    Idempotency: a second submission with the same reason returns the
+    current state without creating a duplicate event/audit/notification.
+    A different reason on an already-disputed pickup returns 409.
+    """
+    pickup_request = _get_request_for_citizen(db, request_id, citizen)
+
+    if pickup_request.status == PickupStatus.completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pickup is already completed and cannot be disputed",
+        )
+
+    if pickup_request.status == PickupStatus.cancelled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cancelled pickups cannot be disputed",
+        )
+
+    if pickup_request.status not in (
+        PickupStatus.weight_recorded,
+        PickupStatus.disputed,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Weight has not been recorded yet",
+        )
+
+    if pickup_request.assignment is None or pickup_request.assignment.weight_kg is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recorded weight is missing",
+        )
+
+    if pickup_request.dispute is not None:
+        existing_reason = (pickup_request.dispute.reason or "").strip()
+        new_reason = (reason or "").strip()
+        if existing_reason == new_reason:
+            return _to_schema(pickup_request, viewer=citizen)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A dispute already exists for this pickup",
+        )
+
+    dispute = PickupDispute(request_id=pickup_request.id, reason=reason.strip())
+    db.add(dispute)
+    pickup_request.dispute = dispute
+    pickup_request.status = PickupStatus.disputed
+    _repository.add_status_event(
+        db,
+        pickup_request,
+        PickupStatus.disputed,
+        "Citizen disputed the reported weight. Awaiting admin review.",
+        actor=citizen,
+    )
+    _dispatcher.notify_weight_disputed(db, pickup_request)
+    if pickup_request.assignment is not None:
+        _dispatcher.notify_collector_dispute_filed(db, pickup_request)
+    _record_audit(
+        db,
+        citizen,
+        "pickup_weight_disputed",
+        pickup_request,
+        after={"status": PickupStatus.disputed.value},
+    )
+    db.commit()
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
+
+
+def list_disputed_pickup_requests(
+    db: Session,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[PickupRequestRead], int]:
+    """List pickups currently in the ``disputed`` state, newest first."""
+    from sqlalchemy import func, select
+
+    statement = _repository.base_query().where(PickupRequest.status == PickupStatus.disputed)
+    total = db.execute(select(func.count()).select_from(statement.subquery())).scalar_one()
+
+    items = (
+        db.execute(
+            statement.order_by(PickupRequest.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    return [_to_schema(item, viewer=None) for item in items], int(total or 0)
+
+
+def resolve_weight_dispute(
+    db: Session,
+    admin: User,
+    request_id: int,
+    payload: WeightDisputeResolveRequest,
+) -> PickupRequestRead:
+    """Admin resolves a weight dispute (WIQ-V1-046).
+
+    Outcomes:
+      * ``upheld`` — accept the collector's original measurement, transition
+        to ``completed``. The original ``assignment.weight_kg`` is preserved.
+      * ``corrected`` — accept the dispute and set a corrected weight via
+        ``dispute.resolved_weight_kg``. The original ``assignment.weight_kg``
+        is preserved; the corrected value is stored on the dispute and on a
+        snapshot ``completed_at`` audit record.
+    """
+    if admin.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can resolve disputes",
+        )
+
+    pickup_request = _repository.get_by_id(db, request_id, include_timeline=True)
+    if pickup_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
+
+    if pickup_request.status != PickupStatus.disputed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pickup is not in a disputed state",
+        )
+
+    if pickup_request.dispute is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No dispute record found for this pickup",
+        )
+
+    if pickup_request.dispute.resolution is not None:
+        return _to_schema(pickup_request, viewer=admin)
+
+    resolution = DisputeResolution(payload.resolution)
+    original_weight = pickup_request.assignment.weight_kg if pickup_request.assignment else None
+    corrected_weight: float | None = None
+
+    if resolution is DisputeResolution.upheld:
+        if original_weight is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Original weight missing; cannot uphold",
+            )
+    else:
+        if payload.resolved_weight_kg is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Corrected weight is required when resolution is 'corrected'",
+            )
+        corrected_weight = payload.resolved_weight_kg
+
+    pickup_request.dispute.resolution = resolution
+    pickup_request.dispute.resolved_at = datetime.now(timezone.utc)
+    pickup_request.dispute.resolved_by_id = admin.id
+    pickup_request.dispute.resolved_weight_kg = corrected_weight
+    pickup_request.dispute.resolution_notes = payload.notes
+
+    pickup_request.status = PickupStatus.completed
+    if pickup_request.assignment is not None:
+        pickup_request.assignment.completed_at = datetime.now(timezone.utc)
+
+    _repository.add_status_event(
+        db,
+        pickup_request,
+        PickupStatus.completed,
+        (
+            f"Admin upheld the collector weight of {round(original_weight or 0.0, 2)} kg."
+            if resolution is DisputeResolution.upheld
+            else f"Admin corrected the weight to {round(corrected_weight or 0.0, 2)} kg."
+        ),
+        actor=admin,
+    )
+    _dispatcher.notify_dispute_resolved(
+        db,
+        pickup_request,
+        resolution.value,
+        corrected_weight if corrected_weight is not None else original_weight,
+    )
+    _record_audit(
+        db,
+        admin,
+        "pickup_dispute_resolved",
+        pickup_request,
+        after={
+            "status": PickupStatus.completed.value,
+            "resolution": resolution.value,
+            "resolved_weight_kg": corrected_weight,
+            "original_weight_kg": original_weight,
+        },
+    )
+    _record_audit(
+        db,
+        admin,
+        "pickup_dispute_reviewed",
+        pickup_request,
+        after={"status": PickupStatus.disputed.value},
+    )
+    db.commit()
+    return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=admin)
