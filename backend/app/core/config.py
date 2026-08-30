@@ -43,6 +43,51 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str | None = Field(default=None, alias="CLOUDINARY_API_SECRET")
 
     # ------------------------------------------------------------------
+    # Deployment Mode (WIQ-V1-054 boundary)
+    #
+    # Explicit distinction between the local production simulation and
+    # real production. The local production simulation is the docker
+    # compose stack shipped with the repo (WIQ-V1-053); real production
+    # is any cloud-hosted deployment.
+    #
+    # This value is the security gate that prevents local filesystem
+    # image storage from ever being selected in real production, even
+    # if the operator accidentally sets ``LOCAL_IMAGE_STORAGE_ENABLED=true``
+    # and/or ``ENVIRONMENT=production`` together with missing Cloudinary
+    # credentials.
+    # ------------------------------------------------------------------
+
+    deployment_mode: Literal["development", "local-simulation", "production"] = Field(
+        default="development",
+        validation_alias=AliasChoices("DEPLOYMENT_MODE"),
+    )
+
+    # ------------------------------------------------------------------
+    # Local Image Storage Fallback (WIQ-V1-054)
+    #
+    # Enables the LOCAL PRODUCTION SIMULATION to upload images to the
+    # ``uploads_data`` Docker volume mounted at ``/app/uploads`` instead
+    # of Cloudinary. This must NEVER be usable in real production. The
+    # flag is honored ONLY when ``DEPLOYMENT_MODE=local-simulation``;
+    # in ``production`` it is ignored and Cloudinary is mandatory.
+    # ------------------------------------------------------------------
+
+    local_image_storage_enabled: bool = Field(
+        default=False,
+        alias="LOCAL_IMAGE_STORAGE_ENABLED",
+    )
+
+    local_image_storage_dir: str = Field(
+        default="/app/uploads",
+        alias="LOCAL_IMAGE_STORAGE_DIR",
+    )
+
+    local_image_storage_url_prefix: str = Field(
+        default="/uploads",
+        alias="LOCAL_IMAGE_STORAGE_URL_PREFIX",
+    )
+
+    # ------------------------------------------------------------------
     # Masked Communication (WIQ-V1-047)
     # ------------------------------------------------------------------
 
@@ -213,7 +258,25 @@ class Settings(BaseSettings):
 
     @property
     def cloudinary_required(self) -> bool:
-        return self.is_production
+        return self.deployment_mode == "production"
+
+    @property
+    def local_image_storage_active(self) -> bool:
+        """True only when the local simulation is explicitly enabled.
+
+        The local filesystem fallback is ONLY available in
+        ``deployment_mode=local-simulation`` with ``local_image_storage_enabled=true``
+        and Cloudinary not configured. This creates an unambiguous production
+        boundary: real production (deployment_mode=production) can never
+        activate local filesystem storage.
+        """
+        if self.deployment_mode != "local-simulation":
+            return False
+        if not self.local_image_storage_enabled:
+            return False
+        if self.cloudinary_configured:
+            return False
+        return True
 
     @property
     def sentry_enabled(self) -> bool:

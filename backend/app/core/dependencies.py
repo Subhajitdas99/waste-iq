@@ -14,7 +14,13 @@ from app.models.user import User
 from app.services.ai_classifier import AIClassifierProvider, get_classifier
 from app.services.pickup_request_creation import PickupRequestCreationService
 from app.services.pickup_request_images import PickupRequestImageService
-from app.services.upload import CloudinaryUploadConfig, CloudinaryUploader
+from app.services.upload import (
+    CloudinaryUploadConfig,
+    CloudinaryUploader,
+    ImageUploader,
+    LocalFileUploadConfig,
+    LocalFileUploader,
+)
 
 if TYPE_CHECKING:
     from app.services.communication import CommunicationService
@@ -94,7 +100,33 @@ def get_ai_classifier() -> AIClassifierProvider:
     return get_classifier()
 
 
-def get_image_uploader(settings: Settings = Depends(get_settings)) -> CloudinaryUploader:
+def get_image_uploader(settings: Settings = Depends(get_settings)) -> ImageUploader:
+    # Selection order:
+    # 1. Cloudinary (if configured) always wins — even in the local simulation,
+    #    Cloudinary is preferred when available.
+    # 2. LocalFileUploader (only when deployment_mode=local-simulation AND
+    #    local_image_storage_enabled=true AND Cloudinary is absent). The
+    #    deployment-mode gate is enforced in config.local_image_storage_active,
+    #    so real production can never activate this path.
+    # 3. Cloudinary uploader with no credentials (raises on upload when required).
+    if settings.cloudinary_configured:
+        return CloudinaryUploader(
+            config=CloudinaryUploadConfig(
+                cloud_name=settings.cloudinary_cloud_name,
+                api_key=settings.cloudinary_api_key,
+                api_secret=settings.cloudinary_api_secret,
+                required=settings.cloudinary_required,
+            )
+        )
+
+    if settings.local_image_storage_active:
+        return LocalFileUploader(
+            config=LocalFileUploadConfig(
+                storage_dir=settings.local_image_storage_dir,
+                url_prefix=settings.local_image_storage_url_prefix,
+            )
+        )
+
     return CloudinaryUploader(
         config=CloudinaryUploadConfig(
             cloud_name=settings.cloudinary_cloud_name,
@@ -106,7 +138,7 @@ def get_image_uploader(settings: Settings = Depends(get_settings)) -> Cloudinary
 
 
 def get_pickup_request_image_service(
-    uploader: CloudinaryUploader = Depends(get_image_uploader),
+    uploader: ImageUploader = Depends(get_image_uploader),
     classifier: AIClassifierProvider = Depends(get_ai_classifier),
 ) -> PickupRequestImageService:
     return PickupRequestImageService(uploader=uploader, classifier=classifier)

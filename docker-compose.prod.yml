@@ -32,6 +32,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wasteiq}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wasteiq}
       ENVIRONMENT: production
+      # WIQ-V1-054 deployment mode: this is the LOCAL PRODUCTION SIMULATION,
+      # not real production. Real production (Railway/Render/etc.) MUST set
+      # DEPLOYMENT_MODE=production — that value is the security gate that
+      # prevents LOCAL_IMAGE_STORAGE_ENABLED from activating the local
+      # filesystem uploader. See docs/DEPLOYMENT_GUIDE.md.
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-local-simulation}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -46,6 +52,14 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      # Local image storage fallback (WIQ-V1-054). Honored ONLY when
+      # DEPLOYMENT_MODE=local-simulation. Real production must set
+      # DEPLOYMENT_MODE=production AND configure Cloudinary. Default is
+      # `false` for secure-by-default behavior; the local simulation opts
+      # in explicitly via the project-root .env file.
+      LOCAL_IMAGE_STORAGE_ENABLED: ${LOCAL_IMAGE_STORAGE_ENABLED:-false}
+      LOCAL_IMAGE_STORAGE_DIR: ${LOCAL_IMAGE_STORAGE_DIR:-/app/uploads}
+      LOCAL_IMAGE_STORAGE_URL_PREFIX: ${LOCAL_IMAGE_STORAGE_URL_PREFIX:-/uploads}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -62,9 +76,10 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      # Temporary upload-processing directory. Persisted so an in-flight
-      # upload survives container replacement; durable image storage is
-      # Cloudinary (see docs/DEPLOYMENT_GUIDE.md).
+      # Local image storage (WIQ-V1-054). Mounted only in the local simulation
+      # (DEPLOYMENT_MODE=local-simulation). Persisted so in-flight uploads
+      # survive container replacement. This is NOT a durable storage strategy;
+      # real production (DEPLOYMENT_MODE=production) uses Cloudinary.
       - uploads_data:/app/uploads
 
   frontend:
