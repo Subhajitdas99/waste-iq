@@ -8,7 +8,6 @@ Verifies that the production boundary is enforced:
 
 from app.core.config import get_settings
 
-
 # ─── deployment_mode = production ─────────────────────────────────────────────
 
 

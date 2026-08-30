@@ -7,8 +7,8 @@ than silently falling back to insecure defaults.
 
 import os
 import subprocess
+import tempfile
 from pathlib import Path
-
 
 # All variables that the production compose override requires.
 REQUIRED_VARS = {
@@ -40,25 +40,33 @@ def _run(env_vars):
     env = _clean_env()
     env.update(env_vars)
 
-    cmd = [
-        "docker",
-        "compose",
-        "-f",
-        str(repo_root / "docker-compose.yml"),
-        "-f",
-        str(repo_root / "docker-compose.prod.yml"),
-        "config",
-    ]
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+        empty_env_path = f.name
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=str(repo_root),
-        timeout=30,
-    )
-    return result
+    try:
+        cmd = [
+            "docker",
+            "compose",
+            "--env-file",
+            empty_env_path,
+            "-f",
+            str(repo_root / "docker-compose.yml"),
+            "-f",
+            str(repo_root / "docker-compose.prod.yml"),
+            "config",
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(repo_root),
+            timeout=30,
+        )
+        return result
+    finally:
+        Path(empty_env_path).unlink(missing_ok=True)
 
 
 def test_compose_config_succeeds_with_required_vars():

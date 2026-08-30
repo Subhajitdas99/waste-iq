@@ -99,9 +99,7 @@ def test_readiness_production_never_ready_with_fallback_and_no_cloudinary(
     assert response.json()["reason"] == "cloudinary_not_configured"
 
 
-def test_readiness_production_uses_cloudinary_when_configured(
-    client, db_session, monkeypatch
-):
+def test_readiness_production_uses_cloudinary_when_configured(client, db_session, monkeypatch):
     """Even with the fallback flag set, Cloudinary is used and readiness passes."""
     monkeypatch.setattr(settings, "deployment_mode", "production")
     monkeypatch.setattr(settings, "cloudinary_cloud_name", "demo-cloud")
@@ -115,9 +113,7 @@ def test_readiness_production_uses_cloudinary_when_configured(
     assert response.json()["status"] == "ready"
 
 
-def test_readiness_production_fallback_false_without_cloudinary(
-    client, db_session, monkeypatch
-):
+def test_readiness_production_fallback_false_without_cloudinary(client, db_session, monkeypatch):
     """Production with fallback disabled and no Cloudinary: not ready."""
     monkeypatch.setattr(settings, "deployment_mode", "production")
     monkeypatch.setattr(settings, "cloudinary_cloud_name", None)
