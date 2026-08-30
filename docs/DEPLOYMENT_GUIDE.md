@@ -199,6 +199,117 @@ docker compose down -v --remove-orphans
 docker compose ps
 ```
 
+### Local Production Simulation (WIQ-V1-053)
+
+For a production-like local deployment (PostgreSQL, service-to-service networking, explicit CORS), use the production override `docker-compose.prod.yml`. This runs the stack exactly as it would in production, but locally without requiring a paid cloud provider.
+
+#### Step 1 — Prepare Environment Variables
+
+Create a `.env` file at the repository root with production-like configuration:
+
+```bash
+# ===========================================
+# WIQ Local Production Simulation - .env
+# ===========================================
+# Copy this file to repository root and customize
+# DO NOT COMMIT THIS FILE TO VERSION CONTROL
+
+# Database (Required)
+POSTGRES_DB=wasteiq
+POSTGRES_USER=wasteiq
+POSTGRES_PASSWORD=<generate with: openssl rand -hex 24>
+
+# Application Secrets (Required)
+JWT_SECRET_KEY=<generate with: openssl rand -hex 32>
+
+# CORS & URLs (Required)
+CORS_ORIGINS=http://localhost:8080
+FRONTEND_URL=http://localhost:8080
+
+# Frontend API URL (baked into frontend bundle)
+VITE_API_URL=http://localhost:8000
+
+# Optional: Admin credentials
+# ADMIN_REGISTRATION_CODE=<your-code>
+# BOOTSTRAP_ADMIN_NAME=Admin
+# BOOTSTRAP_ADMIN_EMAIL=admin@wasteiq.local
+# BOOTSTRAP_ADMIN_PHONE=9000000000
+# BOOTSTRAP_ADMIN_PASSWORD=<generate with: openssl rand -hex 16>
+
+# Optional: Email (console for testing)
+EMAIL_BACKEND=console
+# EMAIL_BACKEND=smtp
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_USER=your-email@gmail.com
+# SMTP_PASSWORD=<gmail-app-password>
+
+# Optional: Cloudinary (leave empty for local testing)
+# CLOUDINARY_CLOUD_NAME=<your-cloud-name>
+# CLOUDINARY_API_KEY=<your-api-key>
+# CLOUDINARY_API_SECRET=<your-api-secret>
+```
+
+#### Step 2 — Verify Configuration
+
+```bash
+# From repository root
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+
+# This should succeed. If any required variables are missing, they will fail fast.
+```
+
+#### Step 3 — Start Production-like Stack
+
+```bash
+# Method 1: Using COMPOSE_FILE convenience variable
+export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+docker compose up -d
+
+# Method 2: Explicitly pass both files
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+#### Step 4 — Verify Startup
+
+Wait until all three services report `(healthy)`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+```
+
+Expected output:
+```
+NAME                IMAGE               COMMAND                  SERVICE   CREATED   STATUS                PORTS
+wasteiq-db-1        postgres:16-alpine  "docker-entrypoint.s…"   db        ...       Up (healthy)   5432/tcp
+wasteiq-backend-1   wasteiq-backend     "sh -c 'alembic upg…"   backend   ...       Up (healthy)   0.0.0.0:8000->8000/tcp
+wasteiq-frontend-1  wasteiq-frontend   "/docker-entrypoint.…"   frontend  ...       Up (healthy)   0.0.0.0:8080->80/tcp
+```
+
+#### Step 5 — Verify Core Services
+
+```bash
+# Health checks
+curl http://localhost:8000/health
+curl http://localhost:8000/health/ready
+curl http://localhost:8080/health
+
+# Database connectivity inside PostgreSQL
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec db pg_isready -U wasteiq -d wasteiq
+```
+
+#### Step 6 — Key Differences from Development
+
+| Area | Development (`docker-compose.yml`) | Production-like (`docker-compose.prod.yml`) |
+|------|------------------------------------|--------------------------------------------|
+| **Database exposure** | `localhost:5432` (host accessible) | Not exposed (internal network only) |
+| **Restart policy** | none | `unless-stopped` |
+| **Backend secrets** | `backend/.env` file | Environment variables only (`${VAR:?}` fail-fast) |
+| **Frontend URL** | Build-time `http://localhost:5173` | Build-time via `VITE_API_URL` arg |
+| **CORS** | Default localhost:5173 | Explicit via `CORS_ORIGINS` |
+| **Upload storage** | Ephemeral container fs | Named volume `uploads_data:/app/uploads` |
+| **Agent service** | Started with stack | Excluded (profile `dev`) |
+
 ### Production-Oriented Full-Stack Container Deployment
 
 For a self-contained production deployment (single host or VM), the repository ships a hardened production override: `docker-compose.prod.yml`. It layers on top of the base Compose file:
@@ -245,9 +356,10 @@ Optional but recommended in production:
 
 ```bash
 ENVIRONMENT=production                     # implied by the override
+DEPLOYMENT_MODE=production                 # CRITICAL: security gate (see WIQ-V1-054)
 ADMIN_REGISTRATION_CODE=…                  # enables admin sign-up
 BOOTSTRAP_ADMIN_NAME=… / BOOTSTRAP_ADMIN_EMAIL=… / BOOTSTRAP_ADMIN_PHONE=… / BOOTSTRAP_ADMIN_PASSWORD=…
-CLOUDINARY_CLOUD_NAME=… / CLOUDINARY_API_KEY=… / CLOUDINARY_API_SECRET=…   # required for uploads when ENVIRONMENT=production (503 otherwise)
+CLOUDINARY_CLOUD_NAME=… / CLOUDINARY_API_KEY=… / CLOUDINARY_API_SECRET=…   # required for uploads when DEPLOYMENT_MODE=production (503 otherwise)
 EMAIL_BACKEND=smtp / SMTP_HOST=… / SMTP_USER=… / SMTP_PASSWORD=… / EMAIL_FROM=…
 SENTRY_DSN=… / RELEASE=vX.Y.Z
 BACKEND_PORT=8000 / FRONTEND_PORT=8080     # host-side ports
@@ -358,7 +470,9 @@ Behavior: FastAPI/Starlette integrations are enabled so unhandled route exceptio
 
 #### Readiness Endpoint
 
-`GET /health/ready` verifies database connectivity (503 `database_unreachable` while down). When `ENVIRONMENT=production` it additionally requires Cloudinary configuration to be present — returning 503 `cloudinary_not_configured` if `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` or `CLOUDINARY_API_SECRET` are missing. The check inspects configuration only and never calls Cloudinary, so probes stay fast and deterministic. Non-production environments are unaffected by the Cloudinary requirement.
+`GET /health/ready` verifies database connectivity (503 `database_unreachable` while down). When `DEPLOYMENT_MODE=production` it additionally requires Cloudinary configuration to be present — local filesystem storage is never permitted in production. When `DEPLOYMENT_MODE=local-simulation` and `LOCAL_IMAGE_STORAGE_ENABLED=true`, the local fallback is activated and readiness passes without Cloudinary. The check inspects configuration only and never calls Cloudinary, so probes stay fast and deterministic.
+
+> **Local production simulation (WIQ-V1-054):** Set `DEPLOYMENT_MODE=local-simulation` and `LOCAL_IMAGE_STORAGE_ENABLED=true` in the simulation `.env` to enable local filesystem image storage. The `/uploads` endpoint serves stored images and `docker-compose.prod.yml` mounts the `uploads_data` volume to persist uploads across container restarts. This is simulation-only; real production must set `DEPLOYMENT_MODE=production` and configure Cloudinary.
 
 #### Prometheus Metrics — Deferred
 
@@ -428,13 +542,17 @@ APScheduler runs **in-process** inside the backend container (`reservation sweep
 |----------|----------|---------|-------------|---------|
 | `DATABASE_URL` | ✅ | `sqlite:///wasteiq.db` | Database connection string. Use `postgresql://` in production | `postgresql://wasteiq:password@localhost:5432/wasteiq` |
 | `ENVIRONMENT` | ✅ | `development` | App environment. Affects behaviour of some services | `production` |
+| `DEPLOYMENT_MODE` | ✅ | `development` | **Security gate for image storage boundary.** `development` = no requirements. `local-simulation` = docker compose stack; allows `LOCAL_IMAGE_STORAGE_ENABLED=true` as Cloudinary substitute. `production` = Cloudinary mandatory; `LOCAL_IMAGE_STORAGE_ENABLED` is ignored. Real production MUST set `production`. | `production` |
 | `JWT_SECRET_KEY` | ✅ | — | Secret used to sign JWTs. Must be strong and random in production | `openssl rand -hex 32` |
 | `JWT_ALGORITHM` | ❌ | `HS256` | JWT signing algorithm | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | ❌ | `1440` | JWT token lifetime in minutes (1440 = 24 hours) | `1440` |
 | `CORS_ORIGINS` | ✅ | `http://localhost:5173` | Comma-separated list of allowed CORS origins | `https://app.waste-iq.dev,http://localhost:5173` |
-| `CLOUDINARY_CLOUD_NAME` | ✅ prod | — | Cloudinary cloud name. Optional in development (uploads are skipped) | `my-cloud-name` |
+| `CLOUDINARY_CLOUD_NAME` | ✅ prod | — | Cloudinary cloud name. Required in production (`DEPLOYMENT_MODE=production`). Optional in development/local-simulation (fallback available). | `my-cloud-name` |
 | `CLOUDINARY_API_KEY` | ✅ prod | — | Cloudinary API key | `123456789012345` |
 | `CLOUDINARY_API_SECRET` | ✅ prod | — | Cloudinary API secret. Never logged, never exposed in API responses | `abcdefghijklmnopqrstuvwxyz` |
+| `LOCAL_IMAGE_STORAGE_ENABLED` | ❌ | `false` | **Simulation only (requires `DEPLOYMENT_MODE=local-simulation`).** Set to `true` in the local simulation `.env` to upload to the `uploads_data` Docker volume instead of Cloudinary. Ignored and unnecessary when `DEPLOYMENT_MODE=production`; Cloudinary is mandatory in that mode. | `false` |
+| `LOCAL_IMAGE_STORAGE_DIR` | ❌ | `/app/uploads` | Directory used by the local image storage fallback. Backed by the `uploads_data` Docker volume. | `/app/uploads` |
+| `LOCAL_IMAGE_STORAGE_URL_PREFIX` | ❌ | `/uploads` | URL prefix served by the local FastAPI static-files mount. | `/uploads` |
 | `ENABLE_BACKGROUND_JOBS` | ❌ | `true` | Run the in-process APScheduler jobs inside the FastAPI lifespan. Set to `false` to run scheduled work externally (e.g. a Celery worker). Always `false` in the test environment | `true` |
 | `RESERVATION_SWEEP_INTERVAL_MINUTES` | ❌ | `1` | How often the expired-reservation sweep runs (minutes, > 0) | `1` |
 | `AGING_PICKUP_INTERVAL_MINUTES` | ❌ | `5` | How often the aging-pickup alert check runs (minutes, > 0) | `5` |

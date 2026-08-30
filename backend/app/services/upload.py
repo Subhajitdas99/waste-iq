@@ -1,6 +1,9 @@
 import logging
+import os
+import shutil
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import cloudinary
@@ -86,6 +89,99 @@ def build_public_id(*, user_id: int | None, filename: str) -> str:
     """
     namespace = f"{UPLOAD_FOLDER_PREFIX}/{user_id}" if user_id is not None else UPLOAD_FOLDER_PREFIX
     return f"{namespace}/{uuid.uuid4().hex}"
+
+
+@dataclass(frozen=True)
+class LocalFileUploadConfig:
+    """Local-only image storage fallback (WIQ-V1-054).
+
+    The local production simulation uploads to a directory on the container
+    filesystem (mounted from the ``uploads_data`` Docker volume) and serves
+    the assets through FastAPI's ``StaticFiles`` mount at ``/uploads``.
+
+    This storage strategy is SIMULATION ONLY. Real production must use
+    Cloudinary (or another durable, replicated object store). The fallback
+    is opt-in via ``LOCAL_IMAGE_STORAGE_ENABLED=true`` and is silently
+    ignored when Cloudinary is configured.
+    """
+
+    storage_dir: str = "/app/uploads"
+    url_prefix: str = "/uploads"
+
+    @property
+    def storage_path(self) -> Path:
+        return Path(self.storage_dir)
+
+
+class LocalFileUploader:
+    """Local-filesystem image uploader used by the local production simulation.
+
+    Implements the same :class:`ImageUploader` protocol as
+    :class:`CloudinaryUploader` so the rest of the application does not
+    need to know which provider is active. ``public_id`` for the local
+    provider is the relative path beneath the storage directory
+    (e.g. ``pickups/42/<uuid>.png``), which is unique, opaque, and free
+    of identifying information.
+    """
+
+    def __init__(self, config: LocalFileUploadConfig):
+        self._config = config
+        self._config.storage_path.mkdir(parents=True, exist_ok=True)
+
+    def upload_image(
+        self, *, file_path: str, filename: str, user_id: int | None = None
+    ) -> UploadedImage | None:
+        namespace = (
+            f"{UPLOAD_FOLDER_PREFIX}/{user_id}" if user_id is not None else UPLOAD_FOLDER_PREFIX
+        )
+        suffix = Path(filename).suffix.lower() or Path(file_path).suffix.lower()
+        object_name = f"{uuid.uuid4().hex}{suffix}"
+        relative_path = f"{namespace}/{object_name}"
+        target_dir = self._config.storage_path / namespace
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / object_name
+
+        try:
+            shutil.move(file_path, target_path)
+        except FileNotFoundError:
+            logger.warning(
+                "Local upload source file missing.",
+                extra={"user_id": user_id, "image_filename": filename},
+            )
+            raise ImageUploadUnavailableError() from None
+        except OSError:
+            logger.exception(
+                "Local upload failed.",
+                extra={"user_id": user_id, "image_filename": filename},
+            )
+            raise ImageUploadUnavailableError() from None
+
+        public_id = relative_path.replace(os.sep, "/")
+        url = f"{self._config.url_prefix.rstrip('/')}/{public_id.lstrip('/')}"
+        logger.info(
+            "Local upload succeeded.",
+            extra={
+                "user_id": user_id,
+                "image_filename": filename,
+                "local_public_id": public_id,
+            },
+        )
+        return UploadedImage(url=url, public_id=public_id)
+
+    def delete_image(self, *, public_id: str) -> bool:
+        target = self._config.storage_path / public_id
+        if not target.exists():
+            # Idempotent deletion: missing assets count as gone.
+            return True
+        try:
+            target.unlink()
+        except OSError:
+            logger.exception(
+                "Local upload deletion failed.",
+                extra={"local_public_id": public_id},
+            )
+            raise ImageDeleteError() from None
+        return True
 
 
 class CloudinaryUploader:

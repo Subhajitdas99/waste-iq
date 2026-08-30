@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -66,6 +68,23 @@ app.add_middleware(RequestIDMiddleware)
 
 app.include_router(api_router)
 
+# Mount the local image storage directory only when the local production
+# simulation fallback is active (WIQ-V1-054). The directory is backed by
+# the ``uploads_data`` Docker volume in the simulation stack, so the
+# mount survives container replacement. ``local_image_storage_active`` is
+# gated on ``deployment_mode=local-simulation`` in config, so real
+# production (deployment_mode=production) can NEVER mount this directory
+# — Cloudinary (or another replicated object store) is the durable image
+# storage strategy for production.
+if settings.local_image_storage_active:
+    uploads_path = Path(settings.local_image_storage_dir)
+    uploads_path.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        settings.local_image_storage_url_prefix,
+        StaticFiles(directory=str(uploads_path)),
+        name="local-uploads",
+    )
+
 
 @app.exception_handler(ImageUploadConfigurationError)
 async def image_upload_configuration_error_handler(
@@ -104,10 +123,14 @@ def readiness_check(db: Session = Depends(get_db)) -> dict[str, object] | JSONRe
             },
         )
 
-    # Production additionally requires Cloudinary credentials to be present.
-    # Configuration presence only — never a network call — so probes stay
-    # fast and deterministic. Non-production environments are unaffected.
-    if settings.is_production and not settings.cloudinary_configured:
+    # Production requires a configured image storage provider. Cloudinary is
+    # mandatory unless deployment_mode=local-simulation AND
+    # LOCAL_IMAGE_STORAGE_ENABLED=true (enforced in config; the static file
+    # mount and uploader selection are both gated on local_image_storage_active,
+    # which can only be True when deployment_mode=local-simulation).
+    # Configuration presence only — never a network call — so probes stay fast
+    # and deterministic.
+    if settings.cloudinary_required and not settings.cloudinary_configured:
         return JSONResponse(
             status_code=503,
             content={
