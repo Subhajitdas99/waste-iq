@@ -141,23 +141,24 @@ class TestLocalFileUploader:
         assert result is True  # Missing asset counts as successfully deleted
 
     def test_delete_image_raises_on_os_error(self, tmp_path):
+        from unittest.mock import patch
+
         from app.services.upload import ImageDeleteError
 
         config = LocalFileUploadConfig(storage_dir=str(tmp_path))
         uploader = LocalFileUploader(config)
 
-        # Create a read-only file to simulate deletion failure
-        target = tmp_path / "pickups" / "1" / "readonly.png"
+        target = tmp_path / "pickups" / "1" / "deletion_fails.png"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"data")
-        target.chmod(0o444)  # Read-only
 
-        try:
+        assert target.exists()
+
+        with patch("pathlib.Path.unlink", side_effect=PermissionError("Access denied")):
             with pytest.raises(ImageDeleteError):
-                uploader.delete_image(public_id="pickups/1/readonly.png")
-        finally:
-            # Restore permissions so cleanup can happen
-            target.chmod(0o644)
+                uploader.delete_image(public_id="pickups/1/deletion_fails.png")
+
+        assert target.exists()
 
 
 class TestBuildPublicId:
