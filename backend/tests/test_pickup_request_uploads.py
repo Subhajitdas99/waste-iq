@@ -342,7 +342,7 @@ def test_cancel_pickup_request_without_image_does_not_call_delete(
 
 
 def test_local_storage_simulation_ready_health(client, db_session, monkeypatch):
-    """The readiness check passes when local simulation is enabled with fallback and no Cloudinary."""
+    """Readiness passes for local simulation without Cloudinary."""
 
     from app.core.config import settings
 

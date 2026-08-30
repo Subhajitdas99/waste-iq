@@ -1,5 +1,3 @@
-from io import BytesIO
-
 import pytest
 
 from app.services.upload import (

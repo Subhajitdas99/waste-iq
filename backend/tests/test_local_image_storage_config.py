@@ -6,8 +6,6 @@ Verifies that the production boundary is enforced:
 - deployment_mode=development: No image storage requirements.
 """
 
-import pytest
-
 from app.core.config import get_settings
 
 
