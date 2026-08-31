@@ -18,9 +18,10 @@ Thank you for your interest in contributing to Waste-IQ! This document provides 
 8. [Pull Request Process](#pull-request-process)
 9. [Review Process](#review-process)
 10. [Branch Protection](#branch-protection)
-11. [Issue Reporting](#issue-reporting)
-12. [Documentation Requirements](#documentation-requirements)
-13. [Definition of Done](#definition-of-done)
+11. [Semantic Versioning & Releases](#semantic-versioning--releases)
+12. [Issue Reporting](#issue-reporting)
+13. [Documentation Requirements](#documentation-requirements)
+14. [Definition of Done](#definition-of-done)
 
 ---
 
@@ -585,6 +586,232 @@ Use the appropriate GitHub Issue template:
 - Significant architectural changes require updates to [`docs/SYSTEM_ARCHITECTURE.md`](docs/SYSTEM_ARCHITECTURE.md)
 - New features should include an entry in [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`
 - Public functions/classes must have docstrings (Python) or JSDoc comments (TypeScript)
+
+---
+
+## Semantic Versioning & Releases
+
+Waste-IQ follows [**Semantic Versioning 2.0.0**](https://semver.org/spec/v2.0.0.html)
+and documents every release in [`CHANGELOG.md`](CHANGELOG.md) using the
+[**Keep a Changelog 1.1.0**](https://keepachangelog.com/en/1.1.0/) format.
+This section is the source of truth for how the repository is versioned and
+how releases are cut.
+
+### Version format
+
+Releases are identified by Git tags of the form `vX.Y.Z` (stable) or
+`vX.Y.Z-<pre-release>` (pre-release), where `X.Y.Z` are non-negative integers
+with no leading zeroes:
+
+- `MAJOR` — `X`
+- `MINOR` — `Y`
+- `PATCH` — `Z`
+- Pre-release identifier — optional, appended after a hyphen, e.g. `-alpha.1`,
+  `-beta.2`, `-rc.1`
+
+Stable release tags MUST NOT include a pre-release identifier and MUST match
+`vX.Y.Z` exactly. Pre-release builds are ordered by the SemVer rules
+(`alpha < beta < rc < stable`) and are used for public test builds only.
+
+### What each component means for Waste-IQ
+
+| Bump    | When to increment                                                                                                          | Examples in this repo |
+|---------|----------------------------------------------------------------------------------------------------------------------------|-----------------------|
+| MAJOR   | Breaking changes to a public API contract, a documented public behaviour, or the data model consumed by clients/integrations. Removing a field from an API response, changing auth requirements, or renaming a required request field are MAJOR. | Replacing the dealer `verification_status` state machine; removing a public endpoint; changing JWT claim semantics in a way that breaks existing clients. |
+| MINOR   | Backward-compatible **new functionality**: new endpoints, new optional request fields, new response fields, new features that do not break existing clients. | Adding `/auth/forgot-password`; adding a new role; introducing an `email_verified` field that older clients can safely ignore. |
+| PATCH   | Backward-compatible **bug fixes, security fixes, and internal refactors** that do not change any public contract.          | CORS middleware ordering fix; race condition in duplicate-phone registration; dependency patch upgrades. |
+
+The commit message must signal the intended bump. Per the Conventional
+Commits convention already in use:
+
+- `feat!:` or a `BREAKING CHANGE:` footer → next release is a **MAJOR** bump
+- `feat:` → next release is a **MINOR** bump
+- `fix:`, `perf:`, `refactor:`, `chore:` → **PATCH** bump
+
+### Pre-release identifiers
+
+Pre-release builds use a dotted numeric identifier after the release it
+forks from:
+
+- `vX.Y.Z-alpha.N` — earliest preview, may be unstable, intended for
+  internal dogfooding only
+- `vX.Y.Z-beta.N`  — feature-complete for the next release, opened to a
+  closed beta audience for feedback
+- `vX.Y.Z-rc.N`    — release candidate, expected to be the next stable
+  release unless a regression is found
+
+`N` resets to `1` for every new pre-release series. Pre-release tags MUST
+be cut from a `release/*` branch and promoted to a stable `vX.Y.Z` tag once
+the candidate is accepted. Pre-release tags are immutable once published;
+a regression requires a **new** pre-release tag (`beta.2`, `rc.2`, …), never
+a rewrite of the old one.
+
+### Cross-component version consistency
+
+The backend and the frontend MUST report the **same** version for any given
+release. Waste-IQ currently tracks the application version in two places:
+
+- `backend/app/main.py` — the `FastAPI(... version=...)` argument exposed via
+  the OpenAPI schema and `/openapi.json`
+- `frontend/package.json` — the `version` field consumed by npm and any
+  release tooling
+
+Synchronization rule:
+
+1. Pick the release version first (see the [Bump procedure](#bump-procedure)).
+2. Update `frontend/package.json` to that version.
+3. Update `backend/app/main.py` to pass the same string to `FastAPI(... version=...)`.
+4. Run `npm install` in `frontend/` so `package-lock.json` is regenerated
+   by npm and stays consistent. Do **not** hand-edit `package-lock.json`.
+5. Commit the backend and frontend version bumps in the same `release/*`
+   branch so they cannot drift.
+
+If a more complex synchronization story (a single source of truth, a build
+script that stamps both files) is introduced later, it MUST preserve the
+rule above: the value the backend reports and the value the frontend
+reports must always be equal for any given tag.
+
+The current application version strings (`1.0.0` in both files) are
+deliberately left in place by the WIQ-V1-011 policy-establishment change.
+Renaming the in-tree version to a not-yet-released number is out of scope
+for this issue; the next release bump is performed as part of the
+[release procedure](#bump-procedure) below.
+
+### CHANGELOG workflow
+
+[`CHANGELOG.md`](CHANGELOG.md) is the user-facing record of what changed in
+each release. It uses the Keep a Changelog structure:
+
+```
+## [Unreleased]
+### Added
+### Changed
+### Fixed
+
+## [X.Y.Z] — YYYY-MM-DD
+### Added
+### Changed
+### Fixed
+...
+```
+
+Rules:
+
+1. **During development**, every change that is user-visible is added to
+   the `[Unreleased]` section under `### Added`, `### Changed`, or
+   `### Fixed`. A pull request that touches user-visible behaviour without
+   a `[Unreleased]` entry is incomplete (see [Documentation Requirements](#documentation-requirements)
+   and the [Definition of Done](#definition-of-done)).
+2. **At release time**, the `[Unreleased]` section is **renamed** to
+   `[X.Y.Z] — YYYY-MM-DD` (real release date, not a placeholder), and a
+   new empty `[Unreleased]` section is added above it with the three
+   subsections (`### Added`, `### Changed`, `### Fixed`) ready for the next
+   cycle.
+3. Historical entries are **never rewritten**. Bug-fix entries, dates, and
+   the keep-a-changelog footer link references are immutable. The only
+   edits permitted to a released section are documentation fixes that
+   preserve meaning (e.g. correcting a typo in a link target).
+4. The footer link reference for the newly released version is added in
+   the same commit as the rename, in the form
+   `[X.Y.Z]: https://github.com/your-org/waste-iq/compare/vPREVIOUS...vX.Y.Z`.
+5. Do **not** invent a `[1.5.0]` (or any other) release section in advance
+   of an actual tagged release. The CHANGELOG is updated **at release
+   time**, not speculatively.
+
+### Git tag format and immutability
+
+- Stable release tags: `vX.Y.Z` (e.g. `v1.4.0`).
+- Pre-release tags: `vX.Y.Z-<id>.<N>` (e.g. `v1.4.0-rc.1`).
+- Tags are **immutable release identifiers**. Once a tag is pushed, it is
+  never moved, never re-pointed, and never deleted, even for fixes.
+  Re-releasing requires a new tag.
+- Historical tags in this repository are preserved exactly as they were
+  cut (`v0.5.0`, `v0.6.0`, `v1.0.0`, `v1.0.0-beta`, `v1.0.1-beta`,
+  `v1.1.0`, `v1.2.0`, `v1.3.0`, `v1.4.0-beta`). They are not retroactively
+  re-tagged under the policy described in this section.
+- Tags are cut **only** from a `release/*` branch (or a `hotfix/*` branch
+  for a `PATCH` bump off `main`), and **only after** the `PR Gate` check
+  (see [CI Enforcement — the PR Gate](#ci-enforcement--the-pr-gate)) has
+  passed for the release commit.
+
+### Bump procedure
+
+This is the manual procedure. It is the contract that
+[**WIQ-V1-012 Release Automation**](docs/backlog/WASTE_IQ_V1_ROADMAP.md)
+will automate; the two procedures MUST stay equivalent.
+
+1. **Decide the bump** from the changes queued in
+   `CHANGELOG.md → [Unreleased]`. Any `feat!:` or `BREAKING CHANGE:` in the
+   release set forces a **MAJOR** bump. Otherwise, any `feat:` forces a
+   **MINOR** bump. Otherwise it is a **PATCH** bump.
+2. **Create a release branch** from the tip of `develop` (or from `main` for
+   a hotfix):
+   ```bash
+   git checkout develop
+   git pull
+   git checkout -b release/<x.y.z>
+   ```
+3. **Bump the application versions** so backend and frontend stay in sync
+   (see [Cross-component version consistency](#cross-component-version-consistency)):
+   ```bash
+   # frontend
+   cd frontend
+   npm version <x.y.z> --no-git-tag-version   # updates package.json
+   npm install                                 # regenerates package-lock.json
+   cd ..
+   # backend
+   # edit backend/app/main.py → FastAPI(..., version="<x.y.z>", ...)
+   ```
+4. **Promote `[Unreleased]`** in `CHANGELOG.md` to `[<x.y.z>] — YYYY-MM-DD`
+   using the real release date, and add a fresh empty `[Unreleased]`
+   section above it (see [CHANGELOG workflow](#changelog-workflow)). Add
+   the new footer link reference.
+5. **Open a PR** from `release/<x.y.z>` into `main` (and into `develop` to
+   keep the integration branch in sync, per the Git Flow diagram above).
+   The PR must pass the `PR Gate` check.
+6. **Cut the tag** from the merge commit on `main`:
+   ```bash
+   git checkout main
+   git pull
+   git tag v<x.y.z>
+   git push origin v<x.y.z>
+   ```
+   Stable releases use immutable `vX.Y.Z` tags. Pre-release releases use
+   `vX.Y.Z-<identifier>.<N>`. Tags must point to the intended release
+   commit. Published tags must not be moved or overwritten. Retagging a
+   released version is prohibited; a corrected release requires a new
+   version/tag.
+7. **Verify** the tag points at the expected commit, that
+   `CHANGELOG.md → [<x.y.z>]` matches the tag, and that the backend
+   `FastAPI(... version=...)` and `frontend/package.json` agree.
+8. **Announce / publish the GitHub Release** — the GitHub Release itself
+   is created from the tag in a follow-up step; this is intentionally
+   not part of WIQ-V1-011 and lives in WIQ-V1-012.
+
+### Worked examples for Waste-IQ
+
+- **PATCH** — `v1.4.0` → `v1.4.1`. Fix CORS middleware ordering bug
+  (release `1fc7458` history). Only `### Fixed` entries land in
+  `[Unreleased]`; no API contract change.
+- **MINOR** — `v1.3.0` → `v1.4.0`. Add `/auth/forgot-password` and the
+  forgot/reset password pages. New endpoints and new frontend pages, no
+  existing client breaks.
+- **MAJOR** — `v1.4.0` → `v2.0.0`. Replace the dealer `verification_status`
+  two-state machine with the four-state `DealerApprovalStatus` workflow
+  and rename `pincode` → `postal_code` in the dealer profile API. This
+  changes a public response field name and a public state machine, so
+  `BREAKING CHANGE:` is required in the commit footer and the bump is
+  MAJOR regardless of any other changes in the cycle.
+
+### Relationship to WIQ-V1-012
+
+WIQ-V1-011 establishes the **policy and the manual procedure**. It does
+not introduce a release bot, a tag-driven workflow, or a GitHub Release
+publisher. Those land in
+[**WIQ-V1-012 Release Automation**](docs/backlog/WASTE_IQ_V1_ROADMAP.md),
+which depends on this document and MUST keep the tag format,
+pre-release syntax, cross-component consistency rule, and CHANGELOG
+promotion rules described above intact.
 
 ---
 
