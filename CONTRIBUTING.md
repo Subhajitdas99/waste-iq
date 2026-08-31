@@ -17,9 +17,10 @@ Thank you for your interest in contributing to Waste-IQ! This document provides 
 7. [Testing Requirements](#testing-requirements)
 8. [Pull Request Process](#pull-request-process)
 9. [Review Process](#review-process)
-10. [Issue Reporting](#issue-reporting)
-11. [Documentation Requirements](#documentation-requirements)
-12. [Definition of Done](#definition-of-done)
+10. [Branch Protection](#branch-protection)
+11. [Issue Reporting](#issue-reporting)
+12. [Documentation Requirements](#documentation-requirements)
+13. [Definition of Done](#definition-of-done)
 
 ---
 
@@ -457,6 +458,89 @@ How it works:
 A failed required workflow fails the PR Gate; there is no "always green" bypass. See
 [`docs/SYSTEM_ARCHITECTURE.md § 10.5`](docs/SYSTEM_ARCHITECTURE.md#105-ci-pipeline--pr-gate-wiq-v1-010)
 for details.
+
+---
+
+## Branch Protection
+
+Both `main` and `develop` are protected branches. The rules are identical and
+are enforced server-side by GitHub; they cannot be bypassed by contributors or
+maintainers, including the repository owner.
+
+### What is enforced
+
+| Rule | Setting |
+|------|---------|
+| Direct push (commit straight to the branch) | **Blocked** |
+| Force push | **Disabled** |
+| Branch deletion | **Disabled** |
+| Merging without a pull request | **Blocked** |
+| Required approving reviews | **At least 1** from a maintainer |
+| Stale approvals after new pushes | **Dismissed** (reviewer must re-approve) |
+| Required conversation resolution | **All review comments must be resolved** |
+| Required status check | **`PR Gate`** (strict — branch must be up to date) |
+| Admin bypass | **Disabled** — admins are subject to the same rules |
+
+### Why `PR Gate` is the only required status check
+
+`PR Gate` (`.github/workflows/pr-gate.yml`) is an always-running aggregate
+check. It recomputes the change set for the PR, maps it to the relevant
+specialized CI workflows (`Backend CI`, `Frontend CI`, `Agent CI`,
+`Docker CI`), and only requires those workflows to succeed for the head
+SHA. The specialized workflows stay path-filtered, so a `docs/*` PR or a
+markdown-only change passes the gate without running heavy CI.
+
+Requiring the specialized workflows directly would break legitimate
+docs-only PRs because they are correctly skipped. Requiring `PR Gate`
+preserves the repository's existing CI architecture.
+
+### Docs-only PRs
+
+`PR Gate` classifies the change set itself, so documentation-only PRs
+(e.g. updates to `README.md`, `docs/**`, or comments) pass the gate
+without triggering `Backend CI`, `Frontend CI`, `Agent CI`, or
+`Docker CI`. The rest of branch protection still applies: a PR is
+required, an approving review is required, and conversation
+resolution is required.
+
+### Hotfixes and emergency merges
+
+A critical production incident that needs to bypass the PR Gate
+flow must follow this process — **do not** relax the branch
+protection settings to "fix" it:
+
+1. Open a `hotfix/*` branch from `main` (per the [Branch Rules](#branch-rules)
+   table above).
+2. Open a **pull request** into `main`. The PR still requires review
+   and a green `PR Gate`; a hotfix is a regular PR with elevated
+   urgency, not a privileged bypass.
+3. After merging into `main`, open a second PR from `hotfix/*` into
+   `develop` to keep the integration branch in sync.
+4. If the change truly cannot wait for a review (rare, document the
+   reason in the PR description), tag a second maintainer for an
+   out-of-band review before merging.
+
+The only supported way to merge a hotfix is through a pull request.
+There is no maintained mechanism to merge directly to `main` or
+`develop`.
+
+### Dependabot and other automation
+
+The branch protection rules above apply to **all** actors, including
+Dependabot and other GitHub Apps. Dependabot PRs are not exempted
+from the required review, the `PR Gate` check, or conversation
+resolution. If Dependabot noise becomes a problem, the supported
+mitigations are:
+
+- Maintain a small `waste-iq/dependabot-maintainers` team and assign
+  the auto-approve permission to that team for Dependabot PRs only.
+- Use `gh actions` to auto-merge Dependabot PRs **after** they have
+  a green `PR Gate` and a reviewer approval.
+
+Do not add Dependabot to the `restrictions` list or otherwise weaken
+the required reviews to make automation pass. Security is enforced
+uniformly; automation is expected to satisfy the same bar as
+human contributors.
 
 ---
 
