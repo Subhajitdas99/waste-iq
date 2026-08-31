@@ -122,7 +122,7 @@ def test_register_sends_verification_email_and_returns_unverified_user(client):
     message = email_outbox[0]
     assert message.to_email == "reg-email@example.com"
     assert "verify your waste-iq email" in message.subject.lower()
-    assert "http://localhost:5173/verify-email?token=" in message.html_body
+    assert f"{settings.frontend_url}/verify-email?token=" in message.html_body
     _token_from_outbox()
 
 
