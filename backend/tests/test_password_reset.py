@@ -115,7 +115,7 @@ def test_forgot_password_known_email_sends_reset_email(client, db_session):
     message = email_outbox[0]
     assert message.to_email == "forgot-known@example.com"
     assert "reset your waste-iq password" in message.subject.lower()
-    assert "http://localhost:5173/reset-password?token=" in message.html_body
+    assert f"{settings.frontend_url}/reset-password?token=" in message.html_body
 
 
 def test_forgot_password_unknown_email_is_generic_and_sends_nothing(client):
