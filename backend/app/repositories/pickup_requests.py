@@ -29,6 +29,21 @@ class PickupRequestRepository:
         )
         return db.execute(statement).unique().scalar_one_or_none()
 
+    def get_by_id_for_update(
+        self, db: Session, request_id: int, include_timeline: bool = False
+    ) -> PickupRequest | None:
+        """Lock the pickup request row with ``SELECT ... FOR UPDATE``.
+
+        PostgreSQL will block concurrent transactions trying to lock the same
+        row until the active transaction commits or rolls back. The
+        ``collector_assignments.request_id`` unique constraint remains the
+        ultimate guarantee that two collectors cannot both win acceptance.
+        """
+        statement = self.base_query(include_timeline=include_timeline).where(
+            PickupRequest.id == request_id
+        )
+        return db.execute(statement.with_for_update()).unique().scalar_one_or_none()
+
     def create(self, db: Session, pickup_request: PickupRequest) -> PickupRequest:
         db.add(pickup_request)
         db.flush()
