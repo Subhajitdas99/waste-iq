@@ -735,17 +735,56 @@ def _get_request_for_citizen(db: Session, request_id: int, citizen: User) -> Pic
     return pickup_request
 
 
+def _get_request_for_citizen_for_update(
+    db: Session, request_id: int, citizen: User
+) -> PickupRequest:
+    """Citizen-scoped pickup loader that locks the row (WIQ-V1-053).
+
+    Used by the weight verification / dispute endpoints. PostgreSQL
+    ``SELECT ... FOR UPDATE`` serialises concurrent confirm + dispute
+    attempts against the same pickup so they cannot both observe
+    ``status == weight_recorded`` and write conflicting terminal states.
+    """
+    pickup_request = _repository.get_by_id_with_dispute_for_update(
+        db, request_id, include_timeline=True
+    )
+    if pickup_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
+        )
+    if pickup_request.user_id != citizen.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot verify this pickup request",
+        )
+    return pickup_request
+
+
 def confirm_pickup_weight(db: Session, citizen: User, request_id: int) -> PickupRequestRead:
     """Citizen confirms the collector-reported weight (WIQ-V1-046).
 
-    Idempotent: a repeat confirmation when the pickup is already ``completed``
-    returns the current resource without creating a new event, audit row, or
-    notification.
+    The pickup row is locked with ``SELECT ... FOR UPDATE`` before the
+    state-machine check so that a concurrent confirm + dispute (or two
+    confirms) cannot both observe ``status == weight_recorded`` and
+    produce conflicting terminal states (WIQ-V1-053). The first
+    transaction wins; the second sees the new status and either returns
+    idempotently (``completed``) or is rejected as a no-op (the dispute
+    branch).
+
+    Idempotent: a repeat confirmation when the pickup is already
+    ``completed`` returns the current resource without creating a new
+    event, audit row, or notification.
     """
-    pickup_request = _get_request_for_citizen(db, request_id, citizen)
+    pickup_request = _get_request_for_citizen_for_update(db, request_id, citizen)
 
     if pickup_request.status == PickupStatus.completed:
         return _to_schema(pickup_request, viewer=citizen)
+
+    if pickup_request.status == PickupStatus.disputed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pickup is already disputed and cannot be confirmed",
+        )
 
     if pickup_request.status != PickupStatus.weight_recorded:
         raise HTTPException(
@@ -786,6 +825,11 @@ def dispute_pickup_weight(
 ) -> PickupRequestRead:
     """Citizen disputes the collector-reported weight (WIQ-V1-046).
 
+    The pickup row is locked with ``SELECT ... FOR UPDATE`` before the
+    state-machine check so that a concurrent confirm + dispute (or two
+    disputes) cannot both observe ``status == weight_recorded`` and
+    produce conflicting terminal states (WIQ-V1-053).
+
     The original collector measurement on ``assignment.weight_kg`` is
     preserved. A single ``pickup_disputes`` row records the dispute; the
     pickup enters the ``disputed`` state and waits for admin review.
@@ -793,8 +837,11 @@ def dispute_pickup_weight(
     Idempotency: a second submission with the same reason returns the
     current state without creating a duplicate event/audit/notification.
     A different reason on an already-disputed pickup returns 409.
+    A unique-constraint violation on ``pickup_disputes.request_id`` is
+    caught and surfaced as 409 (covers the race where two disputes are
+    submitted before either flushes the relationship).
     """
-    pickup_request = _get_request_for_citizen(db, request_id, citizen)
+    pickup_request = _get_request_for_citizen_for_update(db, request_id, citizen)
 
     if pickup_request.status == PickupStatus.completed:
         raise HTTPException(
@@ -854,7 +901,14 @@ def dispute_pickup_weight(
         pickup_request,
         after={"status": PickupStatus.disputed.value},
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A dispute already exists for this pickup",
+        ) from None
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=citizen)
 
 
@@ -890,6 +944,10 @@ def resolve_weight_dispute(
 ) -> PickupRequestRead:
     """Admin resolves a weight dispute (WIQ-V1-046).
 
+    The pickup row is locked with ``SELECT ... FOR UPDATE`` (WIQ-V1-053).
+    This serialises concurrent resolution attempts and prevents a race where
+    a citizen's confirm/dispute arrives while an admin is resolving.
+
     Outcomes:
       * ``upheld`` — accept the collector's original measurement, transition
         to ``completed``. The original ``assignment.weight_kg`` is preserved.
@@ -904,7 +962,9 @@ def resolve_weight_dispute(
             detail="Only administrators can resolve disputes",
         )
 
-    pickup_request = _repository.get_by_id(db, request_id, include_timeline=True)
+    pickup_request = _repository.get_by_id_with_dispute_for_update(
+        db, request_id, include_timeline=True
+    )
     if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"

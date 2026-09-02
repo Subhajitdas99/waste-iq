@@ -25,7 +25,6 @@ import pytest
 from app.core.security import create_access_token, hash_password
 from app.models.user import User, UserRole
 
-
 # ─── Helper builders ──────────────────────────────────────────────────────────
 
 
@@ -820,7 +819,7 @@ class TestInvalidStateTransitions:
         assert r.status_code == 400
         # Citizen cannot confirm disputed pickup via confirm endpoint
         r = client.post(f"/pickup-requests/{pickup_id}/weight/confirm", headers=citizen_headers)
-        assert r.status_code == 400
+        assert r.status_code == 409
 
 
 # ─── 5. AUTHENTICATION / SESSION FAILURE ─────────────────────────────────────
