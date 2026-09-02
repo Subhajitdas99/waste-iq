@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.collector_assignment import CollectorAssignment
@@ -435,13 +436,18 @@ def update_pickup_request(
 def accept_pickup_request(db: Session, collector: User, request_id: int) -> PickupRequestRead:
     """Collector accepts a pending pickup.
 
-    Idempotency / concurrency: re-checks the source state under the active
-    transaction. Two concurrent collectors cannot both win — the unique
-    ``collector_assignments.request_id`` constraint enforces single assignment.
+    PostgreSQL ``SELECT ... FOR UPDATE`` is used to acquire a row-level lock on
+    the pickup request before any state is checked or written. This serialises
+    concurrent acceptance attempts at the database level, preventing a race where
+    two collectors both read ``status == pending`` before either writes. The
+    ``collector_assignments.request_id`` unique constraint is the fallback guard
+    on the commit side; any constraint violation is surfaced as a 409 Conflict
+    rather than a 500 Internal Server Error.
+
     Repeated calls from the assigned collector return the current resource
     unchanged (no duplicate assignment, no duplicate notification/audit).
     """
-    pickup_request = _repository.get_by_id(db, request_id)
+    pickup_request = _repository.get_by_id_for_update(db, request_id)
     if pickup_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pickup request not found"
@@ -483,7 +489,14 @@ def accept_pickup_request(db: Session, collector: User, request_id: int) -> Pick
         pickup_request,
         after={"status": PickupStatus.accepted.value},
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pickup request is no longer available",
+        ) from None
     return _to_schema(_reload_pickup_or_500(db, pickup_request.id), viewer=collector)
 
 
