@@ -590,3 +590,119 @@ def test_audit_does_not_contain_phone_in_dispute_events(
 def test_pickup_status_enum_contains_disputed():
     values = {status.value for status in PickupStatus}
     assert "disputed" in values
+
+
+# ─── WIQ-V1-053: Confirm / Dispute Mutual Exclusion ─────────────────────────────
+
+
+def _build_weight_recorded_separate_session(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    """Build weight_recorded state, reusing db_session from the test's fixture."""
+    req = client.post("/pickup-requests", data=valid_pickup_payload, headers=citizen_headers).json()
+    client.post(f"/collector/pickups/{req['id']}/accept", headers=collector_headers)
+    client.post(f"/collector/pickups/{req['id']}/start", headers=collector_headers)
+    client.post(f"/collector/pickups/{req['id']}/collect", headers=collector_headers)
+    resp = client.post(
+        f"/collector/pickups/{req['id']}/record-weight",
+        json={"weight_kg": 8.5},
+        headers=collector_headers,
+    )
+    return resp.json()
+
+
+def test_confirm_sees_disputed_after_race_loss(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    """WIQ-V1-053: when a dispute wins the race, confirm must see the disputed state.
+
+    On PostgreSQL this is guaranteed by SELECT ... FOR UPDATE serialising the two
+    requests. On SQLite (test environment) FOR UPDATE is accepted syntactically
+    but does not block; this test still exercises the state-machine guard by
+    having the dispute commit first (simulating the FOR UPDATE winner).
+    """
+    req = _build_weight_recorded_separate_session(
+        client, citizen_headers, collector_headers, valid_pickup_payload
+    )
+    client.post(
+        f"/pickup-requests/{req['id']}/weight/dispute",
+        json={"reason": "Weight is incorrect."},
+        headers=citizen_headers,
+    )
+    resp = client.post(
+        f"/pickup-requests/{req['id']}/weight/confirm",
+        headers=citizen_headers,
+    )
+    assert resp.status_code == 409
+    assert "disputed" in resp.json()["detail"].lower()
+
+
+def test_dispute_sees_completed_after_race_loss(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    """WIQ-V1-053: when a confirm wins the race, dispute must see the completed state.
+
+    On PostgreSQL this is guaranteed by SELECT ... FOR UPDATE. On SQLite the
+    state-machine guard rejects the second request because the first already
+    committed ``status = completed``.
+    """
+    req = _build_weight_recorded_separate_session(
+        client, citizen_headers, collector_headers, valid_pickup_payload
+    )
+    client.post(
+        f"/pickup-requests/{req['id']}/weight/confirm",
+        headers=citizen_headers,
+    )
+    resp = client.post(
+        f"/pickup-requests/{req['id']}/weight/dispute",
+        json={"reason": "Weight is wrong."},
+        headers=citizen_headers,
+    )
+    assert resp.status_code == 400
+    assert "completed" in resp.json()["detail"].lower()
+
+
+def test_dispute_on_already_disputed_with_different_reason_returns_409(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    """WIQ-V1-053: a second dispute with a different reason is rejected with 409."""
+    req = _build_weight_recorded_separate_session(
+        client, citizen_headers, collector_headers, valid_pickup_payload
+    )
+    client.post(
+        f"/pickup-requests/{req['id']}/weight/dispute",
+        json={"reason": "First reason for dispute."},
+        headers=citizen_headers,
+    )
+    resp = client.post(
+        f"/pickup-requests/{req['id']}/weight/dispute",
+        json={"reason": "A completely different reason."},
+        headers=citizen_headers,
+    )
+    assert resp.status_code == 409
+    assert "already exists" in resp.json()["detail"].lower()
+
+
+def test_confirm_on_disputed_pickup_returns_409(
+    client, citizen_headers, collector_headers, valid_pickup_payload
+):
+    """WIQ-V1-053: confirming a disputed pickup is a conflict (409).
+
+    This tests the new guard added in confirm_pickup_weight that explicitly
+    rejects ``status == disputed`` rather than relying solely on the FOR UPDATE
+    serialisation (which covers the race case on PostgreSQL).
+    """
+    req = _build_weight_recorded_separate_session(
+        client, citizen_headers, collector_headers, valid_pickup_payload
+    )
+    client.post(
+        f"/pickup-requests/{req['id']}/weight/dispute",
+        json={"reason": "Too heavy."},
+        headers=citizen_headers,
+    )
+    resp = client.post(
+        f"/pickup-requests/{req['id']}/weight/confirm",
+        headers=citizen_headers,
+    )
+    assert resp.status_code == 409
+    assert "disputed" in resp.json()["detail"].lower()

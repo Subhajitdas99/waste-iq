@@ -44,6 +44,30 @@ class PickupRequestRepository:
         )
         return db.execute(statement.with_for_update()).unique().scalar_one_or_none()
 
+    def get_by_id_with_dispute_for_update(
+        self, db: Session, request_id: int, include_timeline: bool = False
+    ) -> PickupRequest | None:
+        """Lock the pickup request row, eagerly loading the dispute.
+
+        Used by the citizen weight verification / dispute path (WIQ-V1-053).
+        The row lock serialises concurrent confirm + dispute submissions so
+        that a pickup cannot be transitioned to both ``completed`` and
+        ``disputed`` by interleaving requests. PostgreSQL ``SELECT ...
+        FOR UPDATE`` blocks the second transaction until the first commits
+        or rolls back; the second transaction then re-reads the new status
+        and is rejected by the state-machine guard. SQLite accepts the
+        syntax but does not actually block — tests therefore exercise the
+        state-machine guard on a single session.
+        """
+        from app.models.pickup_dispute import PickupDispute
+
+        statement = (
+            self.base_query(include_timeline=include_timeline)
+            .options(selectinload(PickupRequest.dispute).selectinload(PickupDispute.resolved_by))
+            .where(PickupRequest.id == request_id)
+        )
+        return db.execute(statement.with_for_update()).unique().scalar_one_or_none()
+
     def create(self, db: Session, pickup_request: PickupRequest) -> PickupRequest:
         db.add(pickup_request)
         db.flush()
