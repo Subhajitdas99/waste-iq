@@ -790,7 +790,7 @@ The gate is not an "always green" check: a failed Backend/Frontend/Agent/Docker 
 
 ### Permissions & Security
 
-The gate requests read-only permissions — `contents: read` (checkout), `checks: read` and `actions: read` (workflow-run correlation). No secrets are referenced. As with the existing CI workflows, the gate executes repository scripts from the checked-out merge commit on an ephemeral runner with no write access, so a malicious PR gains nothing beyond what existing CI already permits.
+The gate requests `contents: read` (checkout) and `actions: read` (workflow-run correlation) plus `checks: write` (required so the job can post its check-run status back to GitHub — without it the run stays in "Expected — Waiting for status to be reported" indefinitely). No secrets are referenced. As with the existing CI workflows, the gate executes repository scripts from the checked-out merge commit on an ephemeral runner with no write access, so a malicious PR gains nothing beyond what existing CI already permits.
 
 ---
 

@@ -87,9 +87,12 @@ class PrGateWorkflowTests(unittest.TestCase):
         )
 
     def test_minimal_read_only_permissions(self):
+        # `checks: write` is required so the gate can post its check-run
+        # status back to GitHub; with `checks: read` the run stays in
+        # "Expected — Waiting for status to be reported" forever (PR #122).
         self.assertEqual(
             self.doc["permissions"],
-            {"contents": "read", "checks": "read", "actions": "read"},
+            {"contents": "read", "checks": "write", "actions": "read"},
         )
 
     def test_no_secrets_referenced(self):
