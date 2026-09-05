@@ -19,11 +19,12 @@ name: PR Gate
 
 permissions:
   contents: read
-  # checks:read + actions:read are required to query the Actions API for
-  # workflow-run results of the specialized CI workflows on this PR's head
-  # SHA. No write access and no secrets are involved.
-  checks: read
+  # actions:read + checks:write are required to (a) query the Actions API for
+  # workflow-run results of the specialized CI workflows on this PR's head SHA
+  # and (b) post the PR Gate check run status back to GitHub.
+  # No secrets are involved.
   actions: read
+  checks: write
 
 concurrency:
   group: pr-gate-${{ github.event.pull_request.number }}
