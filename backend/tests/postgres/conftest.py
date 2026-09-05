@@ -6,25 +6,7 @@ opt-in: only tests under ``tests/postgres/`` load this file.
 """
 
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Load .env for PostgreSQL tests. This must happen before checking the
-# environment because the parent conftest.py may have already configured
-# DATABASE_URL for SQLite.
-_dotenv_path = Path(__file__).resolve().parents[2] / ".env"
-
-if _dotenv_path.exists():
-    load_dotenv(_dotenv_path, override=True)
-
-# For PostgreSQL tests, force DATABASE_URL to a PostgreSQL connection.
-#
-# Priority:
-#   1. TEST_DATABASE_URL
-#   2. DATABASE_URL from .env/environment
-#
-# No database credentials are hardcoded in source code.
 url: str = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL") or ""
 
 if not url.startswith("postgresql"):
