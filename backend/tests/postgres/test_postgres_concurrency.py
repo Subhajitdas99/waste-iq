@@ -171,6 +171,10 @@ def pg_pickup(schema):
 
     try:
         session.execute(
+            text("DELETE FROM pickup_disputes WHERE request_id = :request_id"),
+            {"request_id": pickup_id},
+        )
+        session.execute(
             text("DELETE FROM collector_assignments " "WHERE request_id = :request_id"),
             {"request_id": pickup_id},
         )
