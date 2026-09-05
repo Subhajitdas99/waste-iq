@@ -129,7 +129,7 @@ def pg_pickup(schema):
 
     pickup = PickupRequest(
         user_id=citizen.id,
-        waste_type="PET bottle",
+        waste_type="PET",
         address="5 Test Rd",
         latitude=22.5726,
         longitude=88.3639,
