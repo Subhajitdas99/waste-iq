@@ -91,8 +91,21 @@ def _pg_reachable():
 
 @pytest.fixture
 def schema(_pg_reachable):
-    """Ensure the PostgreSQL test database has the application schema."""
-    Base.metadata.create_all(bind=_pg_engine())
+    """Ensure the PostgreSQL test database has the application schema.
+
+    Uses drop/create on the specific tables needed by these tests to
+    guarantee the correct column types from the current model definition.
+    """
+    engine = _pg_engine()
+
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS collector_assignments CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS pickup_requests CASCADE"))
+        conn.commit()
+
+    Base.metadata.create_all(bind=engine)
     yield
 
 
