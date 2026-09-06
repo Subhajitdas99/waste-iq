@@ -43,6 +43,21 @@ _TEMPLATE_ENV = Environment(
 class EmailDeliveryError(RuntimeError):
     """Raised when the configured provider cannot deliver an email."""
 
+    is_retryable: bool = True
+
+    def __init__(self, message: str = "Email delivery failed") -> None:
+        super().__init__(message)
+
+
+class EmailRateLimitError(EmailDeliveryError):
+    """Raised when the provider rejects due to daily/sending limits.
+
+    This is a non-retryable error from the provider's perspective, but the
+    client should be told to try again later.
+    """
+
+    is_retryable = False
+
 
 @dataclass(frozen=True)
 class OutgoingEmail:
@@ -129,6 +144,12 @@ class SmtpEmailProvider(EmailProvider):
                 if self._user and self._password:
                     server.login(self._user, self._password)
                 server.send_message(mime)
+        except smtplib.SMTPDataError as exc:
+            if exc.smtp_code == 550 and "5.4.5" in str(exc.smtp_error):
+                raise EmailRateLimitError(
+                    f"Email provider rate limit exceeded for {message.to_email}"
+                ) from exc
+            raise EmailDeliveryError(f"Failed to deliver email to {message.to_email}") from exc
         except (OSError, smtplib.SMTPException) as exc:
             raise EmailDeliveryError(f"Failed to deliver email to {message.to_email}") from exc
 

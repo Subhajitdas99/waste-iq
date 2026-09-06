@@ -165,7 +165,7 @@ def test_forgot_password_records_audit_event_after_delivery(client, db_session):
     assert events[0].resource_id == str(user.id)
 
 
-def test_forgot_password_delivery_failure_never_fails_request(client, db_session, monkeypatch):
+def test_forgot_password_delivery_failure_returns_503(client, db_session, monkeypatch):
     _create_user(db_session, email="forgot-fail@example.com", phone="9876500005")
 
     def _fail(_message):
@@ -174,6 +174,37 @@ def test_forgot_password_delivery_failure_never_fails_request(client, db_session
     monkeypatch.setattr("app.services.email.send_email", _fail)
 
     response = _forgot(client, "forgot-fail@example.com")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert "detail" in body
+    assert "unable" in body["detail"].lower() or "try again" in body["detail"].lower()
+
+
+def test_forgot_password_delivery_rate_limit_returns_429(client, db_session, monkeypatch):
+    _create_user(db_session, email="forgot-rate@example.com", phone="9876500006")
+
+    def _rate_limit(_message):
+        from app.services.email import EmailRateLimitError
+        raise EmailRateLimitError("Daily sending limit exceeded")
+
+    monkeypatch.setattr("app.services.email.send_email", _rate_limit)
+
+    response = _forgot(client, "forgot-rate@example.com")
+
+    assert response.status_code == 429
+    body = response.json()
+    assert "detail" in body
+    assert "temporarily unavailable" in body["detail"].lower() or "try again later" in body["detail"].lower()
+
+
+def test_forgot_password_unknown_email_still_returns_200_on_smtp_failure(client, monkeypatch):
+    def _fail(_message):
+        raise EmailDeliveryError("provider down")
+
+    monkeypatch.setattr("app.services.email.send_email", _fail)
+
+    response = _forgot(client, "nobody-on-fail@example.com")
 
     assert response.status_code == 200
     assert response.json().get("message") == GENERIC_FORGOT_MESSAGE

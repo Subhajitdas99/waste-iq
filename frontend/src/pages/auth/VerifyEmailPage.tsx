@@ -9,7 +9,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { resendVerification, verifyEmail } from "@/api/auth";
 import { useAuth } from "@/context/AuthContext";
 import { authQueryKeys } from "@/hooks/auth-query-keys";
-import { getApiErrorMessage, getRateLimitRetryAfterSeconds, isRateLimitError } from "@/lib/api-error";
+import {
+  getApiErrorMessage,
+  getRateLimitRetryAfterSeconds,
+  isEmailDeliveryError,
+  isEmailRateLimitError,
+  isRateLimitError,
+} from "@/lib/api-error";
 
 type VerifyState = "verifying" | "success" | "already-verified" | "error";
 
@@ -72,6 +78,20 @@ export function VerifyEmailPage() {
     try {
       await resendMutation.mutateAsync(resendEmail);
     } catch (error) {
+      if (isEmailRateLimitError(error)) {
+        const seconds = getRateLimitRetryAfterSeconds(error);
+        const minutes = seconds !== null ? Math.max(1, Math.ceil(seconds / 60)) : null;
+        setResendMessage(
+          minutes !== null
+            ? `Too many attempts. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
+            : "Email service temporarily unavailable. Please try again later."
+        );
+        return;
+      }
+      if (isEmailDeliveryError(error)) {
+        setResendMessage(getApiErrorMessage(error, "Unable to send verification email. Please try again."));
+        return;
+      }
       if (isRateLimitError(error)) {
         const seconds = getRateLimitRetryAfterSeconds(error);
         const minutes = seconds !== null ? Math.max(1, Math.ceil(seconds / 60)) : null;

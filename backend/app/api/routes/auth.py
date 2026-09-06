@@ -38,15 +38,17 @@ from app.services.auth import (
     reset_login_failures,
 )
 from app.services.audit import AuditService
+from app.services.email import EmailDeliveryError, EmailRateLimitError
 from app.services.email_verification import (
     complete_verification_email_delivery,
     EmailVerificationError,
+    send_verification_email_sync,
     verify_email as verify_email_service,
 )
 from app.services.password_reset import (
-    complete_password_reset_email_delivery,
     PasswordResetError,
     reset_password as reset_password_service,
+    send_password_reset_email_sync,
 )
 from app.services.refresh_token import InvalidRefreshTokenError, RefreshTokenService
 
@@ -178,20 +180,39 @@ def verify_email(
 def resend_verification(
     payload: ResendVerificationRequest,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """Resend the verification email for an unverified account.
 
     Public and rate-limited per IP. The response is identical whether or
     not the email is registered (and whether or not it is already verified),
-    so the endpoint cannot be used for account or email enumeration. Any
-    delivery is dispatched as a background task off the request path.
+    so the endpoint cannot be used for account or email enumeration.
+    Email delivery is synchronous: returns an error if the SMTP provider
+    cannot deliver the message so the client knows to retry.
     """
     check_rate_limit(request, "resend_verification")
     user = get_user_by_email(db, normalize_email(payload.email))
-    if user is not None and not user.email_verified:
-        background_tasks.add_task(complete_verification_email_delivery, user.id)
+    if user is None or user.email_verified:
+        return {
+            "message": (
+                "If the email is registered and unverified, "
+                "a verification email has been sent."
+            )
+        }
+
+    try:
+        send_verification_email_sync(db, user.id)
+    except EmailRateLimitError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Email service temporarily unavailable. Please try again later.",
+        ) from None
+    except EmailDeliveryError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send verification email. Please try again.",
+        ) from None
+
     return {
         "message": "If the email is registered and unverified, a verification email has been sent."
     }
@@ -201,21 +222,33 @@ def resend_verification(
 def forgot_password(
     payload: ForgotPasswordRequest,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """Request a password-reset email (WIQ-V1-015).
 
     Public and rate-limited per IP. The response is identical whether or not
     the email is registered, so the endpoint cannot be used for account
-    enumeration. Delivery is dispatched as a background task off the request
-    path; the reset token is generated inside the task and never appears in
-    any response or log.
+    enumeration. Email delivery is synchronous: returns an error if the SMTP
+    provider cannot deliver the message so the client knows to retry.
     """
     check_rate_limit(request, "forgot_password")
     user = get_user_by_email(db, normalize_email(payload.email))
-    if user is not None:
-        background_tasks.add_task(complete_password_reset_email_delivery, user.id)
+    if user is None:
+        return {"message": "If the email is registered, a password reset link has been sent."}
+
+    try:
+        send_password_reset_email_sync(db, user.id)
+    except EmailRateLimitError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Email service temporarily unavailable. Please try again later.",
+        ) from None
+    except EmailDeliveryError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send password reset email. Please try again.",
+        ) from None
+
     return {"message": "If the email is registered, a password reset link has been sent."}
 
 

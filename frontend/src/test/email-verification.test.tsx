@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { renderApp, router, storeValidSession } from "./test-utils";
+import { server } from "./server";
 
 describe("email verification flow", () => {
   it("verifies an email from a valid link and shows the success message", async () => {
@@ -112,5 +114,47 @@ describe("email verification flow", () => {
         screen.queryByText(/Your email address is not verified yet/i),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("shows an error message when email delivery fails (503)", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/auth/resend-verification", () =>
+        HttpResponse.json(
+          { detail: "Unable to send verification email. Please try again." },
+          { status: 503 }
+        ),
+      ),
+    );
+
+    await renderApp("/verify-email");
+
+    await user.type(screen.getByLabelText("Email address"), "delivery-fail@example.com");
+    await user.click(screen.getByRole("button", { name: /resend verification email/i }));
+
+    expect(
+      await screen.findByText(/Unable to send verification email/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows email rate limit message when provider limit hit (429)", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/auth/resend-verification", () =>
+        HttpResponse.json(
+          { detail: "Email service temporarily unavailable. Please try again later." },
+          { status: 429 }
+        ),
+      ),
+    );
+
+    await renderApp("/verify-email");
+
+    await user.type(screen.getByLabelText("Email address"), "provider-limit@example.com");
+    await user.click(screen.getByRole("button", { name: /resend verification email/i }));
+
+    expect(
+      await screen.findByText(/temporarily unavailable|try again later/i),
+    ).toBeInTheDocument();
   });
 });
