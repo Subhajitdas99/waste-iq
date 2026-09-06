@@ -408,7 +408,7 @@ def test_resend_verification_returns_429_on_provider_rate_limit(client, db_sessi
     assert "temporarily unavailable" in body["detail"].lower() or "try again later" in body["detail"].lower()
 
 
-def test_resend_verification_still_returns_200_for_unknown_email_on_smtp_failure(client, monkeypatch):
+def test_resend_verification_unknown_email_returns_200_on_smtp_failure(client, monkeypatch):
     def _fail(_message):
         raise EmailDeliveryError("SMTP connection failed")
 
@@ -419,7 +419,7 @@ def test_resend_verification_still_returns_200_for_unknown_email_on_smtp_failure
     assert response.json() == {"message": GENERIC_RESEND_RESPONSE}
 
 
-def test_resend_verification_still_returns_200_for_verified_account_on_smtp_failure(client, monkeypatch):
+def test_resend_verification_verified_account_returns_200_on_smtp_failure(client, monkeypatch):
     _register(client, "already-verified@example.com", "9876543234")
     _verify(client, _token_from_outbox())
 
