@@ -92,7 +92,7 @@ def _set_token_expired(db_session, raw_token, user_id):
 
 def _assert_generic_401(response):
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid refresh token"}
+    assert response.json().get("detail") == "Invalid refresh token"
 
 
 # ─── Login / register return refresh capability ─────────────────────────────

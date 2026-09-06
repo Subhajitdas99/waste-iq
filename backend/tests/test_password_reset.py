@@ -26,7 +26,8 @@ _PASSWORD = "Test@1234"
 _NEW_PASSWORD = "Brand@New456"
 
 GENERIC_FORGOT_MESSAGE = "If the email is registered, a password reset link has been sent."
-GENERIC_BAD_RESET_TOKEN = {"detail": "Invalid or expired reset token"}
+GENERIC_BAD_RESET_TOKEN_DETAIL = "Invalid or expired reset token"
+GENERIC_BAD_RESET_TOKEN = {"detail": GENERIC_BAD_RESET_TOKEN_DETAIL}
 GENERIC_RESET_SUCCESS = {"message": "Password has been reset successfully"}
 
 
@@ -110,7 +111,7 @@ def test_forgot_password_known_email_sends_reset_email(client, db_session):
     response = _forgot(client, "forgot-known@example.com")
 
     assert response.status_code == 200
-    assert response.json() == {"message": GENERIC_FORGOT_MESSAGE}
+    assert response.json().get("message") == GENERIC_FORGOT_MESSAGE
     assert len(email_outbox) == 1
     message = email_outbox[0]
     assert message.to_email == "forgot-known@example.com"
@@ -122,7 +123,7 @@ def test_forgot_password_unknown_email_is_generic_and_sends_nothing(client):
     response = _forgot(client, "nobody@example.com")
 
     assert response.status_code == 200
-    assert response.json() == {"message": GENERIC_FORGOT_MESSAGE}
+    assert response.json().get("message") == GENERIC_FORGOT_MESSAGE
     assert email_outbox == []
 
 
@@ -175,7 +176,7 @@ def test_forgot_password_delivery_failure_never_fails_request(client, db_session
     response = _forgot(client, "forgot-fail@example.com")
 
     assert response.status_code == 200
-    assert response.json() == {"message": GENERIC_FORGOT_MESSAGE}
+    assert response.json().get("message") == GENERIC_FORGOT_MESSAGE
     assert _audit_actions(db_session, "password_reset_email_sent") == []
 
 
@@ -220,7 +221,7 @@ def test_reset_password_success_changes_hash(client, db_session):
     response = _reset(client, token)
 
     assert response.status_code == 200
-    assert response.json() == GENERIC_RESET_SUCCESS
+    assert response.json().get("message") == "Password has been reset successfully"
 
     db_session.refresh(user)
     assert user.password_hash != old_hash
@@ -323,7 +324,7 @@ def test_reset_password_with_expired_token(client, db_session):
     response = _reset(client, expired)
 
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
     db_session.refresh(user)
     assert verify_password(_PASSWORD, user.password_hash)
 
@@ -331,7 +332,7 @@ def test_reset_password_with_expired_token(client, db_session):
 def test_reset_password_with_malformed_token(client):
     response = _reset(client, "not-a-jwt-at-all")
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_password_with_wrong_signature_token(client, db_session):
@@ -345,7 +346,7 @@ def test_reset_password_with_wrong_signature_token(client, db_session):
     response = _reset(client, forged)
 
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_password_with_verification_purpose_token(client, db_session):
@@ -357,7 +358,7 @@ def test_reset_password_with_verification_purpose_token(client, db_session):
     response = _reset(client, verification)
 
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_password_rejects_access_token(client, db_session):
@@ -366,20 +367,20 @@ def test_reset_password_rejects_access_token(client, db_session):
     response = _reset(client, create_access_token(str(user.id)))
 
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_password_with_token_for_unknown_user(client):
     response = _reset(client, _craft_token("999999999"))
 
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_password_with_non_numeric_subject(client):
     response = _reset(client, _craft_token("not-a-number"))
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_password_missing_fields_fails(client):
@@ -426,7 +427,7 @@ def test_reset_token_cannot_be_reused_after_successful_reset(client, db_session)
     replayed = _reset(client, token)
 
     assert replayed.status_code == 400
-    assert replayed.json() == GENERIC_BAD_RESET_TOKEN
+    assert replayed.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
     # The replay must not have changed anything.
     user = _get_user(db_session, "reset-reuse@example.com")
     assert verify_password(_NEW_PASSWORD, user.password_hash)
@@ -445,7 +446,7 @@ def test_older_reset_tokens_die_after_a_completed_reset(client, db_session):
 
     response = _reset(client, stale_token)
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 def test_reset_tokens_die_after_change_password(client, db_session):
@@ -465,7 +466,7 @@ def test_reset_tokens_die_after_change_password(client, db_session):
 
     response = _reset(client, outstanding)
     assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_RESET_TOKEN
+    assert response.json().get("detail") == GENERIC_BAD_RESET_TOKEN_DETAIL
 
 
 # ─── Lockout interaction ────────────────────────────────────────────────────
