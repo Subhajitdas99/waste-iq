@@ -16,6 +16,7 @@ name: PR Gate
       - opened
       - synchronize
       - reopened
+      - base_ref_changed
 
 permissions:
   contents: read

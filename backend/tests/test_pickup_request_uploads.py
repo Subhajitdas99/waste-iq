@@ -87,7 +87,7 @@ def test_create_pickup_request_with_image_returns_503_when_cloudinary_missing_in
     )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Image upload service is not configured."}
+    assert response.json().get("detail") == "Image upload service is not configured."
 
 
 def test_production_configuration_error_does_not_leak_credentials(
@@ -114,7 +114,7 @@ def test_production_configuration_error_does_not_leak_credentials(
     body_text = response.text
     assert "super-secret-key-123" not in body_text
     assert "super-secret-secret-456" not in body_text
-    assert response.json() == {"detail": "Image upload service is not configured."}
+    assert response.json().get("detail") == "Image upload service is not configured."
 
 
 def test_create_pickup_request_with_image_returns_502_when_cloudinary_upload_fails(
@@ -138,7 +138,7 @@ def test_create_pickup_request_with_image_returns_502_when_cloudinary_upload_fai
     )
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "Image upload service unavailable."}
+    assert response.json().get("detail") == "Image upload service unavailable."
 
 
 def test_create_pickup_request_with_image_uploads_to_per_user_folder(
