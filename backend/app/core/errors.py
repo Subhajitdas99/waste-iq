@@ -59,6 +59,12 @@ class ErrorCode(str, Enum):
     BAD_REQUEST = "BAD_REQUEST"
     """The request is malformed or invalid (HTTP 400)."""
 
+    EMAIL_DELIVERY_FAILED = "EMAIL_DELIVERY_FAILED"
+    """Email delivery failed; temporary issue, client may retry (HTTP 503)."""
+
+    EMAIL_RATE_LIMITED = "EMAIL_RATE_LIMITED"
+    """Email provider rate limit exceeded; retry after indicated delay (HTTP 429)."""
+
 
 STATUS_CODE_MAP: dict[int, ErrorCode] = {
     400: ErrorCode.BAD_REQUEST,

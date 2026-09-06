@@ -26,7 +26,8 @@ from app.core.security import create_verification_token, decode_verification_tok
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.services.audit import AuditService
-from app.services.email import EmailDeliveryError, send_verification_email as deliver_email
+from app.services.email import EmailDeliveryError
+from app.services.email import send_verification_email as deliver_email
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,35 @@ def complete_verification_email_delivery(user_id: int) -> None:
         logger.exception("Background verification email delivery failed for user %s", user_id)
     finally:
         db.close()
+
+
+def send_verification_email_sync(db: Session, user_id: int) -> None:
+    """Synchronously deliver the verification email for ``user_id``.
+
+    Called by routes that need to know delivery outcome before returning
+    (e.g., resend-verification). Raises :class:`EmailDeliveryError` or
+    :class:`EmailRateLimitError` on failure so the route can return an
+    appropriate HTTP response.
+
+    The ``verification_email_sent`` audit event is recorded only after the
+    provider accepts the message. Never logs token material.
+    """
+    token = create_verification_token(str(user_id))
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise EmailDeliveryError("User not found")
+
+    deliver_email(user, token)
+
+    _audit_service.record(
+        db,
+        actor_user_id=user_id,
+        action="verification_email_sent",
+        resource="user",
+        resource_id=str(user_id),
+    )
+    db.commit()
 
 
 def verify_email(db: Session, token: str) -> tuple[str, bool]:

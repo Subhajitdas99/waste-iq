@@ -5,6 +5,7 @@ from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_unused.db")
 os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("EMAIL_BACKEND", "console")
 # Hard guarantee that tests never contact Sentry, even if a developer's local
 # backend/.env contains a real DSN (environment variables win over .env).
 os.environ.setdefault("SENTRY_DSN", "")

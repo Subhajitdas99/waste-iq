@@ -27,7 +27,9 @@ export type ErrorCode =
   | "INTERNAL_SERVER_ERROR"
   | "SERVICE_UNAVAILABLE"
   | "GATEWAY_ERROR"
-  | "BAD_REQUEST";
+  | "BAD_REQUEST"
+  | "EMAIL_DELIVERY_FAILED"
+  | "EMAIL_RATE_LIMITED";
 
 const ERROR_CODE_MESSAGES: Partial<Record<ErrorCode, string>> = {
   VALIDATION_ERROR: "Please check the form for errors.",
@@ -41,6 +43,8 @@ const ERROR_CODE_MESSAGES: Partial<Record<ErrorCode, string>> = {
   SERVICE_UNAVAILABLE: "Service is temporarily unavailable.",
   GATEWAY_ERROR: "Upstream service error.",
   BAD_REQUEST: "Invalid request.",
+  EMAIL_DELIVERY_FAILED: "Unable to send email. Please try again.",
+  EMAIL_RATE_LIMITED: "Email service temporarily unavailable. Please try again later.",
 };
 
 function isStructuredErrorResponse(data: unknown): data is StructuredErrorResponse {
@@ -180,6 +184,22 @@ export function isServerError(error: unknown): boolean {
     code === "SERVICE_UNAVAILABLE" ||
     code === "GATEWAY_ERROR"
   );
+}
+
+export function isEmailDeliveryError(error: unknown): boolean {
+  if (!isAxiosError(error)) return false;
+  const status = error.response?.status;
+  if (status === 503) return true;
+  const code = getErrorCode(error);
+  return code === "EMAIL_DELIVERY_FAILED" || code === "SERVICE_UNAVAILABLE";
+}
+
+export function isEmailRateLimitError(error: unknown): boolean {
+  if (!isAxiosError(error)) return false;
+  const status = error.response?.status;
+  if (status === 429) return true;
+  const code = getErrorCode(error);
+  return code === "EMAIL_RATE_LIMITED" || code === "RATE_LIMITED";
 }
 
 export function isNetworkError(error: unknown): boolean {

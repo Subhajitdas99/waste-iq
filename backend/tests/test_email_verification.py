@@ -375,6 +375,68 @@ def test_resend_verification_rate_limit_applies_to_unknown_emails_too(client, mo
     assert _resend(client, "someoneelse@example.com").status_code == 429
 
 
+def test_resend_verification_returns_503_on_smtp_failure(client, db_session, monkeypatch):
+    _register(client, "smtp-fail@example.com", "9876543232")
+    assert len(email_outbox) == 1
+
+    def _fail(_message):
+        raise EmailDeliveryError("SMTP connection failed")
+
+    monkeypatch.setattr("app.services.email.send_email", _fail)
+
+    response = _resend(client, "smtp-fail@example.com")
+    assert response.status_code == 503
+    body = response.json()
+    assert "detail" in body
+    assert "unable" in body["detail"].lower() or "try again" in body["detail"].lower()
+
+
+def test_resend_verification_returns_429_on_provider_rate_limit(client, db_session, monkeypatch):
+    _register(client, "rate-limit@example.com", "9876543233")
+    assert len(email_outbox) == 1
+
+    def _rate_limit(_message):
+        from app.services.email import EmailRateLimitError
+
+        raise EmailRateLimitError("Daily sending limit exceeded")
+
+    monkeypatch.setattr("app.services.email.send_email", _rate_limit)
+
+    response = _resend(client, "rate-limit@example.com")
+    assert response.status_code == 429
+    body = response.json()
+    assert "detail" in body
+    assert (
+        "temporarily unavailable" in body["detail"].lower()
+        or "try again later" in body["detail"].lower()
+    )
+
+
+def test_resend_verification_unknown_email_returns_200_on_smtp_failure(client, monkeypatch):
+    def _fail(_message):
+        raise EmailDeliveryError("SMTP connection failed")
+
+    monkeypatch.setattr("app.services.email.send_email", _fail)
+
+    response = _resend(client, "nobody-on-smtp-fail@example.com")
+    assert response.status_code == 200
+    assert response.json() == {"message": GENERIC_RESEND_RESPONSE}
+
+
+def test_resend_verification_verified_account_returns_200_on_smtp_failure(client, monkeypatch):
+    _register(client, "already-verified@example.com", "9876543234")
+    _verify(client, _token_from_outbox())
+
+    def _fail(_message):
+        raise EmailDeliveryError("SMTP connection failed")
+
+    monkeypatch.setattr("app.services.email.send_email", _fail)
+
+    response = _resend(client, "already-verified@example.com")
+    assert response.status_code == 200
+    assert response.json() == {"message": GENERIC_RESEND_RESPONSE}
+
+
 # ─── Audit hygiene ──────────────────────────────────────────────────────────
 
 

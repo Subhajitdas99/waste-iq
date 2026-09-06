@@ -12,6 +12,8 @@ import { forgotPassword } from "@/api/auth";
 import {
   getApiErrorMessage,
   getRateLimitRetryAfterSeconds,
+  isEmailDeliveryError,
+  isEmailRateLimitError,
   isRateLimitError,
 } from "@/lib/api-error";
 
@@ -37,10 +39,24 @@ export function ForgotPasswordPage() {
     setApiError(null);
     try {
       await forgotPassword({ email: _data.email.trim() });
-      // The response is identical whether or not the account exists, so the
-      // same confirmation is shown in every case.
       setSubmitted(true);
     } catch (error) {
+      if (isEmailRateLimitError(error)) {
+        const seconds = getRateLimitRetryAfterSeconds(error);
+        const minutes = seconds !== null ? Math.max(1, Math.ceil(seconds / 60)) : null;
+        setApiError(
+          minutes !== null
+            ? `Too many attempts. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
+            : "Email service temporarily unavailable. Please try again later."
+        );
+        return;
+      }
+      if (isEmailDeliveryError(error)) {
+        setApiError(
+          getApiErrorMessage(error, "Unable to send password reset email. Please try again.")
+        );
+        return;
+      }
       if (isRateLimitError(error)) {
         const seconds = getRateLimitRetryAfterSeconds(error);
         const minutes = seconds !== null ? Math.max(1, Math.ceil(seconds / 60)) : null;

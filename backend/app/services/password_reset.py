@@ -32,7 +32,8 @@ from app.core.security import (
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.services.audit import AuditService
-from app.services.email import EmailDeliveryError, send_password_reset_email as deliver_email
+from app.services.email import EmailDeliveryError
+from app.services.email import send_password_reset_email as deliver_email
 from app.services.refresh_token import RefreshTokenService
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,35 @@ def complete_password_reset_email_delivery(user_id: int) -> None:
         logger.exception("Background password reset email delivery failed for user %s", user_id)
     finally:
         db.close()
+
+
+def send_password_reset_email_sync(db: Session, user_id: int) -> None:
+    """Synchronously deliver the password-reset email for ``user_id``.
+
+    Called by routes that need to know delivery outcome before returning
+    (e.g., forgot-password). Raises :class:`EmailDeliveryError` or
+    :class:`EmailRateLimitError` on failure so the route can return an
+    appropriate HTTP response.
+
+    The ``password_reset_email_sent`` audit event is recorded only after the
+    provider accepts the message. Never logs token material.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise EmailDeliveryError("User not found")
+
+    token = create_password_reset_token(str(user.id), password_fingerprint(user.password_hash))
+
+    deliver_email(user, token)
+
+    _audit_service.record(
+        db,
+        actor_user_id=user_id,
+        action="password_reset_email_sent",
+        resource="user",
+        resource_id=str(user_id),
+    )
+    db.commit()
 
 
 def reset_password(db: Session, token: str, new_password: str) -> User:
