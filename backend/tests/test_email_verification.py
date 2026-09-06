@@ -397,6 +397,7 @@ def test_resend_verification_returns_429_on_provider_rate_limit(client, db_sessi
 
     def _rate_limit(_message):
         from app.services.email import EmailRateLimitError
+
         raise EmailRateLimitError("Daily sending limit exceeded")
 
     monkeypatch.setattr("app.services.email.send_email", _rate_limit)

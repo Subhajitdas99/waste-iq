@@ -195,8 +195,7 @@ def resend_verification(
     if user is None or user.email_verified:
         return {
             "message": (
-                "If the email is registered and unverified, "
-                "a verification email has been sent."
+                "If the email is registered and unverified, " "a verification email has been sent."
             )
         }
 

@@ -186,6 +186,7 @@ def test_forgot_password_delivery_rate_limit_returns_429(client, db_session, mon
 
     def _rate_limit(_message):
         from app.services.email import EmailRateLimitError
+
         raise EmailRateLimitError("Daily sending limit exceeded")
 
     monkeypatch.setattr("app.services.email.send_email", _rate_limit)
