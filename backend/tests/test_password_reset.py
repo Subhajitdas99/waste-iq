@@ -202,7 +202,9 @@ def test_forgot_password_delivery_rate_limit_returns_429(client, db_session, mon
     )
 
 
-def test_forgot_password_unknown_email_still_returns_200_on_smtp_failure(client, monkeypatch):
+def test_forgot_password_unknown_email_still_returns_200_on_smtp_failure(
+    client, db_session, monkeypatch
+):
     def _fail(_message):
         raise EmailDeliveryError("provider down")
 
