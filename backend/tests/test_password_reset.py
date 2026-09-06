@@ -195,7 +195,10 @@ def test_forgot_password_delivery_rate_limit_returns_429(client, db_session, mon
     assert response.status_code == 429
     body = response.json()
     assert "detail" in body
-    assert "temporarily unavailable" in body["detail"].lower() or "try again later" in body["detail"].lower()
+    assert (
+        "temporarily unavailable" in body["detail"].lower()
+        or "try again later" in body["detail"].lower()
+    )
 
 
 def test_forgot_password_unknown_email_still_returns_200_on_smtp_failure(client, monkeypatch):

@@ -405,7 +405,10 @@ def test_resend_verification_returns_429_on_provider_rate_limit(client, db_sessi
     assert response.status_code == 429
     body = response.json()
     assert "detail" in body
-    assert "temporarily unavailable" in body["detail"].lower() or "try again later" in body["detail"].lower()
+    assert (
+        "temporarily unavailable" in body["detail"].lower()
+        or "try again later" in body["detail"].lower()
+    )
 
 
 def test_resend_verification_unknown_email_returns_200_on_smtp_failure(client, monkeypatch):
