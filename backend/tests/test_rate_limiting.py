@@ -384,8 +384,15 @@ def test_429_does_not_leak_account_existence(client, monkeypatch):
         assert _login(client, "ghost@example.com", _WRONG_PASSWORD).status_code == 401
     ghost = _login(client, "ghost@example.com", _WRONG_PASSWORD)
     assert ghost.status_code == 429
+
+    known_body = known.json()
+    ghost_body = ghost.json()
+    # Strip the per-request correlation id; the security property is that
+    # everything an attacker can read off the wire is identical.
+    known_body.get("error", {}).pop("request_id", None)
+    ghost_body.get("error", {}).pop("request_id", None)
     assert (
-        ghost.json() == known.json()
+        ghost_body == known_body
     ), "429 bodies must be identical for existing and unknown emails"
 
 
@@ -570,8 +577,15 @@ def test_lockout_does_not_reveal_account_existence(client, db_session, monkeypat
     ghost_response = _login(client, "ghost@example.com", _WRONG_PASSWORD)
     assert locked_response.status_code == 401
     assert ghost_response.status_code == 401
+
+    locked_body = locked_response.json()
+    ghost_body = ghost_response.json()
+    # Strip the per-request correlation id; the security property is that
+    # everything an attacker can read off the wire is identical.
+    locked_body.get("error", {}).pop("request_id", None)
+    ghost_body.get("error", {}).pop("request_id", None)
     assert (
-        locked_response.json() == ghost_response.json()
+        locked_body == ghost_body
     ), "locked and unknown accounts must produce identical responses"
 
 

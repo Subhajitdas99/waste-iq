@@ -10,9 +10,29 @@ import {
   matchesPickupQuery,
   sortPickupRequests,
 } from "@/lib/pickup";
-import { getApiErrorMessage, getRateLimitRetryAfterSeconds, isRateLimitError } from "@/lib/api-error";
-import { createPickupRequest, createUser } from "./factories";
+import {
+  getApiErrorMessage,
+  getRateLimitRetryAfterSeconds,
+  isRateLimitError,
+  getErrorCode,
+  getErrorRequestId,
+  getErrorDetails,
+  getStructuredErrorMessage,
+  isNotFoundError,
+  isForbiddenError,
+  isAuthenticationError,
+  isValidationError,
+  isConflictError,
+  isServerError,
+  isNetworkError,
+  getValidationErrors,
+  getGeneralValidationErrors,
+  getUserFriendlyMessage,
+  createApiError,
+  type ErrorCode,
+} from "@/lib/api-error";
 import type { PickupTimelineEvent } from "@/types/pickup";
+import { createPickupRequest, createUser } from "./factories";
 
 describe("formatPickupStatus", () => {
   it("maps known statuses to their display labels", () => {
@@ -257,6 +277,221 @@ describe("rate limit error helpers", () => {
     expect(getRateLimitRetryAfterSeconds(makeRateLimitError())).toBeNull();
     expect(getRateLimitRetryAfterSeconds(makeRateLimitError({ "retry-after": "abc" }))).toBeNull();
     expect(getRateLimitRetryAfterSeconds(new Error("boom"))).toBeNull();
+  });
+});
+
+describe("enhanced error parsing", () => {
+  function makeAxiosError(
+    data: unknown,
+    status: number
+  ): AxiosError<unknown> {
+    return new AxiosError("Request failed", "ERR_BAD_REQUEST", undefined, undefined, {
+      data,
+      status,
+      statusText: "Error",
+      headers: new AxiosHeaders(),
+      config: { headers: new AxiosHeaders() },
+    });
+  }
+
+  function makeStructuredError(
+    code: ErrorCode,
+    message: string,
+    details: Record<string, unknown> | null = null,
+    requestId: string = "test-request-id",
+    status = 400
+  ): AxiosError {
+    return makeAxiosError(
+      {
+        error: {
+          code,
+          message,
+          details,
+          request_id: requestId,
+        },
+      },
+      status
+    );
+  }
+
+  it("extracts error code from structured response", () => {
+    const error = makeStructuredError("NOT_FOUND", "Resource not found");
+    expect(getErrorCode(error)).toBe("NOT_FOUND");
+  });
+
+  it("extracts request ID from structured response", () => {
+    const error = makeStructuredError("NOT_FOUND", "Resource not found");
+    expect(getErrorRequestId(error)).toBe("test-request-id");
+  });
+
+  it("extracts details from structured response", () => {
+    const details = { field: "value" };
+    const error = makeStructuredError("VALIDATION_ERROR", "Invalid data", details);
+    expect(getErrorDetails(error)).toEqual(details);
+  });
+
+  it("extracts message from structured response", () => {
+    const error = makeStructuredError("NOT_FOUND", "Resource not found");
+    expect(getStructuredErrorMessage(error)).toBe("Resource not found");
+  });
+
+  it("returns null for error code on legacy response", () => {
+    const error = makeAxiosError({ detail: "Old format error" }, 400);
+    expect(getErrorCode(error)).toBeNull();
+  });
+
+  it("returns null for request ID on legacy response", () => {
+    const error = makeAxiosError({ detail: "Old format error" }, 400);
+    expect(getErrorRequestId(error)).toBeNull();
+  });
+
+  it("returns null for details on legacy response", () => {
+    const error = makeAxiosError({ detail: "Old format error" }, 400);
+    expect(getErrorDetails(error)).toBeNull();
+  });
+
+  it("returns null for message on legacy response", () => {
+    const error = makeAxiosError({ detail: "Old format error" }, 400);
+    expect(getStructuredErrorMessage(error)).toBeNull();
+  });
+
+  it("identifies not found errors by status code", () => {
+    const error = makeAxiosError({ detail: "Not found" }, 404);
+    expect(isNotFoundError(error)).toBe(true);
+  });
+
+  it("identifies not found errors by error code", () => {
+    const error = makeStructuredError("NOT_FOUND", "Resource not found", null, "test-id", 404);
+    expect(isNotFoundError(error)).toBe(true);
+  });
+
+  it("identifies forbidden errors by status code", () => {
+    const error = makeAxiosError({ detail: "Forbidden" }, 403);
+    expect(isForbiddenError(error)).toBe(true);
+  });
+
+  it("identifies forbidden errors by error code", () => {
+    const error = makeStructuredError("FORBIDDEN", "Access denied", null, "test-id", 403);
+    expect(isForbiddenError(error)).toBe(true);
+  });
+
+  it("identifies authentication errors by status code", () => {
+    const error = makeAxiosError({ detail: "Unauthorized" }, 401);
+    expect(isAuthenticationError(error)).toBe(true);
+  });
+
+  it("identifies authentication errors by error code", () => {
+    const error = makeStructuredError("AUTHENTICATION_REQUIRED", "Please sign in", null, "test-id", 401);
+    expect(isAuthenticationError(error)).toBe(true);
+  });
+
+  it("identifies validation errors by status code", () => {
+    const error = makeAxiosError({ detail: [{ msg: "Field required" }] }, 422);
+    expect(isValidationError(error)).toBe(true);
+  });
+
+  it("identifies validation errors by error code", () => {
+    const error = makeStructuredError("VALIDATION_ERROR", "Invalid input", { field: "required" }, "test-id", 422);
+    expect(isValidationError(error)).toBe(true);
+  });
+
+  it("identifies conflict errors by status code", () => {
+    const error = makeAxiosError({ detail: "Conflict" }, 409);
+    expect(isConflictError(error)).toBe(true);
+  });
+
+  it("identifies conflict errors by error code", () => {
+    const error = makeStructuredError("CONFLICT", "Already exists", null, "test-id", 409);
+    expect(isConflictError(error)).toBe(true);
+  });
+
+  it("identifies server errors by status code", () => {
+    const error = makeAxiosError({ detail: "Server error" }, 500);
+    expect(isServerError(error)).toBe(true);
+  });
+
+  it("identifies server errors by error code", () => {
+    const error = makeStructuredError("INTERNAL_SERVER_ERROR", "Something went wrong", null, "test-id", 500);
+    expect(isServerError(error)).toBe(true);
+  });
+
+  it("identifies network errors", () => {
+    const error = new AxiosError("Network Error", "ECONNABORTED");
+    expect(isNetworkError(error)).toBe(true);
+  });
+
+  it("returns false for isNetworkError on HTTP errors", () => {
+    const error = makeAxiosError({ detail: "HTTP error" }, 400);
+    expect(isNetworkError(error)).toBe(false);
+  });
+
+  it("gets rate limit retry after seconds", () => {
+    const error = makeStructuredError(
+      "RATE_LIMITED",
+      "Too many requests",
+      null,
+      "test-id",
+      429
+    );
+    error.response!.headers["retry-after"] = "10";
+    expect(getRateLimitRetryAfterSeconds(error)).toBe(10);
+  });
+
+  it("extracts field validation errors", () => {
+    const error = makeAxiosError(
+      {
+        detail: [
+          { msg: "Email is required", loc: ["body", "email"] },
+          { msg: "Password too short", loc: ["body", "password"] },
+        ],
+      },
+      422
+    );
+    const fieldErrors = getValidationErrors(error);
+    expect(fieldErrors).toEqual({
+      email: ["Email is required"],
+      password: ["Password too short"],
+    });
+  });
+
+  it("extracts general validation errors", () => {
+    const error = makeAxiosError(
+      { detail: [{ msg: "General validation error" }] },
+      422
+    );
+    const generalErrors = getGeneralValidationErrors(error);
+    expect(generalErrors).toEqual(["General validation error"]);
+  });
+
+  it("returns user friendly message for known error codes", () => {
+    expect(getUserFriendlyMessage(makeStructuredError("NOT_FOUND", "Custom message"))).toBe(
+      "The requested resource was not found."
+    );
+    expect(getUserFriendlyMessage(makeStructuredError("FORBIDDEN", "Custom message"))).toBe(
+      "You do not have permission to perform this action."
+    );
+    expect(getUserFriendlyMessage(makeStructuredError("VALIDATION_ERROR", "Custom message"))).toBe(
+      "Please check the form for errors."
+    );
+  });
+
+  it("returns user friendly message for unknown error codes", () => {
+    const error = makeStructuredError("UNKNOWN_CODE" as ErrorCode, "Custom message");
+    expect(getUserFriendlyMessage(error)).toBe("Custom message");
+  });
+
+  it("returns user friendly message for network errors", () => {
+    const error = new AxiosError("Failed to connect", "ECONNREFUSED");
+    expect(getUserFriendlyMessage(error)).toBe(
+      "Network error. Please check your connection and try again."
+    );
+  });
+
+  it("creates test API error with structured format", () => {
+    const error = createApiError("Test message", 404, "NOT_FOUND");
+    expect(error.response?.status).toBe(404);
+    expect(getErrorCode(error)).toBe("NOT_FOUND");
+    expect(getStructuredErrorMessage(error)).toBe("Test message");
   });
 });
 

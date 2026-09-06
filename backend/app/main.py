@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.dependencies import get_db
-from app.core.logging import setup_logging
+from app.core.errors import ErrorCode
+from app.core.exception_handlers import ErrorResponse, register_exception_handlers
+from app.core.logging import setup_logging, get_request_id
 from app.core.middleware import RequestIDMiddleware
 from app.core.sentry_sdk import init_sentry
 from app.services.auth import bootstrap_admin_user
@@ -68,6 +70,8 @@ app.add_middleware(RequestIDMiddleware)
 
 app.include_router(api_router)
 
+register_exception_handlers(app)
+
 # Mount the local image storage directory only when the local production
 # simulation fallback is active (WIQ-V1-054). The directory is backed by
 # the ``uploads_data`` Docker volume in the simulation stack, so the
@@ -90,14 +94,24 @@ if settings.local_image_storage_active:
 async def image_upload_configuration_error_handler(
     _: Request, exc: ImageUploadConfigurationError
 ) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": exc.detail})
+    response = ErrorResponse(
+        code=ErrorCode.SERVICE_UNAVAILABLE,
+        message=exc.detail,
+        request_id=get_request_id(),
+    )
+    return JSONResponse(status_code=503, content=response.to_dict())
 
 
 @app.exception_handler(ImageUploadUnavailableError)
 async def image_upload_unavailable_error_handler(
     _: Request, exc: ImageUploadUnavailableError
 ) -> JSONResponse:
-    return JSONResponse(status_code=502, content={"detail": exc.detail})
+    response = ErrorResponse(
+        code=ErrorCode.GATEWAY_ERROR,
+        message=exc.detail,
+        request_id=get_request_id(),
+    )
+    return JSONResponse(status_code=502, content=response.to_dict())
 
 
 @app.get("/health", tags=["health"])
