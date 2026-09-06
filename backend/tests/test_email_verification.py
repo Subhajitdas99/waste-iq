@@ -29,7 +29,18 @@ MIGRATION_FILE = (
     / "20260821_0018_email_verification.py"
 )
 
-GENERIC_BAD_TOKEN = {"detail": "Invalid or expired verification token"}
+
+def _assert_generic_bad_token(response):
+    """Assert response is a structured bad-token error (WIQ-V1-012 format)."""
+    assert response.status_code == 400
+    body = response.json()
+    assert body["detail"] == "Invalid or expired verification token"
+    assert body["error"]["code"] == "BAD_REQUEST"
+    assert body["error"]["message"] == "Invalid or expired verification token"
+    assert "request_id" in body["error"]
+    assert isinstance(body["error"]["request_id"], str)
+
+
 GENERIC_RESEND_RESPONSE = (
     "If the email is registered and unverified, a verification email has been sent."
 )
@@ -210,8 +221,7 @@ def test_already_verified_account_is_idempotent(client, db_session):
 def test_verify_email_with_invalid_token(client, db_session):
     _register(client, "verify-invalid@example.com", "9876543217")
     response = _verify(client, "definitely-not-a-real-token")
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
     assert _get_user(db_session, "verify-invalid@example.com").email_verified is False
 
 
@@ -221,15 +231,13 @@ def test_verify_email_with_expired_token(client, db_session):
     expired = _craft_token(str(user.id), expires_in=-60)
 
     response = _verify(client, expired)
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
     assert _get_user(db_session, "verify-expired@example.com").email_verified is False
 
 
 def test_verify_email_with_malformed_token(client):
     response = _verify(client, "not-a-jwt-at-all")
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
 
 
 def test_verify_email_with_wrong_purpose_token(client, db_session):
@@ -238,8 +246,7 @@ def test_verify_email_with_wrong_purpose_token(client, db_session):
     wrong_purpose = _craft_token(str(user.id), purpose="password_reset")
 
     response = _verify(client, wrong_purpose)
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
 
 
 def test_verify_email_rejects_access_token(client, db_session):
@@ -247,20 +254,17 @@ def test_verify_email_rejects_access_token(client, db_session):
     user = _get_user(db_session, "verify-access@example.com")
 
     response = _verify(client, create_access_token(str(user.id)))
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
 
 
 def test_verify_email_with_token_for_unknown_user(client):
     response = _verify(client, _craft_token("999999999"))
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
 
 
 def test_verify_email_with_non_numeric_subject(client):
     response = _verify(client, _craft_token("not-a-number"))
-    assert response.status_code == 400
-    assert response.json() == GENERIC_BAD_TOKEN
+    _assert_generic_bad_token(response)
 
 
 def test_verify_email_requires_token_field(client):

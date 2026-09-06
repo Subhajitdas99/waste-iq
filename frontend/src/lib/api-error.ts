@@ -327,6 +327,7 @@ export function createApiError(
       message,
       name: "AxiosError",
       code: "API_ERROR",
+      isAxiosError: true,
       response: {
         data: responseData,
         status: status ?? 500,
