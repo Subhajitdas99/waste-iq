@@ -19,6 +19,7 @@ from app.schemas.notification import (
     NotificationBroadcastRequest,
 )
 from app.schemas.pickup_request import (
+    AdminDisputedPickupPageRead,
     PickupRequestRead,
     WeightDisputeResolveRequest,
 )
@@ -168,21 +169,21 @@ def admin_list_login_history(
 # ─── WIQ-V1-046: Weight dispute review/resolution ─────────────────────────────
 
 
-@router.get("/disputes/pickups", response_model=dict)
+@router.get("/disputes/pickups", response_model=AdminDisputedPickupPageRead)
 def admin_list_disputed_pickups(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin")),
-) -> dict:
+) -> AdminDisputedPickupPageRead:
     items, total = list_disputed_pickup_requests(db, page=page, page_size=page_size)
-    return {
-        "items": items,
-        "page": page,
-        "page_size": page_size,
-        "total_items": total,
-        "total_pages": max(1, (total + page_size - 1) // page_size) if total else 0,
-    }
+    return AdminDisputedPickupPageRead(
+        items=items,
+        page=page,
+        page_size=page_size,
+        total_items=total,
+        total_pages=(total + page_size - 1) // page_size if total else 0,
+    )
 
 
 @router.post(

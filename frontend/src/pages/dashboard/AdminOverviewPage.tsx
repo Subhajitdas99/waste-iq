@@ -1,25 +1,32 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, BarChart3, CheckCircle, Gauge, Package, RefreshCcw, ShieldCheck, Scale, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { Toast } from "@/components/Toast";
 import { PageHeader } from "@/components/PageHeader";
 import { SeoHead } from "@/components/seo/SeoHead";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { LoadingSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { DealerApprovalDialog } from "@/components/dashboard/DealerApprovalDialog";
+import { WeightDisputeCard } from "@/components/dashboard/WeightDisputeCard";
+import { WeightDisputeDialog } from "@/components/dashboard/WeightDisputeDialog";
+import { Pagination } from "@/components/dashboard/Pagination";
 import {
   useAdminAnalytics,
   useAdminDealers,
+  useAdminDisputedPickups,
   useAdminUsers,
   useApproveDealer,
   usePendingAdminDealers,
   usePilotMetrics,
   useRejectDealer,
+  useResolveAdminWeightDispute,
 } from "@/hooks/useAdminDashboard";
 import { getApiErrorMessage } from "@/lib/api-error";
 import { formatDateTime, formatWeight } from "@/lib/pickup";
 import type { AdminDealerSummary } from "@/types/admin";
+import type { DisputedPickupsPage, WeightDisputeResolveRequest } from "@/types/pickup";
 
 function formatRole(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
@@ -40,23 +47,52 @@ type ReviewDialogState =
   | { dealer: AdminDealerSummary; mode: "approve" | "reject" }
   | null;
 
+type DisputeDialogState =
+  | { request: DisputedPickupsPage["items"][number]; mode: "upheld" | "corrected" }
+  | null;
+
+type DisputeToastState = { message: string; type: "success" | "error" } | null;
+
 export function AdminOverviewPage() {
   const [reviewDialog, setReviewDialog] = useState<ReviewDialogState>(null);
+  const [disputeDialog, setDisputeDialog] = useState<DisputeDialogState>(null);
+  const [disputePage, setDisputePage] = useState(1);
+  const [disputeApiError, setDisputeApiError] = useState<string | null>(null);
+  const [disputeToast, setDisputeToast] = useState<DisputeToastState>(null);
+  const disputeToastTimeoutRef = useRef<number | null>(null);
   const analyticsQuery = useAdminAnalytics();
   const usersQuery = useAdminUsers();
   const dealersQuery = useAdminDealers();
   const pendingQuery = usePendingAdminDealers();
+  const disputesQuery = useAdminDisputedPickups(disputePage);
   const approveMutation = useApproveDealer();
   const rejectMutation = useRejectDealer();
+  const resolveMutation = useResolveAdminWeightDispute();
   const analytics = analyticsQuery.data;
   const users = usersQuery.data ?? [];
   const pendingDealers = pendingQuery.data?.items ?? [];
+  const disputes = disputesQuery.data?.items ?? [];
   const isRefreshing =
     analyticsQuery.isFetching ||
     usersQuery.isFetching ||
     dealersQuery.isFetching ||
-    pendingQuery.isFetching;
-  const isPending = approveMutation.isPending || rejectMutation.isPending;
+    pendingQuery.isFetching ||
+    disputesQuery.isFetching;
+  const isPending = approveMutation.isPending || rejectMutation.isPending || resolveMutation.isPending;
+
+  useEffect(() => () => {
+    if (disputeToastTimeoutRef.current !== null) {
+      window.clearTimeout(disputeToastTimeoutRef.current);
+    }
+  }, []);
+
+  const showDisputeToast = (message: string, type: NonNullable<DisputeToastState>["type"]) => {
+    if (disputeToastTimeoutRef.current !== null) {
+      window.clearTimeout(disputeToastTimeoutRef.current);
+    }
+    setDisputeToast({ message, type });
+    disputeToastTimeoutRef.current = window.setTimeout(() => setDisputeToast(null), 5000);
+  };
 
   const handleConfirmReview = (reason?: string) => {
     if (!reviewDialog) {
@@ -69,6 +105,49 @@ export function AdminOverviewPage() {
       rejectMutation.mutate({ dealerUserId: dealer.user_id, reason });
     }
     setReviewDialog(null);
+  };
+
+  const handleUphold = (requestId: number) => {
+    const request = disputes.find((r) => r.id === requestId);
+    if (request) {
+      setDisputeApiError(null);
+      setDisputeDialog({ request, mode: "upheld" });
+    }
+  };
+
+  const handleCorrect = (requestId: number) => {
+    const request = disputes.find((r) => r.id === requestId);
+    if (request) {
+      setDisputeApiError(null);
+      setDisputeDialog({ request, mode: "corrected" });
+    }
+  };
+
+  const handleResolveConfirm = (payload: WeightDisputeResolveRequest) => {
+    if (!disputeDialog) return;
+    resolveMutation.mutate(
+      { requestId: disputeDialog.request.id, payload },
+      {
+        onSuccess: () => {
+          setDisputeDialog(null);
+          setDisputeApiError(null);
+          showDisputeToast("Weight dispute resolved successfully.", "success");
+        },
+        onError: (error) => {
+          setDisputeApiError(getApiErrorMessage(error, "Unable to resolve dispute."));
+        },
+      },
+    );
+  };
+
+  const handleRefresh = () => {
+    void Promise.all([
+      analyticsQuery.refetch(),
+      usersQuery.refetch(),
+      dealersQuery.refetch(),
+      pendingQuery.refetch(),
+      disputesQuery.refetch(),
+    ]);
   };
 
   return (
@@ -88,20 +167,21 @@ export function AdminOverviewPage() {
             variant="outline"
             className="gap-2"
             disabled={isRefreshing}
-            onClick={() => {
-              void Promise.all([
-                analyticsQuery.refetch(),
-                usersQuery.refetch(),
-                dealersQuery.refetch(),
-                pendingQuery.refetch(),
-              ]);
-            }}
+            onClick={handleRefresh}
           >
             <RefreshCcw className="h-4 w-4" />
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </Button>
         }
       />
+
+      {disputeToast ? (
+        <Toast
+          message={disputeToast.message}
+          type={disputeToast.type}
+          onDismiss={() => setDisputeToast(null)}
+        />
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatsCard
@@ -287,6 +367,66 @@ export function AdminOverviewPage() {
           isPending={isPending}
           onConfirm={handleConfirmReview}
           onClose={() => setReviewDialog(null)}
+        />
+      ) : null}
+
+      <section className="mt-8">
+        <DashboardCard
+          title="Weight Disputes"
+          description="Citizen-submitted weight disputes awaiting admin review."
+          actions={
+            <p className="text-sm text-muted-foreground">
+              {disputesQuery.data?.total_items ?? 0} dispute{(disputesQuery.data?.total_items ?? 0) === 1 ? "" : "s"} requires review
+            </p>
+          }
+        >
+          {disputesQuery.isPending && !disputesQuery.data ? (
+            <LoadingSkeleton count={3} />
+          ) : disputesQuery.isError ? (
+            <div role="alert" className="text-sm text-destructive">
+              {getApiErrorMessage(disputesQuery.error, "Unable to load disputes.")}
+            </div>
+          ) : disputes.length > 0 ? (
+            <div className="space-y-4">
+              {disputes.map((dispute) => (
+                <WeightDisputeCard
+                  key={dispute.id}
+                  request={dispute}
+                  onUphold={handleUphold}
+                  onCorrect={handleCorrect}
+                  isPending={resolveMutation.isPending}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No weight disputes"
+              description="Citizen-submitted weight disputes will appear here when filed."
+            />
+          )}
+          <Pagination
+            currentPage={disputePage}
+            totalPages={disputesQuery.data?.total_pages ?? 0}
+            onPageChange={setDisputePage}
+          />
+        </DashboardCard>
+      </section>
+
+      {disputeDialog ? (
+        <WeightDisputeDialog
+          isOpen
+          mode={disputeDialog.mode}
+          requestId={disputeDialog.request.id}
+          disputeReason={disputeDialog.request.dispute.reason}
+          collectorWeightKg={disputeDialog.request.assignment?.weight_kg ?? null}
+          collectorName={disputeDialog.request.assigned_collector_name}
+          isPending={resolveMutation.isPending}
+          apiError={disputeApiError}
+          onConfirm={handleResolveConfirm}
+          onClose={() => {
+            setDisputeApiError(null);
+            setDisputeDialog(null);
+          }}
         />
       ) : null}
 

@@ -334,6 +334,10 @@ def test_admin_can_list_disputed_pickups(
     assert body["items"]
     ids = [item["id"] for item in body["items"]]
     assert request["id"] in ids
+    listed = next(item for item in body["items"] if item["id"] == request["id"])
+    assert listed["dispute"]["id"]
+    assert listed["dispute"]["reason"] == "Admin list test."
+    assert listed["dispute"]["resolution"] is None
 
 
 def test_admin_resolve_uphold(

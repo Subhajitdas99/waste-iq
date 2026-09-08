@@ -916,11 +916,17 @@ def list_disputed_pickup_requests(
     db: Session,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[PickupRequestRead], int]:
-    """List pickups currently in the ``disputed`` state, newest first."""
+) -> tuple[list[PickupRequestDetailRead], int]:
+    """List pickups currently in the ``disputed`` state, newest first.
+
+    Returns detail schemas so the admin UI receives the dispute record
+    (reason, timestamps, resolution) alongside the pickup request.
+    """
     from sqlalchemy import func, select
 
-    statement = _repository.base_query().where(PickupRequest.status == PickupStatus.disputed)
+    statement = _repository.base_query(include_timeline=True).where(
+        PickupRequest.status == PickupStatus.disputed
+    )
     total = db.execute(select(func.count()).select_from(statement.subquery())).scalar_one()
 
     items = (
@@ -933,7 +939,7 @@ def list_disputed_pickup_requests(
         .scalars()
         .all()
     )
-    return [_to_schema(item, viewer=None) for item in items], int(total or 0)
+    return [_to_detail_schema(item, viewer=None) for item in items], int(total or 0)
 
 
 def resolve_weight_dispute(
