@@ -4,9 +4,11 @@ import {
   getAdminAnalytics,
   getPilotMetrics,
   listAdminDealers,
+  listAdminDisputedPickups,
   listAdminUsers,
   listPendingAdminDealers,
   rejectAdminDealer,
+  resolveAdminWeightDispute,
 } from "@/api/admin";
 import type { AdminDealerListQuery } from "@/types/admin";
 
@@ -20,6 +22,8 @@ export const adminDashboardQueryKeys = {
     [...adminDashboardQueryKeys.dealers, query] as const,
   pendingDealers: (query: AdminDealerListQuery = {}) =>
     [...adminDashboardQueryKeys.dealers, "pending", query] as const,
+  disputes: (page: number = 1, pageSize: number = 20) =>
+    ["admin", "disputes", page, pageSize] as const,
 };
 
 export function useAdminAnalytics() {
@@ -69,6 +73,13 @@ export function useApproveDealer() {
   });
 }
 
+export function useAdminDisputedPickups(page: number = 1, pageSize: number = 20) {
+  return useQuery({
+    queryKey: adminDashboardQueryKeys.disputes(page, pageSize),
+    queryFn: () => listAdminDisputedPickups(page, pageSize),
+  });
+}
+
 export function useRejectDealer() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -77,6 +88,30 @@ export function useRejectDealer() {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: adminDashboardQueryKeys.dealers,
+      });
+    },
+  });
+}
+
+export function useResolveAdminWeightDispute() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      requestId,
+      payload,
+    }: {
+      requestId: number;
+      payload: Parameters<typeof resolveAdminWeightDispute>[1];
+    }) => resolveAdminWeightDispute(requestId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "disputes"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: adminDashboardQueryKeys.analytics,
+      });
+      queryClient.invalidateQueries({
+        queryKey: adminDashboardQueryKeys.pilot,
       });
     },
   });

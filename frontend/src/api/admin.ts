@@ -8,6 +8,7 @@ import type {
   PilotMetrics,
 } from "@/types/admin";
 import type { DealerApprovalAction } from "@/types/dealer";
+import type { DisputedPickupsPage, WeightDisputeResolveRequest } from "@/types/pickup";
 
 export async function getAdminAnalytics(): Promise<AdminAnalytics> {
   const response = await apiClient.get<AdminAnalytics>("/admin/analytics");
@@ -70,4 +71,21 @@ export async function rejectAdminDealer(
     { reason },
   );
   return response.data;
+}
+
+export async function listAdminDisputedPickups(
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<DisputedPickupsPage> {
+  const response = await apiClient.get<DisputedPickupsPage>("/admin/disputes/pickups", {
+    params: { page, page_size: pageSize },
+  });
+  return response.data;
+}
+
+export async function resolveAdminWeightDispute(
+  requestId: number,
+  payload: WeightDisputeResolveRequest,
+): Promise<void> {
+  await apiClient.post(`/admin/disputes/pickups/${requestId}/resolve`, payload);
 }

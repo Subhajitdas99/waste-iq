@@ -127,3 +127,11 @@ class WeightDisputeResolveRequest(BaseModel):
     resolution: Literal["upheld", "corrected"]
     resolved_weight_kg: float | None = Field(default=None, ge=0, le=10000)
     notes: str | None = Field(default=None, max_length=2000)
+
+
+class AdminDisputedPickupPageRead(BaseModel):
+    items: list[PickupRequestDetailRead]
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int

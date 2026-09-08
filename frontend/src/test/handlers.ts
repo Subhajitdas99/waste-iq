@@ -900,6 +900,10 @@ export const handlers = [
     return HttpResponse.json(createAdminAnalytics());
   }),
 
+  http.get("*/admin/analytics/pilot", () => {
+    return HttpResponse.json({ detail: "Pilot metrics unavailable" }, { status: 500 });
+  }),
+
   http.get("*/admin/analytics/overview", () => {
     return HttpResponse.json(createAnalyticsOverview());
   }),
@@ -938,6 +942,20 @@ export const handlers = [
 
   http.get("*/admin/dealers/pending", () => {
     return HttpResponse.json(createAdminDealerListPage());
+  }),
+
+  http.get("*/admin/disputes/pickups", () => {
+    return HttpResponse.json({
+      items: [],
+      page: 1,
+      page_size: 20,
+      total_items: 0,
+      total_pages: 0,
+    });
+  }),
+
+  http.post("*/admin/disputes/pickups/:id/resolve", () => {
+    return HttpResponse.json({});
   }),
 
   http.post("*/admin/dealers/:id/approve", ({ params }) => {

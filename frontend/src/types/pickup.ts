@@ -116,9 +116,13 @@ export interface WeightDisputeResolveRequest {
 }
 
 export interface DisputedPickupsPage {
-  items: PickupRequest[];
+  items: AdminDisputedPickup[];
   page: number;
   page_size: number;
   total_items: number;
   total_pages: number;
+}
+
+export interface AdminDisputedPickup extends PickupRequest {
+  dispute: PickupDispute;
 }
