@@ -532,7 +532,7 @@ This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for d
 |---------|------|
 | 🐛 Bug Reports | [GitHub Issues](https://github.com/your-org/waste-iq/issues) |
 | 💡 Feature Requests | [GitHub Discussions](https://github.com/your-org/waste-iq/discussions) |
-| 📧 Email | [team@waste-iq.dev](mailto:team@waste-iq.dev) |
+| 📧 Email | wasteiqteam@gmail.com |
 | 📖 Documentation | [`/docs`](docs/) |
 
 ---
