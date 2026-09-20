@@ -138,7 +138,7 @@ class SmtpEmailProvider(EmailProvider):
         mime.add_alternative(message.html_body, subtype="html")
 
         try:
-            with smtplib.SMTP(self._host, self._port, timeout=30) as server:
+            with smtplib.SMTP(self._host, self._port, timeout=10) as server:
                 if self._use_tls:
                     server.starttls(context=ssl.create_default_context())
                 if self._user and self._password:
