@@ -1,6 +1,7 @@
 """Backend tests for WIQ-V1-014 email verification."""
 
 import re
+import smtplib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -554,6 +555,200 @@ def test_model_metadata_includes_email_verified_at():
     column = User.__table__.columns["email_verified_at"]
     assert column.nullable is True
     assert isinstance(User.email_verified, property)
+
+
+def test_smtp_data_error_logs_diagnostics_without_secrets(caplog, monkeypatch):
+    from app.services.email import EmailRateLimitError, OutgoingEmail, SmtpEmailProvider
+
+    captured: dict[str, object] = {}
+
+    class _MockSMTP:
+        def __init__(self, host, port, timeout):
+            captured["host"] = host
+            captured["port"] = port
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, user, password):
+            pass
+
+        def send_message(self, message):
+            raise smtplib.SMTPDataError(550, b"5.4.5 Blocked by provider: secret-token=abc123")
+
+    monkeypatch.setattr("app.services.email.smtplib.SMTP", _MockSMTP)
+
+    provider = SmtpEmailProvider(
+        host="smtp.example.com",
+        port=587,
+        user="smtp-user@example.com",
+        password="SMTP_PASSWORD_SECRET",
+        use_tls=True,
+        from_email="noreply@example.com",
+        from_name="Waste-IQ",
+    )
+    recipient = "recipient-secret@example.com"
+    token = "verification-token-secret"
+    message = OutgoingEmail(
+        to_email=recipient,
+        subject="Test",
+        html_body=f"<p>html body with token {token}</p>",
+        text_body=f"body with token {token}",
+    )
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(EmailRateLimitError):
+            provider.send(message)
+
+    assert captured["timeout"] == 10
+    log_text = caplog.text
+    assert "exception_class=SMTPDataError" in log_text
+    assert "smtp_code=550" in log_text
+    assert "5.4.5" in log_text
+    assert "SMTP_PASSWORD_SECRET" not in log_text
+    assert "smtp-user@example.com" not in log_text
+    assert recipient not in log_text
+    assert token not in log_text
+    assert "html body" not in log_text
+    assert "body with token" not in log_text
+
+
+def test_smtp_error_logs_diagnostics_without_secrets(caplog, monkeypatch):
+    from app.services.email import EmailDeliveryError, OutgoingEmail, SmtpEmailProvider
+
+    captured: dict[str, object] = {}
+
+    class _MockSMTP:
+        def __init__(self, host, port, timeout):
+            captured["host"] = host
+            captured["port"] = port
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, user, password):
+            pass
+
+        def send_message(self, message):
+            raise smtplib.SMTPException(
+                "SMTPError: secret-token=abc123 recipient="
+                "recipient-secret@example.com smtp_user=smtp-user@example.com"
+            )
+
+    monkeypatch.setattr("app.services.email.smtplib.SMTP", _MockSMTP)
+
+    provider = SmtpEmailProvider(
+        host="smtp.example.com",
+        port=587,
+        user="smtp-user@example.com",
+        password="SMTP_PASSWORD_SECRET",
+        use_tls=True,
+        from_email="noreply@example.com",
+        from_name="Waste-IQ",
+    )
+    recipient = "recipient-secret@example.com"
+    token = "verification-token-secret"
+    message = OutgoingEmail(
+        to_email=recipient,
+        subject="Test",
+        html_body=f"<p>html body with token {token}</p>",
+        text_body=f"body with token {token}",
+    )
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(EmailDeliveryError):
+            provider.send(message)
+
+    assert captured["timeout"] == 10
+    log_text = caplog.text
+    assert "exception_class=SMTPException" in log_text
+    assert "smtp_code=None" in log_text
+    assert "SMTP_PASSWORD_SECRET" not in log_text
+    assert "smtp-user@example.com" not in log_text
+    assert recipient not in log_text
+    assert token not in log_text
+    assert "html body" not in log_text
+    assert "body with token" not in log_text
+
+
+def test_smtp_os_error_logs_diagnostics_without_secrets(caplog, monkeypatch):
+    from app.services.email import EmailDeliveryError, OutgoingEmail, SmtpEmailProvider
+
+    captured: dict[str, object] = {}
+
+    class _MockSMTP:
+        def __init__(self, host, port, timeout):
+            captured["host"] = host
+            captured["port"] = port
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, user, password):
+            pass
+
+        def send_message(self, message):
+            raise OSError(
+                "OS error: secret-token=abc123 recipient="
+                "recipient-secret@example.com smtp_user=smtp-user@example.com"
+            )
+
+    monkeypatch.setattr("app.services.email.smtplib.SMTP", _MockSMTP)
+
+    provider = SmtpEmailProvider(
+        host="smtp.example.com",
+        port=587,
+        user="smtp-user@example.com",
+        password="SMTP_PASSWORD_SECRET",
+        use_tls=True,
+        from_email="noreply@example.com",
+        from_name="Waste-IQ",
+    )
+    recipient = "recipient-secret@example.com"
+    token = "verification-token-secret"
+    message = OutgoingEmail(
+        to_email=recipient,
+        subject="Test",
+        html_body=f"<p>html body with token {token}</p>",
+        text_body=f"body with token {token}",
+    )
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(EmailDeliveryError):
+            provider.send(message)
+
+    assert captured["timeout"] == 10
+    log_text = caplog.text
+    assert "exception_class=OSError" in log_text
+    assert "smtp_code=None" in log_text
+    assert "provider_error=None" in log_text
+    assert "SMTP_PASSWORD_SECRET" not in log_text
+    assert "smtp-user@example.com" not in log_text
+    assert recipient not in log_text
+    assert token not in log_text
+    assert "html body" not in log_text
+    assert "body with token" not in log_text
 
 
 def test_smtp_client_uses_10_second_timeout(monkeypatch):
