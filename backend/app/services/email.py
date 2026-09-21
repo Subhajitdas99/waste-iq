@@ -156,9 +156,7 @@ class SmtpEmailProvider(EmailProvider):
             raise EmailDeliveryError("Failed to deliver email") from exc
         except (OSError, smtplib.SMTPException) as exc:
             smtp_error = getattr(exc, "smtp_error", None)
-            provider_error = (
-                str(smtp_error)[:200].replace("\n", " ") if smtp_error else None
-            )
+            provider_error = str(smtp_error)[:200].replace("\n", " ") if smtp_error else None
             logger.warning(
                 "SMTP delivery error: exception_class=%s smtp_code=%s provider_error=%s",
                 type(exc).__name__,
