@@ -749,3 +749,52 @@ def test_smtp_os_error_logs_diagnostics_without_secrets(caplog, monkeypatch):
     assert token not in log_text
     assert "html body" not in log_text
     assert "body with token" not in log_text
+
+
+def test_smtp_client_uses_10_second_timeout(monkeypatch):
+    from app.services.email import SmtpEmailProvider, OutgoingEmail
+
+    captured: dict[str, object] = {}
+
+    class _MockSMTP:
+        def __init__(self, host, port, timeout):
+            captured["host"] = host
+            captured["port"] = port
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, user, password):
+            pass
+
+        def send_message(self, message):
+            pass
+
+    monkeypatch.setattr("app.services.email.smtplib.SMTP", _MockSMTP)
+
+    provider = SmtpEmailProvider(
+        host="smtp.example.com",
+        port=587,
+        user="user@example.com",
+        password="secret",
+        use_tls=True,
+        from_email="noreply@example.com",
+        from_name="Waste-IQ",
+    )
+    provider.send(
+        OutgoingEmail(
+            to_email="test@example.com",
+            subject="Test",
+            html_body="<p>test</p>",
+            text_body="test",
+        )
+    )
+
+    assert captured["timeout"] == 10
