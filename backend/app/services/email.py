@@ -145,13 +145,27 @@ class SmtpEmailProvider(EmailProvider):
                     server.login(self._user, self._password)
                 server.send_message(mime)
         except smtplib.SMTPDataError as exc:
+            logger.warning(
+                "SMTP delivery error: exception_class=%s smtp_code=%s provider_error=%s",
+                type(exc).__name__,
+                exc.smtp_code,
+                str(exc.smtp_error)[:200].replace("\n", " ") if exc.smtp_error else None,
+            )
             if exc.smtp_code == 550 and "5.4.5" in str(exc.smtp_error):
-                raise EmailRateLimitError(
-                    f"Email provider rate limit exceeded for {message.to_email}"
-                ) from exc
-            raise EmailDeliveryError(f"Failed to deliver email to {message.to_email}") from exc
+                raise EmailRateLimitError("Email provider rate limit exceeded") from exc
+            raise EmailDeliveryError("Failed to deliver email") from exc
         except (OSError, smtplib.SMTPException) as exc:
-            raise EmailDeliveryError(f"Failed to deliver email to {message.to_email}") from exc
+            smtp_error = getattr(exc, "smtp_error", None)
+            provider_error = (
+                str(smtp_error)[:200].replace("\n", " ") if smtp_error else None
+            )
+            logger.warning(
+                "SMTP delivery error: exception_class=%s smtp_code=%s provider_error=%s",
+                type(exc).__name__,
+                getattr(exc, "smtp_code", None),
+                provider_error,
+            )
+            raise EmailDeliveryError("Failed to deliver email") from exc
 
 
 def get_email_provider() -> EmailProvider:
