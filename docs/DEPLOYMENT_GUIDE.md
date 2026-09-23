@@ -243,6 +243,10 @@ EMAIL_BACKEND=console
 # SMTP_PORT=587
 # SMTP_USER=your-email@gmail.com
 # SMTP_PASSWORD=<gmail-app-password>
+# EMAIL_BACKEND=resend
+# RESEND_API_KEY=re_123456789...
+# EMAIL_FROM=noreply@wasteiq.dev
+# EMAIL_FROM_NAME=Waste-IQ
 
 # Optional: Cloudinary (leave empty for local testing)
 # CLOUDINARY_CLOUD_NAME=<your-cloud-name>
@@ -361,6 +365,11 @@ ADMIN_REGISTRATION_CODE=…                  # enables admin sign-up
 BOOTSTRAP_ADMIN_NAME=… / BOOTSTRAP_ADMIN_EMAIL=… / BOOTSTRAP_ADMIN_PHONE=… / BOOTSTRAP_ADMIN_PASSWORD=…
 CLOUDINARY_CLOUD_NAME=… / CLOUDINARY_API_KEY=… / CLOUDINARY_API_SECRET=…   # required for uploads when DEPLOYMENT_MODE=production (503 otherwise)
 EMAIL_BACKEND=smtp / SMTP_HOST=… / SMTP_USER=… / SMTP_PASSWORD=… / EMAIL_FROM=…
+# For SMTP-blocked environments (e.g., Render Free), use
+# EMAIL_BACKEND=resend with RESEND_API_KEY and keep SMTP_* unset
+# or empty.
+# EMAIL_BACKEND=resend
+# RESEND_API_KEY=re_123456789...
 SENTRY_DSN=… / RELEASE=vX.Y.Z
 BACKEND_PORT=8000 / FRONTEND_PORT=8080     # host-side ports
 ```
@@ -557,6 +566,15 @@ APScheduler runs **in-process** inside the backend container (`reservation sweep
 | `RESERVATION_SWEEP_INTERVAL_MINUTES` | ❌ | `1` | How often the expired-reservation sweep runs (minutes, > 0) | `1` |
 | `AGING_PICKUP_INTERVAL_MINUTES` | ❌ | `5` | How often the aging-pickup alert check runs (minutes, > 0) | `5` |
 | `AGING_PICKUP_THRESHOLD_DAYS` | ❌ | `2` | Age (days) after which a `pending`/`accepted` pickup alerts admins | `2` |
+| `EMAIL_BACKEND` | ❌ | `console` | Email provider backend: `console`, `smtp`, or `resend`. Use `resend` when outbound SMTP is blocked. | `resend` |
+| `SMTP_HOST` | ❌ | — | SMTP server host. Only used with `EMAIL_BACKEND=smtp`. | `smtp.gmail.com` |
+| `SMTP_PORT` | ❌ | `587` | SMTP server port. Only used with `EMAIL_BACKEND=smtp`. | `587` |
+| `SMTP_USER` | ❌ | — | SMTP username. Only used with `EMAIL_BACKEND=smtp`. | `user@gmail.com` |
+| `SMTP_PASSWORD` | ❌ | — | SMTP password. Only used with `EMAIL_BACKEND=smtp`. Never logged. | `app-specific-password` |
+| `SMTP_USE_TLS` | ❌ | `true` | Whether to use TLS for SMTP. Only used with `EMAIL_BACKEND=smtp`. | `true` |
+| `RESEND_API_KEY` | ✅ when EMAIL_BACKEND=resend | — | Resend HTTPS API key. Used only with `EMAIL_BACKEND=resend`. Never logged or exposed. | `re_123456789...` |
+| `EMAIL_FROM` | ❌ | — | From address used on outgoing emails. Required for `smtp` and `resend` backends. | `noreply@wasteiq.dev` |
+| `EMAIL_FROM_NAME` | ❌ | `Waste-IQ` | Display name used on outgoing emails. | `Waste-IQ Support` |
 
 > ⚠️ **In production:** `CLOUDINARY_*` variables are **required** for image uploads. If they are missing, an upload attempt returns `503` (`Image upload service is not configured`); if Cloudinary is unreachable or rejects the request, it returns `502` (`Image upload service unavailable`). Uploads are never silently dropped in production. In development, if they are not set, image uploads are skipped and `image_url` is stored as `NULL` — the explicit, documented development fallback.
 

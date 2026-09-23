@@ -1,11 +1,13 @@
 """Backend tests for WIQ-V1-014 email verification."""
 
+import json
 import re
 import smtplib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from jose import jwt as jose_jwt
 from sqlalchemy import select
@@ -798,3 +800,318 @@ def test_smtp_client_uses_10_second_timeout(monkeypatch):
     )
 
     assert captured["timeout"] == 10
+
+
+# ─── Resend HTTP API provider tests ──────────────────────────────────
+
+
+_RESEND_API_KEY = "re_test_123456789abc"
+
+
+def _build_resend_provider(monkeypatch, handler):
+    """Patch the httpx client used by ResendEmailProvider and return a provider."""
+    transport = httpx.MockTransport(handler=handler)
+    original_client = httpx.Client
+    monkeypatch.setattr(
+        "app.services.email.httpx.Client",
+        lambda *a, **k: original_client(transport=transport, base_url="https://api.resend.com"),
+    )
+    from app.services.email import ResendEmailProvider
+
+    return ResendEmailProvider(
+        api_key=_RESEND_API_KEY,
+        from_email="noreply@example.com",
+        from_name="Waste-IQ",
+    )
+
+
+def test_resend_provider_successful_delivery(monkeypatch):
+    from app.services.email import OutgoingEmail
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        captured["body"] = request.read()
+        return httpx.Response(status_code=200, json={"id": "msg_123"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    provider.send(
+        OutgoingEmail(
+            to_email="recipient@example.com",
+            subject="Hello",
+            html_body="<p>Hi there</p>",
+            text_body="Hi there",
+        )
+    )
+
+    assert captured["request"].url == httpx.URL("https://api.resend.com/emails")
+    assert captured["request"].method == "POST"
+
+
+def test_resend_provider_correct_https_endpoint(monkeypatch):
+    from app.services.email import OutgoingEmail
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["scheme"] = request.url.scheme
+        captured["host"] = request.url.host
+        captured["path"] = request.url.path
+        return httpx.Response(status_code=200, json={"id": "msg_123"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    provider.send(
+        OutgoingEmail(
+            to_email="recipient@example.com",
+            subject="Hello",
+            html_body="<p>Hi</p>",
+            text_body="Hi",
+        )
+    )
+
+    assert captured["scheme"] == "https"
+    assert captured["host"] == "api.resend.com"
+    assert captured["path"] == "/emails"
+    assert captured["url"] == "https://api.resend.com/emails"
+
+
+def test_resend_provider_authorization_header_present_and_never_logged(monkeypatch, caplog):
+    from app.services.email import OutgoingEmail
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["auth_header"] = request.headers["authorization"]
+        return httpx.Response(status_code=200, json={"id": "msg_123"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    with caplog.at_level("WARNING"):
+        provider.send(
+            OutgoingEmail(
+                to_email="recipient@example.com",
+                subject="Hello",
+                html_body="<p>Hi</p>",
+                text_body="Hi",
+            )
+        )
+
+    assert captured["auth_header"] == f"Bearer {_RESEND_API_KEY}"
+    assert _RESEND_API_KEY not in caplog.text
+    assert "Bearer" not in caplog.text
+
+
+def test_resend_provider_correct_from_to_subject_html_text_payload(monkeypatch):
+    from app.services.email import OutgoingEmail
+
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.read())
+        return httpx.Response(status_code=200, json={"id": "msg_123"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    provider.send(
+        OutgoingEmail(
+            to_email="recipient@example.com",
+            subject="Hello",
+            html_body="<p>Hi there</p>",
+            text_body="Hi there",
+        )
+    )
+
+    payload = captured["payload"]
+    assert payload["from"] == "noreply@example.com"
+    assert payload["to"] == ["recipient@example.com"]
+    assert payload["subject"] == "Hello"
+    assert payload["html"] == "<p>Hi there</p>"
+    assert payload["text"] == "Hi there"
+
+
+def test_resend_provider_http_failure_raises_delivery_error(monkeypatch):
+    from app.services.email import EmailDeliveryError, OutgoingEmail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=500, json={"message": "server error"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    with pytest.raises(EmailDeliveryError):
+        provider.send(
+            OutgoingEmail(
+                to_email="recipient@example.com",
+                subject="Hello",
+                html_body="<p>Hi</p>",
+                text_body="Hi",
+            )
+        )
+
+
+def test_resend_provider_rate_limit_raises_rate_limit_error(monkeypatch):
+    from app.services.email import EmailRateLimitError, OutgoingEmail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=429, json={"message": "rate limited"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    with pytest.raises(EmailRateLimitError):
+        provider.send(
+            OutgoingEmail(
+                to_email="recipient@example.com",
+                subject="Hello",
+                html_body="<p>Hi</p>",
+                text_body="Hi",
+            )
+        )
+
+
+def test_resend_provider_network_timeout_raises_delivery_error(monkeypatch):
+    from app.services.email import EmailDeliveryError, OutgoingEmail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.TimeoutException("simulated timeout")
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    with pytest.raises(EmailDeliveryError):
+        provider.send(
+            OutgoingEmail(
+                to_email="recipient@example.com",
+                subject="Hello",
+                html_body="<p>Hi</p>",
+                text_body="Hi",
+            )
+        )
+
+
+def test_resend_provider_network_error_raises_delivery_error(monkeypatch):
+    from app.services.email import EmailDeliveryError, OutgoingEmail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    with pytest.raises(EmailDeliveryError):
+        provider.send(
+            OutgoingEmail(
+                to_email="recipient@example.com",
+                subject="Hello",
+                html_body="<p>Hi</p>",
+                text_body="Hi",
+            )
+        )
+
+
+def test_resend_provider_logs_no_api_key_recipient_or_body(monkeypatch, caplog):
+    from app.services.email import EmailDeliveryError, OutgoingEmail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=500, json={"message": "server error"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    secret_recipient = "secret-recipient@example.com"
+    secret_token = "secret-verification-token-123"
+    with caplog.at_level("WARNING"):
+        with pytest.raises(EmailDeliveryError):
+            provider.send(
+                OutgoingEmail(
+                    to_email=secret_recipient,
+                    subject="Secret subject",
+                    html_body=f"<p>token {secret_token}</p>",
+                    text_body=f"token {secret_token}",
+                )
+            )
+
+    assert _RESEND_API_KEY not in caplog.text
+    assert secret_recipient not in caplog.text
+    assert secret_token not in caplog.text
+    assert "<p>token" not in caplog.text
+
+
+def test_resend_provider_logs_no_authorization_header(monkeypatch, caplog):
+    from app.services.email import EmailDeliveryError, OutgoingEmail
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=500, json={"message": "server error"}, request=request)
+
+    provider = _build_resend_provider(monkeypatch, handler)
+    with caplog.at_level("WARNING"):
+        with pytest.raises(EmailDeliveryError):
+            provider.send(
+                OutgoingEmail(
+                    to_email="recipient@example.com",
+                    subject="Hello",
+                    html_body="<p>Hi</p>",
+                    text_body="Hi",
+                )
+            )
+
+    assert "Authorization" not in caplog.text
+    assert "Bearer" not in caplog.text
+
+
+def test_resend_backend_selects_resend_provider(monkeypatch):
+    from app.services.email import ResendEmailProvider, get_email_provider
+
+    monkeypatch.setattr(settings, "email_backend", "resend")
+    monkeypatch.setattr(settings, "resend_api_key", _RESEND_API_KEY)
+    monkeypatch.setattr(settings, "email_from", "noreply@example.com")
+    monkeypatch.setattr(settings, "email_from_name", "Waste-IQ")
+
+    provider = get_email_provider()
+    assert isinstance(provider, ResendEmailProvider)
+    assert provider.name == "resend"
+
+
+def test_resend_backend_requires_api_key(monkeypatch):
+    from app.services.email import EmailDeliveryError, get_email_provider
+
+    monkeypatch.setattr(settings, "email_backend", "resend")
+    monkeypatch.setattr(settings, "resend_api_key", "")
+    monkeypatch.setattr(settings, "email_from", "noreply@example.com")
+
+    with pytest.raises(EmailDeliveryError):
+        get_email_provider()
+
+
+def test_resend_backend_requires_from_email(monkeypatch):
+    from app.services.email import EmailDeliveryError, get_email_provider
+
+    monkeypatch.setattr(settings, "email_backend", "resend")
+    monkeypatch.setattr(settings, "resend_api_key", _RESEND_API_KEY)
+    monkeypatch.setattr(settings, "email_from", "")
+
+    with pytest.raises(EmailDeliveryError):
+        get_email_provider()
+
+
+def test_smtp_backend_still_preserved(monkeypatch):
+    from app.services.email import SmtpEmailProvider, get_email_provider
+
+    monkeypatch.setattr(settings, "email_backend", "smtp")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "smtp_port", 587)
+    monkeypatch.setattr(settings, "smtp_user", "user@example.com")
+    monkeypatch.setattr(settings, "smtp_password", "secret")
+    monkeypatch.setattr(settings, "smtp_use_tls", True)
+    monkeypatch.setattr(settings, "email_from", "noreply@example.com")
+    monkeypatch.setattr(settings, "email_from_name", "Waste-IQ")
+
+    provider = get_email_provider()
+    assert isinstance(provider, SmtpEmailProvider)
+    assert provider.name == "smtp"
+
+
+# ─── Migration/model metadata ─────────────────────────────────────────
+
+
+def test_unsupported_email_backend_raises_delivery_error(monkeypatch):
+    """Regression: an invalid EMAIL_BACKEND must raise, not fall back to console."""
+    from app.services.email import EmailDeliveryError, get_email_provider
+
+    monkeypatch.setattr(settings, "email_backend", "invalid")
+
+    with pytest.raises(EmailDeliveryError) as exc_info:
+        get_email_provider()
+
+    assert "Unsupported EMAIL_BACKEND" in str(exc_info.value)
+    assert "invalid" in str(exc_info.value)

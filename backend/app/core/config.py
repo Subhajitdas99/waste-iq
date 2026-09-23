@@ -186,7 +186,7 @@ class Settings(BaseSettings):
     # Email Delivery & Verification (WIQ-V1-014)
     # ------------------------------------------------------------------
 
-    email_backend: Literal["console", "smtp"] = Field(
+    email_backend: Literal["console", "smtp", "resend"] = Field(
         default="console",
         alias="EMAIL_BACKEND",
     )
@@ -198,6 +198,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
     email_from: str | None = Field(default=None, alias="EMAIL_FROM")
     email_from_name: str = Field(default="Waste-IQ", alias="EMAIL_FROM_NAME")
+
+    resend_api_key: str | None = Field(default=None, alias="RESEND_API_KEY")
 
     frontend_url: str = Field(
         default="http://localhost:5173",

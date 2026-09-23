@@ -25,6 +25,7 @@ from email.message import EmailMessage as MimeMessage
 from pathlib import Path
 from urllib.parse import urlencode
 
+import httpx
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.core.config import settings
@@ -166,13 +167,80 @@ class SmtpEmailProvider(EmailProvider):
             raise EmailDeliveryError("Failed to deliver email") from exc
 
 
+class ResendEmailProvider(EmailProvider):
+    """Resend HTTP API email backend for production.
+
+    Uses HTTPS to call the Resend `/emails` endpoint. Credentials and
+    recipient addresses are never logged; delivery failures are logged
+    only as redacted diagnostics.
+    """
+
+    name = "resend"
+
+    def __init__(self, *, api_key: str, from_email: str, from_name: str) -> None:
+        self._api_key = api_key
+        self._from_email = from_email
+        self._from_name = from_name
+        self._client = httpx.Client(
+            base_url="https://api.resend.com",
+            timeout=10,
+            follow_redirects=True,
+        )
+
+    def _redact_body(self, body: str) -> str:
+        """Return a safe summary never containing the full body or tokens."""
+        if not body:
+            return ""
+        stripped = body.strip()
+        if len(stripped) > 80:
+            return stripped[:80] + "…"
+        return stripped
+
+    def send(self, message: OutgoingEmail) -> None:
+        payload = {
+            "from": self._from_email,
+            "to": [message.to_email],
+            "subject": message.subject,
+            "html": message.html_body,
+            "text": message.text_body,
+        }
+        try:
+            response = self._client.post(
+                "/emails",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            logger.warning(
+                "Resend delivery error: status_code=%s exception_class=%s",
+                status_code,
+                type(exc).__name__,
+            )
+            if status_code == 429:
+                raise EmailRateLimitError("Resend provider rate limit exceeded") from exc
+            raise EmailDeliveryError("Failed to deliver email") from exc
+        except (httpx.RequestError, httpx.TimeoutException) as exc:
+            logger.warning(
+                "Resend delivery error: exception_class=%s",
+                type(exc).__name__,
+            )
+            raise EmailDeliveryError("Failed to deliver email") from exc
+
+
 def get_email_provider() -> EmailProvider:
     """Return the provider selected by ``EMAIL_BACKEND``.
 
-    The SMTP provider is constructed per call so a misconfiguration raises
-    :class:`EmailDeliveryError` at delivery time (caught and logged by
-    callers) instead of failing application startup.
+    The SMTP and Resend providers are constructed per call so a
+    misconfiguration raises :class:`EmailDeliveryError` at delivery time
+    (caught and logged by callers) instead of failing application startup.
     """
+    if settings.email_backend == "console":
+        return ConsoleEmailProvider()
     if settings.email_backend == "smtp":
         if not settings.smtp_host or not settings.email_from:
             raise EmailDeliveryError(
@@ -187,7 +255,17 @@ def get_email_provider() -> EmailProvider:
             from_email=settings.email_from,
             from_name=settings.email_from_name,
         )
-    return ConsoleEmailProvider()
+    if settings.email_backend == "resend":
+        if not settings.resend_api_key or not settings.email_from:
+            raise EmailDeliveryError(
+                "EMAIL_BACKEND=resend requires RESEND_API_KEY and EMAIL_FROM to be configured"
+            )
+        return ResendEmailProvider(
+            api_key=settings.resend_api_key,
+            from_email=settings.email_from,
+            from_name=settings.email_from_name,
+        )
+    raise EmailDeliveryError(f"Unsupported EMAIL_BACKEND: {settings.email_backend}")
 
 
 def send_email(message: OutgoingEmail) -> None:
